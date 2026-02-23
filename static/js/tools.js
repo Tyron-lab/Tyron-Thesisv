@@ -1,11 +1,34 @@
 /* =============================================
-   SENSOR DASHBOARD – FRONTEND LOGIC
+   SENSOR DASHBOARD – FRONTEND LOGIC (FIXED)
+   - Shows backend errors on the card
+   - Updates BUZZER/LCD status immediately
 ============================================= */
 
-const sensorCards = document.querySelectorAll(".sensor-card:not(.disabled)");
+const qs  = (sel, root = document) => root.querySelector(sel);
+const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-// Toggle regular sensors (exclude Relay/servo and tool cards)
-sensorCards.forEach(card => {
+async function safeJson(res) {
+  try { return await res.json(); } catch { return null; }
+}
+
+function showCardError(sensorId, msg) {
+  const card = document.getElementById(sensorId);
+  if (!card) return;
+  const valueEl = card.querySelector(".sensor-value");
+  if (!valueEl) return;
+  valueEl.textContent = msg || "Error";
+  valueEl.style.opacity = "1";
+  valueEl.style.color = "#ef4444";
+}
+
+function clearCardErrorColor(card) {
+  const valueEl = card?.querySelector?.(".sensor-value");
+  if (!valueEl) return;
+  valueEl.style.color = "";
+}
+
+/* Attach click listeners to sensor cards (NOT relay/servo/tools) */
+qsa(".sensor-card:not(.disabled)").forEach(card => {
   const id = card.id;
   if (id === "Relay" || id === "servomotor") return;
   if (id === "LED_TOOL" || id === "BUZZER" || id === "LCD_TOOL") return;
@@ -17,9 +40,19 @@ sensorCards.forEach(card => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sensor: id })
       });
-      if (!res.ok) console.error(`Toggle failed for ${id}`);
+
+      const data = await safeJson(res);
+
+      if (!res.ok || data?.ok === false) {
+        const msg = data?.error ? `Error: ${data.error}` : "Toggle failed";
+        showCardError(id, msg);
+        return;
+      }
+
+      clearCardErrorColor(card);
     } catch (err) {
       console.error("Toggle error:", err);
+      showCardError(id, "Network error");
     }
   });
 });
@@ -57,11 +90,10 @@ function ledToggle(color) {
   })
     .then(r => r.json())
     .then(data => {
-      if (data?.all) {
-        updateLedStatus(data.all);
-      }
+      if (data?.all) updateLedStatus(data.all);
+      if (data?.ok === false) showCardError("LED_TOOL", `Error: ${data.error || "LED failed"}`);
     })
-    .catch(err => console.error("LED toggle failed:", err));
+    .catch(err => showCardError("LED_TOOL", `Error: ${String(err.message || err)}`));
 }
 
 function buzzerToggle() {
@@ -70,8 +102,13 @@ function buzzerToggle() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "toggle" })
   })
-    .then(r => r.json())
-    .catch(err => console.error("Buzzer toggle failed:", err));
+    .then(async r => {
+      const data = await safeJson(r);
+      if (!r.ok || data?.ok === false) throw new Error(data?.error || "Buzzer toggle failed");
+      updateBuzzerStatus({ on: !!data?.on });
+      return data;
+    })
+    .catch(err => showCardError("BUZZER", `Error: ${String(err.message || err)}`));
 }
 
 function buzzerBeep() {
@@ -80,21 +117,31 @@ function buzzerBeep() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode: "beep", count: 2, on_ms: 120, off_ms: 120 })
   })
-    .then(r => r.json())
-    .catch(err => console.error("Buzzer beep failed:", err));
+    .then(async r => {
+      const data = await safeJson(r);
+      if (!r.ok || data?.ok === false) throw new Error(data?.error || "Buzzer beep failed");
+      updateBuzzerStatus({ on: false });
+      return data;
+    })
+    .catch(err => showCardError("BUZZER", `Error: ${String(err.message || err)}`));
 }
 
 function lcdSend() {
-  const line1 = (document.getElementById("lcd-line1")?.value || "").trim();
-  const line2 = (document.getElementById("lcd-line2")?.value || "").trim();
+  const line1 = (qs("#lcd-line1")?.value || "").trim();
+  const line2 = (qs("#lcd-line2")?.value || "").trim();
 
   fetch("/api/lcd", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ line1, line2 })
   })
-    .then(r => r.json())
-    .catch(err => console.error("LCD send failed:", err));
+    .then(async r => {
+      const data = await safeJson(r);
+      if (!r.ok || data?.ok === false) throw new Error(data?.error || "LCD send failed");
+      updateLcdStatus({ line1, line2 });
+      return data;
+    })
+    .catch(err => showCardError("LCD_TOOL", `Error: ${String(err.message || err)}`));
 }
 
 function lcdClear() {
@@ -103,8 +150,13 @@ function lcdClear() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ clear: true })
   })
-    .then(r => r.json())
-    .catch(err => console.error("LCD clear failed:", err));
+    .then(async r => {
+      const data = await safeJson(r);
+      if (!r.ok || data?.ok === false) throw new Error(data?.error || "LCD clear failed");
+      updateLcdStatus({ line1: "", line2: "" });
+      return data;
+    })
+    .catch(err => showCardError("LCD_TOOL", `Error: ${String(err.message || err)}`));
 }
 
 // ────────────────────────────────────────────────
@@ -112,6 +164,7 @@ function lcdClear() {
 // ────────────────────────────────────────────────
 function formatSensorValue(name, data) {
   if (!data) return "—";
+  if (data.error) return `Error: ${data.error}`;
 
   switch (name) {
     case "DHT11":
@@ -153,24 +206,20 @@ function formatSensorValue(name, data) {
 }
 
 function updateLedStatus(ledData) {
-  const el = document.getElementById("led-status");
+  const el = qs("#led-status");
   if (!el || !ledData) return;
-
-  const r = ledData.red ? "ON" : "OFF";
-  const o = ledData.orange ? "ON" : "OFF";
-  const g = ledData.green ? "ON" : "OFF";
-  el.textContent = `red:${r} • orange:${o} • green:${g}`;
+  el.textContent = `red:${ledData.red ? "ON" : "OFF"} • orange:${ledData.orange ? "ON" : "OFF"} • green:${ledData.green ? "ON" : "OFF"}`;
 }
 
 function updateBuzzerStatus(buzData) {
-  const el = document.getElementById("buzzer-status");
+  const el = qs("#buzzer-status");
   if (!el || !buzData) return;
   el.textContent = buzData.on ? "ON" : "OFF";
   el.style.color = buzData.on ? "#22c55e" : "#ef4444";
 }
 
 function updateLcdStatus(lcdData) {
-  const el = document.getElementById("lcd-status");
+  const el = qs("#lcd-status");
   if (!el || !lcdData) return;
   const l1 = (lcdData.line1 || "").slice(0, 16);
   const l2 = (lcdData.line2 || "").slice(0, 16);
@@ -183,36 +232,28 @@ function updateLcdStatus(lcdData) {
 async function updateDashboard() {
   try {
     const res = await fetch("/api/sensors");
-    if (!res.ok) throw new Error("Backend error");
+    const state = await safeJson(res);
+    if (!res.ok || !state) throw new Error("Backend error");
 
-    const state = await res.json();
     const data = state.data || {};
 
-    document.querySelectorAll(".sensor-card").forEach(card => {
+    qsa(".sensor-card").forEach(card => {
       const name = card.id;
-
-      // Tool cards: driven by sensor_data only
-      if (name === "LED_TOOL") {
-        updateLedStatus(data.LED_TOOL);
-      }
-      if (name === "BUZZER") {
-        updateBuzzerStatus(data.BUZZER);
-      }
-      if (name === "LCD_TOOL") {
-        updateLcdStatus(data.LCD_TOOL);
-      }
-
-      // Active highlight only for real sensors (not tools)
       const isTool = (name === "LED_TOOL" || name === "BUZZER" || name === "LCD_TOOL");
       const isActive = isTool ? true : (state[name] === true);
+
+      if (name === "LED_TOOL") updateLedStatus(data.LED_TOOL);
+      if (name === "BUZZER") updateBuzzerStatus(data.BUZZER);
+      if (name === "LCD_TOOL") updateLcdStatus(data.LCD_TOOL);
+
       card.classList.toggle("active", isActive && !isTool);
 
-      let valueEl = card.querySelector(".sensor-value");
+      const valueEl = card.querySelector(".sensor-value");
       if (!valueEl) return;
 
       if (name === "Relay") {
         const allOn = data.Relay?.ch1 && data.Relay?.ch2 && data.Relay?.ch3 && data.Relay?.ch4;
-        const el = document.getElementById("relay-status");
+        const el = qs("#relay-status");
         if (el) {
           el.textContent = allOn ? "ON" : "OFF";
           el.style.color = allOn ? "#22c55e" : "#ef4444";
@@ -221,7 +262,7 @@ async function updateDashboard() {
       }
 
       if (name === "servomotor") {
-        const el = document.getElementById("servo-status");
+        const el = qs("#servo-status");
         if (el) {
           el.textContent = (state.servomotor === true) ? "ON – 90°" : "OFF";
           el.style.color = (state.servomotor === true) ? "#22c55e" : "#ef4444";
@@ -229,24 +270,20 @@ async function updateDashboard() {
         return;
       }
 
-      // Tool cards already handled
       if (isTool) return;
 
       if (isActive && data[name]) {
         valueEl.textContent = formatSensorValue(name, data[name]);
         valueEl.style.opacity = "1";
-
-        if (name === "PIR" && data[name]?.motion) {
-          card.classList.add("motion-alert");
-        } else {
-          card.classList.remove("motion-alert");
-        }
+        valueEl.style.color = data[name]?.error ? "#ef4444" : "";
+        if (name === "PIR" && data[name]?.motion) card.classList.add("motion-alert");
+        else card.classList.remove("motion-alert");
       } else {
         valueEl.textContent = isActive ? "Waiting..." : "—";
         valueEl.style.opacity = "0.6";
+        valueEl.style.color = "";
       }
 
-      // Last update timestamp
       const timeEl = card.querySelector(".last-update");
       if (data[name]?.last_update && isActive) {
         const t = new Date(data[name].last_update);
@@ -255,7 +292,6 @@ async function updateDashboard() {
         timeEl.textContent = "";
       }
     });
-
   } catch (err) {
     console.error("Dashboard update failed:", err);
   }
