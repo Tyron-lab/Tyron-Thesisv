@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sensor Dashboard</title>
-  <link rel="stylesheet" href="/static/css/Tools.css" />
+  <link rel="stylesheet" href="/static/css/tools.css" />
 </head>
 <body>
 
@@ -16,18 +16,19 @@
 
     <div class="card-grid">
 
-      <!-- MPU6050 (replaces ADXL345) -->
+      <!-- MPU6050 -->
       <div class="sensor-card" id="MPU6050">
         <div class="card-header">
           <img src="/static/images/" alt="MPU6050" />
           <h3>MPU6050</h3>
         </div>
-        <p>3-axis accel + 3-axis gyro + temp</p>
+        <p>6-axis IMU (accel + gyro)</p>
         <div class="sensor-value">—</div>
         <small class="last-update"></small>
       </div>
 
       <!-- BMP280 -->
+
       <div class="sensor-card" id="BMP280">
         <div class="card-header">
           <img src="/static/images/" alt="BMP280" />
@@ -104,19 +105,9 @@
         <small class="last-update"></small>
       </div>
 
-      <!-- ESP32-S3 (still disabled example) -->
-      <div class="sensor-card disabled" id="ESP32-S3">
-        <div class="card-header">
-          <img src="/static/images/" alt="ESP32-S3" />
-          <h3>ESP32-S3</h3>
-        </div>
-        <p>Wi-Fi + Bluetooth module</p>
-        <div class="sensor-value">Not integrated</div>
-      </div>
-
     </div>
   </div>
 
-  <script src="static/js/Tools.js"></script>
+  <script src="/static/js/tools.js"></script>
 </body>
 </html>

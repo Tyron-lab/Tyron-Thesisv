@@ -34,6 +34,7 @@ try:
 except ImportError:
     SENSORS_AVAILABLE["MPU6050"] = False
 
+# For servo
 try:
     import pwmio
     SENSORS_AVAILABLE["servomotor"] = True
@@ -55,18 +56,15 @@ sensor_state = {
     "PIR":        False,
     "ULTRASONIC": False,
     "Relay":      False,
-    "servomotor": False,
+    "servomotor": False,   # OFF at startup
 }
 
+
+# Latest readings / states
 sensor_data = {
     "DHT11":      {"temperature": None, "humidity": None, "last_update": None},
     "BMP280":     {"temperature": None, "pressure": None, "altitude": None, "last_update": None},
-    "MPU6050":    {
-        "acceleration": {"x": None, "y": None, "z": None},
-        "gyro":         {"x": None, "y": None, "z": None},
-        "temperature":  None,
-        "last_update":  None
-    },
+    "MPU6050":    {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None},
     "PIR":        {"motion": False, "count": 0, "last_update": None},
     "ULTRASONIC": {"distance_cm": None, "last_update": None},
     "MHMQ":       {"gas_detected": False, "last_update": None},
@@ -74,37 +72,24 @@ sensor_data = {
         "ch1": False, "ch2": False, "ch3": False, "ch4": False,
         "last_update": None
     },
-    "servomotor": {"angle": 0, "last_update": None},
+    "servomotor": {"angle": 0, "last_update": None},  # start OFF at 0°
 }
 
-# Thread control
+
+# Thread control for sensors
 threads = {}
 running_flags = {}
-
-# Hardware globals
-pir_pin = None
-motion_count = 0
-dht_device = None
-bmp280 = None
-mpu = None
-mq_pin = None
-relay_pins = {}
-servo_pwm = None
-SERVO_PIN = board.D12 if SENSORS_AVAILABLE.get("board") else None
-MIN_PULSE = 500
-MAX_PULSE = 2500
-FREQUENCY = 50
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 # ────────────────────────────────────────────────
-#   HARDWARE INITIALIZATION FUNCTIONS
+#   HARDWARE PINS & INITIALIZATION
 # ────────────────────────────────────────────────
 
+# ── Ultrasonic ──
 def init_ultrasonic():
-    if not SENSORS_AVAILABLE.get("board"):
-        return None, None
+    if not SENSORS_AVAILABLE.get("board"): return None, None
     TRIG = digitalio.DigitalInOut(board.D23)
     ECHO = digitalio.DigitalInOut(board.D24)
     TRIG.direction = digitalio.Direction.OUTPUT
@@ -131,26 +116,30 @@ def measure_distance(TRIG, ECHO):
     duration = pulse_end - pulse_start
     return round(duration * 17150, 1)
 
+# ── PIR ──
+pir_pin = None
+motion_count = 0
+
 def init_pir():
     global pir_pin
-    if not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("board"): return
     pir_pin = digitalio.DigitalInOut(board.D18)
     pir_pin.direction = digitalio.Direction.INPUT
 
+# ── DHT11 ──
+dht_device = None
 def init_dht():
     global dht_device
-    if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
-        return
-    try:
-        dht_device = adafruit_dht.DHT11(board.D4)
-    except Exception as e:
-        print(f"DHT11 init failed: {e}")
+    if not SENSORS_AVAILABLE.get("DHT11"): return
+    if not SENSORS_AVAILABLE.get("board"): return
+    dht_device = adafruit_dht.DHT11(board.D4)
 
+# ── BMP280 ──
+bmp280 = None
 def init_bmp():
     global bmp280
-    if not SENSORS_AVAILABLE.get("BMP280") or not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("BMP280"): return
+    if not SENSORS_AVAILABLE.get("board"): return
     try:
         i2c = board.I2C()
         bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
@@ -158,66 +147,78 @@ def init_bmp():
     except Exception as e:
         print(f"BMP280 init failed: {e}")
 
-def init_mpu6050():
+# ── MPU6050 ──
+mpu = None
+def init_mpu():
     global mpu
-    if not SENSORS_AVAILABLE.get("MPU6050") or not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("MPU6050"): return
+    if not SENSORS_AVAILABLE.get("board"): return
     try:
         i2c = board.I2C()
         mpu = adafruit_mpu6050.MPU6050(i2c)
-        print("MPU6050 initialized successfully")
     except Exception as e:
         print(f"MPU6050 init failed: {e}")
-        mpu = None
 
+# ── MQ ──
+mq_pin = None
 def init_mq():
     global mq_pin
-    if not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("board"): return
     mq_pin = digitalio.DigitalInOut(board.D17)
     mq_pin.direction = digitalio.Direction.INPUT
 
+# ── 4-Channel Relay ──
+relay_pins = {}
+
 def init_relay():
     global relay_pins
-    if not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("board"): return
+    
     RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]
-    relay_pins = {}
+
     for ch, gpio_pin in enumerate(RELAY_PINS, 1):
         pin = digitalio.DigitalInOut(gpio_pin)
         pin.direction = digitalio.Direction.OUTPUT
-        pin.value = True  # OFF (active low)
+        pin.value = True  # OFF
         relay_pins[ch] = pin
-    sensor_data["Relay"].update({
+    
+    sensor_data["Relay"] = {
         "ch1": False, "ch2": False, "ch3": False, "ch4": False,
         "last_update": datetime.now().isoformat()
-    })
-    print("Relay initialized")
+    }
+    print("Relay initialized:", [f"Ch{ch}: {p}" for ch, p in relay_pins.items()])
+
+
+# ── Servo Motor (PWM) ──
+servo_pwm = None
+SERVO_PIN = board.D12
+MIN_PULSE = 500
+MAX_PULSE = 2500
+FREQUENCY = 50
 
 def init_servomotor():
     global servo_pwm
-    if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board"):
-        return
+    if not SENSORS_AVAILABLE.get("servomotor"): return
+    if not SENSORS_AVAILABLE.get("board"): return
     try:
         servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
-        set_servo_angle(0)
-        servo_pwm.duty_cycle = 0
+        set_servo_angle(0)           # start OFF at 0°
+        servo_pwm.duty_cycle = 0     # immediately stop PWM
         servo_pwm.deinit()
         servo_pwm = None
-        print("Servo initialized OFF at 0° (PWM stopped)")
+        print(f"Servo initialized OFF at 0° (PWM stopped)")
     except Exception as e:
         print(f"Servo init failed: {e}")
         servo_pwm = None
 
 def set_servo_angle(angle):
     global servo_pwm
-    if not SENSORS_AVAILABLE.get("servomotor") or not SERVO_PIN:
-        return False
-    if servo_pwm is None:
+    if not servo_pwm:
         try:
             servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
+            print("PWM restarted for servo")
         except Exception as e:
-            print(f"Failed to init PWM for servo: {e}")
+            print(f"Failed to restart PWM: {e}")
             return False
 
     angle = max(0, min(180, angle))
@@ -229,18 +230,30 @@ def set_servo_angle(angle):
     print(f"Servo moved to {angle}°")
     return True
 
-# Initialize hardware
+# Call inits
 if SENSORS_AVAILABLE.get("board"):
     init_pir()
     init_dht()
     init_bmp()
-    init_mpu6050()
+    init_mpu()
     init_mq()
     init_relay()
     init_servomotor()
 
 # ────────────────────────────────────────────────
-#   SENSOR READING THREAD
+#   CONTROL FUNCTIONS
+# ────────────────────────────────────────────────
+
+def set_relay_channel(channel: int, on: bool):
+    if channel not in relay_pins: return False
+    relay_pins[channel].value = not on
+    sensor_data["Relay"][f"ch{channel}"] = on
+    sensor_data["Relay"]["last_update"] = datetime.now().isoformat()
+    print(f"Relay Ch{channel} → {'ON' if on else 'OFF'}")
+    return True
+
+# ────────────────────────────────────────────────
+#   BACKGROUND READERS
 # ────────────────────────────────────────────────
 
 def sensor_reader(sensor_name):
@@ -254,36 +267,33 @@ def sensor_reader(sensor_name):
                 t = dht_device.temperature
                 h = dht_device.humidity
                 if t is not None and h is not None:
-                    sensor_data["DHT11"].update({
-                        "temperature": round(t, 1),
-                        "humidity": round(h, 1),
-                        "last_update": now
-                    })
+                    sensor_data["DHT11"].update({"temperature": round(t,1), "humidity": round(h,1), "last_update": now})
 
             elif sensor_name == "BMP280" and bmp280:
                 sensor_data["BMP280"].update({
-                    "temperature": round(bmp280.temperature, 1),
-                    "pressure": round(bmp280.pressure, 1),
-                    "altitude": round(bmp280.altitude, 1),
+                    "temperature": round(bmp280.temperature,1),
+                    "pressure": round(bmp280.pressure,1),
+                    "altitude": round(bmp280.altitude,1),
                     "last_update": now
                 })
 
             elif sensor_name == "MPU6050" and mpu:
-                acc = mpu.acceleration
-                gyr = mpu.gyro
-                temp = mpu.temperature
+                ax, ay, az = mpu.acceleration
+                gx, gy, gz = mpu.gyro
+                temp = getattr(mpu, "temperature", None)
                 sensor_data["MPU6050"].update({
-                    "acceleration": {"x": round(acc[0], 2), "y": round(acc[1], 2), "z": round(acc[2], 2)},
-                    "gyro": {"x": round(gyr[0], 1), "y": round(gyr[1], 1), "z": round(gyr[2], 1)},
-                    "temperature": round(temp, 1),
+                    "ax": round(ax,2), "ay": round(ay,2), "az": round(az,2),
+                    "gx": round(gx,2), "gy": round(gy,2), "gz": round(gz,2),
+                    "temperature": (round(temp,1) if temp is not None else None),
                     "last_update": now
                 })
+
 
             elif sensor_name == "PIR" and pir_pin:
                 state = pir_pin.value
                 if state and not last_pir_state:
                     motion_count += 1
-                    sensor_data["PIR"].update({"motion": True, "count": motion_count, "last_update": now})
+                    sensor_data["PIR"].update({"motion":True, "count":motion_count, "last_update":now})
                 elif not state and last_pir_state:
                     sensor_data["PIR"]["motion"] = False
                     sensor_data["PIR"]["last_update"] = now
@@ -293,29 +303,16 @@ def sensor_reader(sensor_name):
                 trig, echo = init_ultrasonic()
                 if trig and echo:
                     dist = measure_distance(trig, echo)
-                    sensor_data["ULTRASONIC"].update({"distance_cm": dist, "last_update": now})
+                    sensor_data["ULTRASONIC"].update({"distance_cm":dist, "last_update":now})
 
             elif sensor_name == "MHMQ" and mq_pin:
-                detected = not mq_pin.value  # usually active low
-                sensor_data["MHMQ"].update({"gas_detected": detected, "last_update": now})
+                detected = not mq_pin.value
+                sensor_data["MHMQ"].update({"gas_detected":detected, "last_update":now})
 
         except Exception as e:
-            print(f"Error in {sensor_name} reader: {e}")
+            print(f"Error in {sensor_name}: {e}")
 
         time.sleep(1.2)
-
-# ────────────────────────────────────────────────
-#   CONTROL FUNCTIONS
-# ────────────────────────────────────────────────
-
-def set_relay_channel(channel: int, on: bool):
-    if channel not in relay_pins:
-        return False
-    relay_pins[channel].value = not on  # active low
-    sensor_data["Relay"][f"ch{channel}"] = on
-    sensor_data["Relay"]["last_update"] = datetime.now().isoformat()
-    print(f"Relay Ch{channel} → {'ON' if on else 'OFF'}")
-    return True
 
 # ────────────────────────────────────────────────
 #   ROUTES
@@ -323,7 +320,19 @@ def set_relay_channel(channel: int, on: bool):
 
 @app.route("/")
 def index():
-    return send_from_directory("gui", "front.html")  # adjust folder if needed
+    return send_from_directory("gui", "front.html")
+
+@app.route("/script.js")
+def script():
+    return send_from_directory("gui", "script.js")
+
+@app.route("/style.css")
+def style():
+    return send_from_directory("gui", "style.css")
+
+@app.route("/images/<path:filename>")
+def images(filename):
+    return send_from_directory("gui/images", filename)
 
 @app.route("/api/sensors")
 def get_sensors():
@@ -345,62 +354,76 @@ def toggle_sensor():
     if sensor == "Relay":
         for ch in range(1, 5):
             set_relay_channel(ch, active)
-        print(f"Relay all {'ON' if active else 'OFF'}")
+        print(f"Relay {'all ON' if active else 'all OFF'}")
 
     elif sensor == "servomotor":
-        global servo_pwm
+        global servo_pwm  # IMPORTANT: declare global to avoid UnboundLocalError
+
         if active:
-            set_servo_angle(90)  # or 180 — your choice
-            print("Servo ON → 90°")
+            # ON → move to 180° and hold
+            set_servo_angle(180)
+            print("Servo ON → 180° (holding)")
         else:
+            # OFF → move to 0° then STOP PWM completely
             set_servo_angle(0)
-            time.sleep(0.8)
+            time.sleep(0.8)  # give time to reach position
             if servo_pwm is not None:
                 servo_pwm.duty_cycle = 0
                 servo_pwm.deinit()
                 servo_pwm = None
-                print("Servo OFF → PWM stopped")
-
+                print("Servo OFF → 0° and PWM STOPPED")
     else:
         if active:
             if sensor not in threads or not threads[sensor].is_alive():
                 running_flags[sensor] = True
-                threads[sensor] = threading.Thread(
-                    target=sensor_reader,
-                    args=(sensor,),
-                    daemon=True
-                )
+                threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
                 threads[sensor].start()
         else:
             running_flags[sensor] = False
 
     return jsonify({"sensor": sensor, "active": active})
 
-# Optional: individual relay control (if you want to add later)
 @app.route("/api/relay", methods=["POST"])
 def control_relay():
     data = request.json
     channel = data.get("channel")
     action = data.get("action")
-    if channel not in [1,2,3,4] or action not in ["on", "off", "toggle"]:
-        return jsonify({"error": "Invalid request"}), 400
+
+    if channel not in [1,2,3,4] or action not in ["on","off","toggle"]:
+        return jsonify({"error": "Invalid"}), 400
 
     current = sensor_data["Relay"][f"ch{channel}"]
     target = not current if action == "toggle" else (action == "on")
+
     success = set_relay_channel(channel, target)
     return jsonify({"success": success, "state": target})
 
-# ────────────────────────────────────────────────
-#   START SERVER
-# ────────────────────────────────────────────────
+@app.route("/api/servomotor", methods=["POST"])
+def control_servomotor():
+    data = request.json
+    angle = data.get("angle")
+    if angle is None or not (0 <= angle <= 180):
+        return jsonify({"error": "Angle must be 0–180"}), 400
 
+    success = set_servo_angle(angle)
+    return jsonify({"success": success, "angle": angle})
+
+# ────────────────────────────────────────────────
+#   START
+# ────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("=" * 80)
+    print("="*80)
     print("  IoT Sensor Dashboard  (Raspberry Pi)")
     print("  http://localhost:5000  or  http://<pi-ip>:5000")
-    print("=" * 80)
+    print("="*80)
     print("Available sensors:", list(sensor_state.keys()))
     print("Libraries loaded :", SENSORS_AVAILABLE)
-    print("Servo pin:", SERVO_PIN)
-    print("=" * 80 + "\n")
+    print("Servo pin:", SERVO_PIN if SENSORS_AVAILABLE.get("servomotor") else "Not available")
+    print("Servo behavior:")
+    print("   - Starts OFF at 0° (PWM stopped)")
+    print("   - Click Servo Motor card:")
+    print("      ON  → move to 180° and hold")
+    print("      OFF → move to 0° and stop (PWM off)")
+    print("="*80 + "\n")
+
     app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)

@@ -94,12 +94,29 @@ function formatSensorValue(name, data) {
                 ? `${data.temperature} °C • ${data.pressure} hPa • ${data.altitude} m`
                 : "Reading...";
 
-        case "MPU6050":
-            if (data.acceleration?.x != null) {
-                return `Acc: ${data.acceleration.x.toFixed(2)} ${data.acceleration.y.toFixed(2)} ${data.acceleration.z.toFixed(2)} m/s²<br>` +
-                       `Gyro: ${data.gyro?.x?.toFixed(1)} ${data.gyro?.y?.toFixed(1)} ${data.gyro?.z?.toFixed(1)} °/s`;
+        case "MPU6050": {
+            // Try to support different key names coming from backend
+            const ax = (data.ax ?? data.accel_x ?? data.x);
+            const ay = (data.ay ?? data.accel_y ?? data.y);
+            const az = (data.az ?? data.accel_z ?? data.z);
+            const gx = (data.gx ?? data.gyro_x);
+            const gy = (data.gy ?? data.gyro_y);
+            const gz = (data.gz ?? data.gyro_z);
+            const temp = (data.temperature ?? data.temp_c);
+
+            const fmt = (v) => (typeof v === "number" ? v.toFixed(2) : v);
+
+            if (ax != null && ay != null && az != null && gx != null && gy != null && gz != null) {
+                return `A:${fmt(ax)},${fmt(ay)},${fmt(az)} • G:${fmt(gx)},${fmt(gy)},${fmt(gz)}`;
+            }
+            if (ax != null && ay != null && az != null) {
+                return `A:${fmt(ax)},${fmt(ay)},${fmt(az)}`;
+            }
+            if (temp != null) {
+                return `${fmt(temp)} °C`;
             }
             return "Reading...";
+        }
 
         case "PIR":
             return data.motion ? `MOTION! (${data.count || 0})` : "No motion";
@@ -152,7 +169,7 @@ async function updateDashboard() {
                         : "OFF";
                     valueEl.style.color = isActive ? "#22c55e" : "#ef4444";
                 } else if (isActive && data[name]) {
-                    valueEl.innerHTML = formatSensorValue(name, data[name]);  // use innerHTML for <br>
+                    valueEl.textContent = formatSensorValue(name, data[name]);
                     valueEl.style.opacity = "1";
 
                     if (name === "PIR" && data[name]?.motion) {
@@ -182,4 +199,4 @@ async function updateDashboard() {
 
 // Start polling
 setInterval(updateDashboard, 900);
-updateDashboard();  // Initial load
+updateDashboard();  // Initial load 
