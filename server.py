@@ -716,48 +716,79 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES (STATIC + API)
+#   ROUTES (PAGES + STATIC + API)
 # ────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Your HTML files are here:
 TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
 
+# -------------------------
+# PAGES (FLOW)
+# welcome -> choices -> tools -> activityfolder -> activity1..5
+# -------------------------
 @app.route("/")
 def welcome_page():
-    # FIRST PAGE
     return send_from_directory(TEMPLATE_DIR, "welcome.html")
 
 @app.route("/choices")
 def choices_page():
-    # SECOND PAGE
     return send_from_directory(TEMPLATE_DIR, "choices.html")
 
 @app.route("/tools")
 def tools_page():
-    # THIRD PAGE
+    return send_from_directory(TEMPLATE_DIR, "tools.html")
+
+# (Optional alias) if some old HTML still links to /front
+@app.route("/front")
+def front_alias():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
 @app.route("/activityfolder")
 def activityfolder_page():
     return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
 
-@app.route("/")
-def index():
-    # NOTE: this expects tools.html inside: static/template/tools.html
-    return send_from_directory(os.path.join(BASE_DIR, "static", "template"), "tools.html")
+# ✅ Activities (this fixes: /activity1 not found)
+@app.route("/activity1")
+def activity1_page():
+    return send_from_directory(TEMPLATE_DIR, "activity1.html")
 
+@app.route("/activity2")
+def activity2_page():
+    return send_from_directory(TEMPLATE_DIR, "activity2.html")
+
+@app.route("/activity3")
+def activity3_page():
+    return send_from_directory(TEMPLATE_DIR, "activity3.html")
+
+@app.route("/activity4")
+def activity4_page():
+    return send_from_directory(TEMPLATE_DIR, "activity4.html")
+
+@app.route("/activity5")
+def activity5_page():
+    return send_from_directory(TEMPLATE_DIR, "activity5.html")
+
+# -------------------------
+# STATIC (ONLY if you want explicit routes)
+# Note: Flask can already serve /static automatically,
+# but keeping these is fine if you rely on them.
+# -------------------------
 @app.route("/static/css/<path:filename>")
 def serve_css(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "static/css"), filename)
+    return send_from_directory(os.path.join(BASE_DIR, "static", "css"), filename)
 
 @app.route("/static/js/<path:filename>")
 def serve_js(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "static/js"), filename)
+    return send_from_directory(os.path.join(BASE_DIR, "static", "js"), filename)
 
 @app.route("/static/images/<path:filename>")
 def serve_images(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "static/images"), filename)
+    return send_from_directory(os.path.join(BASE_DIR, "static", "images"), filename)
 
+# -------------------------
+# API
+# -------------------------
 @app.route("/api/sensors")
 def get_sensors():
     resp = sensor_state.copy()
@@ -817,9 +848,9 @@ def toggle_sensor():
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
-# ────────────────────────────────────────────────
-#   TOOL ENDPOINTS
-# ────────────────────────────────────────────────
+# -------------------------
+# TOOL ENDPOINTS
+# -------------------------
 @app.route("/api/led", methods=["POST"])
 def api_led():
     data = request.json or {}
