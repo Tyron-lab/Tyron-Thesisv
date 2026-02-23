@@ -771,8 +771,8 @@ def tools_page():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
 # optional alias if some HTML uses /front
-@app.route("/front")
-def tools_alias_front():
+@app.route("/tools")
+def tools_page():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
 @app.route("/activityfolder")
