@@ -1,0 +1,77 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  background: radial-gradient(circle at top, #1f2933, #0f172a);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #e5e7eb;
+  padding: 20px;
+
+  /* Optional: show user they can click anywhere */
+    cursor: pointer;
+}
+
+.container {
+  width: 100%;
+  max-width: 1400px;
+
+  /* ✅ CENTER ALL CONTENT INSIDE */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ✅ Center hero text */
+.hero{
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero p{
+  margin-top: 8px;
+  margin-left: auto;
+  margin-right: auto; /* ✅ ensures centered with max-width */
+}
+
+/* ✅ Center the button + hint */
+.actions{
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  align-items: center;   /* ✅ was flex-start */
+}
+
+.start-btn{
+  border: 2px solid #334155;
+  background: linear-gradient(180deg, #1e293b, #0b1220);
+  color: #e5e7eb;
+  padding: 12px 18px;
+  border-radius: 14px;
+  cursor: pointer;     /* button cursor */
+  font-weight: 800;
+  transition: transform 120ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.start-btn:hover{
+  border-color: #60a5fa;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.4);
+}
+
+.start-btn:active{
+  transform: scale(0.98);
+}
+
+.hint{
+  font-size: 0.95rem;
+  color: #94a3b8;
+  opacity: 0.95;
+}

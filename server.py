@@ -720,6 +720,23 @@ def set_relay_channel(channel: int, on: bool):
 # ────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
+
+@app.route("/")
+def welcome_page():
+    # FIRST PAGE
+    return send_from_directory(TEMPLATE_DIR, "welcome.html")
+
+@app.route("/choices")
+def choices_page():
+    # SECOND PAGE
+    return send_from_directory(TEMPLATE_DIR, "choices.html")
+
+@app.route("/tools")
+def tools_page():
+    # THIRD PAGE
+    return send_from_directory(TEMPLATE_DIR, "tools.html")
+
 @app.route("/")
 def index():
     # NOTE: this expects tools.html inside: static/template/tools.html

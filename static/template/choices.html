@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Choose • TrainerKit</title>
+
+  <!-- choice page styles (make sure file name matches in /static/css/) -->
+  <link rel="stylesheet" href="/static/css/choices.css" />
+</head>
+
+<body>
+  <main class="choice-wrap">
+    <header class="choice-header">
+      <h1>Choose Mode</h1>
+      <p>Open Activities or Tools.</p>
+    </header>
+
+    <section class="cards">
+      <!-- Activities -->
+      <a class="choice-card" href="/ActivityFolder" aria-label="Open Activities">
+        <div class="card-top">
+          <div>
+            <h2>Activities</h2>
+            <p>Go to Activity 1–5 exercises with Run/Stop and status.</p>
+          </div>
+          <div class="badge">Learning</div>
+        </div>
+
+        <div class="card-bottom">
+          <div class="go">Open Activities</div>
+          <div class="arrow">→</div>
+        </div>
+      </a>
+
+      <!-- Tools -->
+      <a class="choice-card" href="/front" aria-label="Open Tools">
+        <div class="card-top">
+          <div>
+            <h2>Tools</h2>
+            <p>Open the Tools dashboard (sensors/modules) and quick utilities.</p>
+          </div>
+          <div class="badge">Dashboard</div>
+        </div>
+
+        <div class="card-bottom">
+          <div class="go">Open Tools</div>
+          <div class="arrow">→</div>
+        </div>
+      </a>
+    </section>
+
+    <nav class="mini-links">
+      <a href="/">← Back to Welcome</a>
+    </nav>
+  </main>
+  <script src="/static/js/choices.js">
+  </script>
+</body>
+</html>
