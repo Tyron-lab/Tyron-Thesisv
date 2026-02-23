@@ -28,7 +28,6 @@
       </div>
 
       <!-- BMP280 -->
-
       <div class="sensor-card" id="BMP280">
         <div class="card-header">
           <img src="/static/images/" alt="BMP280" />
@@ -50,7 +49,7 @@
         <small class="last-update"></small>
       </div>
 
-      <!-- MHMQ (MQ Gas Sensor) -->
+      <!-- MHMQ -->
       <div class="sensor-card" id="MHMQ">
         <div class="card-header">
           <img src="/static/images/" alt="MQ Gas Sensor" />
@@ -83,14 +82,14 @@
         <small class="last-update"></small>
       </div>
 
-      <!-- Relay – master toggle for all channels -->
+      <!-- Relay -->
       <div class="sensor-card clickable" id="Relay" onclick="toggleRelay()">
         <div class="card-header">
           <img src="/static/images/" alt="Relay Module" />
           <h3>Relay Module</h3>
         </div>
         <p>Click to toggle all channels ON/OFF</p>
-        <div class="sensor-value" id="relay-status">All channels: OFF</div>
+        <div class="sensor-value" id="relay-status">OFF</div>
         <small class="last-update"></small>
       </div>
 
@@ -102,6 +101,62 @@
         </div>
         <p>Click to toggle ON/OFF (90° when ON)</p>
         <div class="sensor-value" id="servo-status">OFF</div>
+        <small class="last-update"></small>
+      </div>
+
+      <!-- LED TOOL -->
+      <div class="sensor-card tool-card" id="LED_TOOL">
+        <div class="card-header">
+          <img src="/static/images/" alt="LED Tool" />
+          <h3>LED Tool</h3>
+        </div>
+        <p>Control RED / ORANGE / GREEN LEDs</p>
+
+        <div class="tool-row">
+          <button class="btn red" onclick="ledToggle('red'); event.stopPropagation();">RED</button>
+          <button class="btn orange" onclick="ledToggle('orange'); event.stopPropagation();">ORANGE</button>
+          <button class="btn green" onclick="ledToggle('green'); event.stopPropagation();">GREEN</button>
+        </div>
+
+        <div class="sensor-value" id="led-status">red:OFF • orange:OFF • green:OFF</div>
+        <small class="last-update"></small>
+      </div>
+
+      <!-- BUZZER TOOL -->
+      <div class="sensor-card tool-card" id="BUZZER">
+        <div class="card-header">
+          <img src="/static/images/" alt="Buzzer" />
+          <h3>Active Buzzer</h3>
+        </div>
+        <p>Toggle ON/OFF or beep</p>
+
+        <div class="tool-row">
+          <button class="btn" onclick="buzzerToggle(); event.stopPropagation();">TOGGLE</button>
+          <button class="btn" onclick="buzzerBeep(); event.stopPropagation();">BEEP</button>
+        </div>
+
+        <div class="sensor-value" id="buzzer-status">OFF</div>
+        <small class="last-update"></small>
+      </div>
+
+      <!-- LCD TOOL -->
+      <div class="sensor-card tool-card" id="LCD_TOOL">
+        <div class="card-header">
+          <img src="/static/images/" alt="LCD" />
+          <h3>LCD Tool</h3>
+        </div>
+        <p>Send text to I2C LCD (2 lines)</p>
+
+        <div class="tool-col">
+          <input id="lcd-line1" class="input" maxlength="16" placeholder="Line 1 (max 16)" />
+          <input id="lcd-line2" class="input" maxlength="16" placeholder="Line 2 (max 16)" />
+          <div class="tool-row">
+            <button class="btn" onclick="lcdSend(); event.stopPropagation();">SEND</button>
+            <button class="btn" onclick="lcdClear(); event.stopPropagation();">CLEAR</button>
+          </div>
+        </div>
+
+        <div class="sensor-value" id="lcd-status">—</div>
         <small class="last-update"></small>
       </div>
 

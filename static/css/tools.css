@@ -201,3 +201,120 @@ header p {
     height: 70px;
   }
 }
+
+/* ==============================================
+   TOOLS (LED / BUZZER / LCD) – Add-on Styles
+   Paste this at the BOTTOM of your CSS
+============================================== */
+
+/* Tool cards should not look like disabled, but also not toggle active glow */
+.sensor-card.tool-card {
+  cursor: default;
+}
+
+/* Tool layout rows/cols */
+.tool-row{
+  display:flex;
+  gap:10px;
+  justify-content:center;
+  margin: 12px 0 10px;
+}
+
+.tool-col{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  margin-top: 12px;
+}
+
+/* Buttons */
+.btn{
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: rgba(96,165,250,0.10);
+  color: #e5e7eb;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+  user-select: none;
+}
+
+.btn:hover{
+  border-color: #60a5fa;
+  background: rgba(96,165,250,0.16);
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.18);
+}
+
+.btn:active{
+  transform: translateY(1px) scale(0.98);
+}
+
+/* Color buttons for LED tool */
+.btn.red{
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.55);
+}
+.btn.red:hover{
+  background: rgba(239,68,68,0.18);
+  border-color: rgba(239,68,68,0.85);
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.18);
+}
+
+.btn.orange{
+  background: rgba(245,158,11,0.12);
+  border-color: rgba(245,158,11,0.55);
+}
+.btn.orange:hover{
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.85);
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.18);
+}
+
+.btn.green{
+  background: rgba(34,197,94,0.12);
+  border-color: rgba(34,197,94,0.55);
+}
+.btn.green:hover{
+  background: rgba(34,197,94,0.18);
+  border-color: rgba(34,197,94,0.85);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.18);
+}
+
+/* LCD inputs */
+.input{
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: rgba(2,6,23,0.35);
+  color: #e5e7eb;
+  outline: none;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.input::placeholder{
+  color: rgba(148,163,184,0.85);
+}
+
+.input:focus{
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96,165,250,0.18);
+}
+
+/* Tool status text styling */
+#led-status, #buzzer-status, #lcd-status{
+  font-size: 1rem;
+  font-weight: 650;
+  color: #cbd5e1;
+}
+
+/* Make tool value area look like your sensor-value */
+.tool-card .sensor-value{
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(2,6,23,0.22);
+  border: 1px solid rgba(51,65,85,0.75);
+  margin-top: 12px;
+}
