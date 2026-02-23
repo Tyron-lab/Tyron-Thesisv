@@ -242,7 +242,8 @@ body{
 }
 
 .run-btn,
-.speak-btn{
+.speak-btn,
+.stop-btn{
   appearance:none;
   border: 1px solid rgba(148,163,184,.45);
   background: rgba(2,6,23,.22);
