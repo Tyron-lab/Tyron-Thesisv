@@ -16,13 +16,13 @@
 
     <div class="card-grid">
 
-      <!-- ADXL345 -->
-      <div class="sensor-card" id="ADXL345">
+      <!-- MPU6050 (replaces ADXL345) -->
+      <div class="sensor-card" id="MPU6050">
         <div class="card-header">
-          <img src="/static/images/" alt="ADXL345" />
-          <h3>ADXL345</h3>
+          <img src="/static/images/" alt="MPU6050" />
+          <h3>MPU6050</h3>
         </div>
-        <p>3-axis accelerometer</p>
+        <p>3-axis accel + 3-axis gyro + temp</p>
         <div class="sensor-value">—</div>
         <small class="last-update"></small>
       </div>
@@ -104,18 +104,7 @@
         <small class="last-update"></small>
       </div>
 
-      <!-- DC Motor -->
-      <div class="sensor-card" id="Motor">
-        <div class="card-header">
-          <img src="/static/images/" alt="DC Motor" />
-          <h3>DC Motors</h3>
-        </div>
-        <p>Speed & direction control</p>
-        <div class="sensor-value">—</div>
-        <small class="last-update"></small>
-      </div>
-
-      <!-- ESP32-S3 (disabled example) -->
+      <!-- ESP32-S3 (still disabled example) -->
       <div class="sensor-card disabled" id="ESP32-S3">
         <div class="card-header">
           <img src="/static/images/" alt="ESP32-S3" />

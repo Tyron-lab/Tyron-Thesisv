@@ -94,10 +94,12 @@ function formatSensorValue(name, data) {
                 ? `${data.temperature} °C • ${data.pressure} hPa • ${data.altitude} m`
                 : "Reading...";
 
-        case "ADXL345":
-            return data.x != null
-                ? `X:${data.x.toFixed(2)} Y:${data.y.toFixed(2)} Z:${data.z.toFixed(2)}`
-                : "Reading...";
+        case "MPU6050":
+            if (data.acceleration?.x != null) {
+                return `Acc: ${data.acceleration.x.toFixed(2)} ${data.acceleration.y.toFixed(2)} ${data.acceleration.z.toFixed(2)} m/s²<br>` +
+                       `Gyro: ${data.gyro?.x?.toFixed(1)} ${data.gyro?.y?.toFixed(1)} ${data.gyro?.z?.toFixed(1)} °/s`;
+            }
+            return "Reading...";
 
         case "PIR":
             return data.motion ? `MOTION! (${data.count || 0})` : "No motion";
@@ -115,9 +117,6 @@ function formatSensorValue(name, data) {
 
         case "servomotor":
             return data.angle != null ? `Angle: ${data.angle}°` : "—";
-
-        case "Motor":
-            return data.state ? "ON" : "OFF";
 
         default:
             return "—";
@@ -153,7 +152,7 @@ async function updateDashboard() {
                         : "OFF";
                     valueEl.style.color = isActive ? "#22c55e" : "#ef4444";
                 } else if (isActive && data[name]) {
-                    valueEl.textContent = formatSensorValue(name, data[name]);
+                    valueEl.innerHTML = formatSensorValue(name, data[name]);  // use innerHTML for <br>
                     valueEl.style.opacity = "1";
 
                     if (name === "PIR" && data[name]?.motion) {
