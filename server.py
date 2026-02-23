@@ -92,11 +92,11 @@ def clear_error(key: str):
 # ────────────────────────────────────────────────
 EXERCISE_MAP = {
     # Activity 1
-    "a1-ex1": os.path.join(BASE_DIR, "Activity1", "Exercise1.py"),
-    "a1-ex2": os.path.join(BASE_DIR, "Activity1", "Exercise2.py"),
-    "a1-ex3": os.path.join(BASE_DIR, "Activity1", "Exercise3.py"),
-    "a1-ex4": os.path.join(BASE_DIR, "Activity1", "Exercise4.py"),
-    "a1-ex5": os.path.join(BASE_DIR, "Activity1", "Exercise5.py"),
+    "a1-ex1": os.path.join(BASE_DIR, "activity1", "Exercise1.py"),
+    "a1-ex2": os.path.join(BASE_DIR, "activity1", "Exercise2.py"),
+    "a1-ex3": os.path.join(BASE_DIR, "activity1", "Exercise3.py"),
+    "a1-ex4": os.path.join(BASE_DIR, "activity1", "Exercise4.py"),
+    "a1-ex5": os.path.join(BASE_DIR, "activity1", "Exercise5.py"),
 
     # Add more later like:
     # "a2-ex1": os.path.join(BASE_DIR, "Activity2", "Exercise1.py"),
