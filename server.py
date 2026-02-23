@@ -6,7 +6,7 @@ import logging
 import os
 
 # ────────────────────────────────────────────────
-# Imports (safe)
+# Conditional imports
 # ────────────────────────────────────────────────
 SENSORS_AVAILABLE = {}
 
@@ -18,10 +18,10 @@ except Exception:
     SENSORS_AVAILABLE["board"] = False
 
 try:
-    import adafruit_tca9548a
-    SENSORS_AVAILABLE["tca9548a"] = True
+    import adafruit_dht
+    SENSORS_AVAILABLE["DHT11"] = True
 except Exception:
-    SENSORS_AVAILABLE["tca9548a"] = False
+    SENSORS_AVAILABLE["DHT11"] = False
 
 try:
     import adafruit_mpu6050
@@ -36,16 +36,16 @@ except Exception:
     SENSORS_AVAILABLE["BMP280"] = False
 
 try:
-    import adafruit_dht
-    SENSORS_AVAILABLE["DHT11"] = True
-except Exception:
-    SENSORS_AVAILABLE["DHT11"] = False
-
-try:
     import pwmio
     SENSORS_AVAILABLE["servomotor"] = True
 except Exception:
     SENSORS_AVAILABLE["servomotor"] = False
+
+try:
+    import adafruit_tca9548a
+    SENSORS_AVAILABLE["tca9548a"] = True
+except Exception:
+    SENSORS_AVAILABLE["tca9548a"] = False
 
 # LCD via smbus2 + RPLCD
 try:
@@ -69,15 +69,15 @@ def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 # ────────────────────────────────────────────────
-# MUX config
+# MUX (TCA9548A)
 # ────────────────────────────────────────────────
-USE_MUX = SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("tca9548a")
+USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
 MUX_ADDRESS = 0x70
 
-# match your scan (LCD=0, MPU=1). Put BMP channel that is now working:
+# Your known-good channels (from scan)
 LCD_MUX_CH = 0
 MPU_MUX_CH = 1
-BMP_MUX_CH = 2  # <- change if you wired BMP elsewhere
+BMP_MUX_CH = 2  # change if your BMP is on a different channel
 
 tca = None
 
@@ -101,7 +101,7 @@ if USE_MUX:
     init_mux()
 
 # ────────────────────────────────────────────────
-# State + data
+# State + data (MUST match HTML card ids)
 # ────────────────────────────────────────────────
 sensor_state = {
     "MPU6050":    False,
@@ -152,6 +152,7 @@ LCD_I2C_BUS = 1
 LCD_ADDRS = [0x27, 0x3F]
 LCD_COLS = 16
 LCD_ROWS = 2
+
 _lcd = None
 _lcd_addr = None
 
@@ -163,11 +164,9 @@ def mux_select_channel_smbus(ch: int) -> bool:
             with SMBus(LCD_I2C_BUS) as bus:
                 bus.write_byte(MUX_ADDRESS, 1 << ch)
         return True
-    except Exception:
+    except Exception as e:
+        set_error("LCD_TOOL", f"mux select failed: {e}")
         return False
-
-def mux_select_for_lcd():
-    return mux_select_channel_smbus(LCD_MUX_CH)
 
 def lcd_get():
     global _lcd, _lcd_addr
@@ -177,8 +176,7 @@ def lcd_get():
     if _lcd is not None:
         return _lcd
 
-    if not mux_select_for_lcd():
-        set_error("LCD_TOOL", f"mux select failed ch={LCD_MUX_CH}")
+    if not mux_select_channel_smbus(LCD_MUX_CH):
         return None
 
     last = None
@@ -195,15 +193,14 @@ def lcd_get():
             _lcd = None
             last = e
 
-    set_error("LCD_TOOL", f"init failed: {last}")
+    set_error("LCD_TOOL", f"LCD init failed: {last}")
     return None
 
 def lcd_write(line1="", line2=""):
     lcd = lcd_get()
     if lcd is None:
         return False
-    if not mux_select_for_lcd():
-        set_error("LCD_TOOL", f"mux select failed ch={LCD_MUX_CH}")
+    if not mux_select_channel_smbus(LCD_MUX_CH):
         return False
     try:
         with i2c_lock:
@@ -214,14 +211,14 @@ def lcd_write(line1="", line2=""):
         sensor_data["LCD_TOOL"].update({"line1": line1, "line2": line2, "last_update": now_iso(), "error": ""})
         return True
     except Exception as e:
-        set_error("LCD_TOOL", f"write failed: {e}")
+        set_error("LCD_TOOL", f"LCD write failed: {e}")
         return False
 
 def lcd_clear():
     lcd = lcd_get()
     if lcd is None:
         return False
-    if not mux_select_for_lcd():
+    if not mux_select_channel_smbus(LCD_MUX_CH):
         return False
     try:
         with i2c_lock:
@@ -229,7 +226,7 @@ def lcd_clear():
         sensor_data["LCD_TOOL"].update({"line1": "", "line2": "", "last_update": now_iso(), "error": ""})
         return True
     except Exception as e:
-        set_error("LCD_TOOL", f"clear failed: {e}")
+        set_error("LCD_TOOL", f"LCD clear failed: {e}")
         return False
 
 # ────────────────────────────────────────────────
@@ -242,10 +239,7 @@ LED_GREEN_PIN  = board.D13 if SENSORS_AVAILABLE.get("board") else None
 BUZZER_PIN = board.D16 if SENSORS_AVAILABLE.get("board") else None
 BUZZER_ACTIVE_LOW = True
 
-led_red = None
-led_orange = None
-led_green = None
-buzzer = None
+led_red = led_orange = led_green = buzzer = None
 
 def make_out(pin, initial=False):
     io = digitalio.DigitalInOut(pin)
@@ -273,6 +267,7 @@ def init_tools_outputs():
             sensor_data["BUZZER"]["on"] = False
             sensor_data["BUZZER"]["last_update"] = now_iso()
             clear_error("BUZZER")
+
         return True
     except Exception as e:
         set_error("LED_TOOL", f"init failed: {e}")
@@ -282,12 +277,13 @@ def init_tools_outputs():
 def set_led(color: str, on: bool):
     if not init_tools_outputs():
         return False
-    io = {"red": led_red, "orange": led_orange, "green": led_green}.get((color or "").lower())
+    color = (color or "").lower()
+    io = {"red": led_red, "orange": led_orange, "green": led_green}.get(color)
     if io is None:
-        set_error("LED_TOOL", f"bad color {color}")
+        set_error("LED_TOOL", f"unknown color {color}")
         return False
     io.value = bool(on)
-    sensor_data["LED_TOOL"][(color or "").lower()] = bool(on)
+    sensor_data["LED_TOOL"][color] = bool(on)
     sensor_data["LED_TOOL"]["last_update"] = now_iso()
     clear_error("LED_TOOL")
     return True
@@ -327,7 +323,7 @@ def beep(count=2, on_ms=120, off_ms=120):
         return False
 
 # ────────────────────────────────────────────────
-# Sensors init
+# Sensor instances/pins
 # ────────────────────────────────────────────────
 dht_device = None
 mpu = None
@@ -340,7 +336,6 @@ ultra_trig = None
 ultra_echo = None
 
 mq_pin = None
-
 relay_pins = {}
 
 servo_pwm = None
@@ -349,6 +344,9 @@ MIN_PULSE = 500
 MAX_PULSE = 2500
 FREQUENCY = 50
 
+# ────────────────────────────────────────────────
+# Sensor init functions
+# ────────────────────────────────────────────────
 def init_dht():
     global dht_device
     if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
@@ -359,6 +357,7 @@ def init_dht():
     try:
         dht_device = adafruit_dht.DHT11(board.D4)
         clear_error("DHT11")
+        print("[DHT11] OK D4")
         return True
     except Exception as e:
         dht_device = None
@@ -381,6 +380,7 @@ def init_mpu():
             else:
                 mpu = adafruit_mpu6050.MPU6050(board.I2C())
         clear_error("MPU6050")
+        print("[MPU6050] OK")
         return True
     except Exception as e:
         mpu = None
@@ -406,6 +406,7 @@ def init_bmp():
                     bmp = adafruit_bmp280.Adafruit_BMP280_I2C(board.I2C(), address=addr)
                 bmp.sea_level_pressure = 1013.25
             clear_error("BMP280")
+            print(f"[BMP280] OK addr=0x{addr:02X} ch={BMP_MUX_CH if USE_MUX else 'direct'}")
             return True
         except Exception as e:
             bmp = None
@@ -428,6 +429,7 @@ def init_pir():
         except Exception:
             pass
         clear_error("PIR")
+        print("[PIR] OK D18")
         return True
     except Exception as e:
         pir_pin = None
@@ -442,13 +444,13 @@ def init_ultrasonic():
     if ultra_trig is not None and ultra_echo is not None:
         return True
     try:
-        # change pins here if you use different ones
         ultra_trig = digitalio.DigitalInOut(board.D23)
         ultra_echo = digitalio.DigitalInOut(board.D24)
         ultra_trig.direction = digitalio.Direction.OUTPUT
         ultra_echo.direction = digitalio.Direction.INPUT
         ultra_trig.value = False
         clear_error("ULTRASONIC")
+        print("[ULTRASONIC] OK TRIG=D23 ECHO=D24")
         return True
     except Exception as e:
         ultra_trig = None
@@ -487,16 +489,17 @@ def init_mq():
     if mq_pin is not None:
         return True
     try:
-        mq_pin = digitalio.DigitalInOut(board.D17)  # DO pin
+        mq_pin = digitalio.DigitalInOut(board.D17)  # MQ DO pin
         mq_pin.direction = digitalio.Direction.INPUT
         clear_error("MHMQ")
+        print("[MHMQ] OK D17")
         return True
     except Exception as e:
         mq_pin = None
         set_error("MHMQ", f"init failed: {e}")
         return False
 
-# DO sampling -> percent
+# Gas sampling
 GAS_SAMPLES = 20
 GAS_SAMPLE_DELAY = 0.02
 GAS_INVERT_DO = True
@@ -532,6 +535,7 @@ def init_relay():
             relay_pins[ch] = io
         sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
         clear_error("Relay")
+        print("[RELAY] OK 4ch")
         return True
     except Exception as e:
         relay_pins = {}
@@ -541,7 +545,7 @@ def init_relay():
 def set_relay_channel(channel: int, on: bool):
     if channel not in relay_pins:
         return False
-    relay_pins[channel].value = (not on)
+    relay_pins[channel].value = (not on)  # active-low
     sensor_data["Relay"][f"ch{channel}"] = bool(on)
     sensor_data["Relay"]["last_update"] = now_iso()
     clear_error("Relay")
@@ -565,7 +569,6 @@ def set_servo_angle(angle):
     pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
     duty = int((pulse_us / 20000.0) * 65535.0)
     servo_pwm.duty_cycle = duty
-
     sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
     return True
 
@@ -599,14 +602,14 @@ def ensure_sensor_init(sensor: str) -> bool:
     return True
 
 # ────────────────────────────────────────────────
-# Background reader
+# Background sensor reader
 # ────────────────────────────────────────────────
 threads = {}
 running_flags = {}
 
 def sensor_reader(sensor_name):
     global motion_count
-    last_pir = False
+    last_pir_state = False
 
     while running_flags.get(sensor_name, False):
         now = now_iso()
@@ -649,9 +652,9 @@ def sensor_reader(sensor_name):
 
             elif sensor_name == "PIR" and pir_pin:
                 state = bool(pir_pin.value)
-                if state and not last_pir:
+                if state and not last_pir_state:
                     motion_count += 1
-                last_pir = state
+                last_pir_state = state
                 sensor_data["PIR"].update({"motion": state, "count": int(motion_count), "last_update": now, "error": ""})
                 clear_error("PIR")
 
@@ -710,28 +713,39 @@ def get_sensors():
     }
     return jsonify(resp)
 
+# VERY IMPORTANT: check what IDs your UI must use
+@app.get("/api/debug/keys")
+def api_debug_keys():
+    return jsonify({
+        "sensor_state_keys": list(sensor_state.keys()),
+        "sensor_data_keys": list(sensor_data.keys()),
+        "note": "Your HTML card id MUST match these keys exactly."
+    })
+
 @app.route("/api/toggle", methods=["POST"])
 def toggle_sensor():
     data = request.json or {}
     sensor = data.get("sensor")
 
     if sensor not in sensor_state:
-        return jsonify({"ok": False, "error": "Unknown sensor"}), 400
+        return jsonify({"ok": False, "error": f"Unknown sensor id '{sensor}'"}), 400
 
-    # IMPORTANT: clicking BUZZER card should really toggle buzzer
+    # If BUZZER card gets clicked, toggle it too
     if sensor == "BUZZER":
         cur = bool(sensor_data["BUZZER"].get("on", False))
         target = not cur
         ok = set_buzzer(target)
         return jsonify({"ok": ok, "sensor": "BUZZER", "active": True, "on": target, "error": sensor_data["BUZZER"]["error"]})
 
-    # flip normal sensor state
+    # tool cards are controlled via their endpoints
     if sensor in ("LED_TOOL", "LCD_TOOL"):
         return jsonify({"ok": True, "sensor": sensor, "active": True})
 
+    # flip state
     sensor_state[sensor] = not sensor_state[sensor]
     active = sensor_state[sensor]
 
+    # Relay toggles all channels
     if sensor == "Relay":
         if active and not ensure_sensor_init("Relay"):
             sensor_state[sensor] = False
@@ -740,6 +754,7 @@ def toggle_sensor():
             set_relay_channel(ch, active)
         return jsonify({"ok": True, "sensor": sensor, "active": active})
 
+    # Servo on -> 90, off -> 0 then stop PWM
     if sensor == "servomotor":
         if active:
             if not ensure_sensor_init("servomotor"):
@@ -752,10 +767,12 @@ def toggle_sensor():
             stop_servo_pwm()
         return jsonify({"ok": True, "sensor": sensor, "active": active})
 
+    # Start/stop threads for sensors
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
             return jsonify({"ok": False, "error": sensor_data[sensor]["error"]}), 500
+
         running_flags[sensor] = True
         if sensor not in threads or not threads[sensor].is_alive():
             threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
@@ -776,8 +793,8 @@ def api_led():
 
     cur = bool(sensor_data["LED_TOOL"].get(color, False))
     target = (not cur) if action == "toggle" else (action == "on")
-
     ok = set_led(color, target)
+
     if not ok:
         return jsonify({"ok": False, "error": sensor_data["LED_TOOL"]["error"] or "LED failed"}), 500
     return jsonify({"ok": True, "all": sensor_data["LED_TOOL"]})
@@ -785,7 +802,8 @@ def api_led():
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
     data = request.json or {}
-    mode = data.get("mode")
+    mode = data.get("mode")  # on/off/toggle/beep/force_off
+
     if mode not in ("on", "off", "toggle", "beep", "force_off"):
         return jsonify({"ok": False, "error": "Invalid"}), 400
 
@@ -799,14 +817,12 @@ def api_buzzer():
 
     cur = bool(sensor_data["BUZZER"].get("on", False))
     target = (not cur) if mode == "toggle" else (mode == "on")
-
     ok = set_buzzer(target)
     return jsonify({"ok": ok, "on": target, "error": sensor_data["BUZZER"]["error"]})
 
 @app.route("/api/lcd", methods=["POST"])
 def api_lcd():
     data = request.json or {}
-
     if data.get("clear"):
         ok = lcd_clear()
         if not ok:
@@ -815,7 +831,6 @@ def api_lcd():
 
     line1 = str(data.get("line1", ""))
     line2 = str(data.get("line2", ""))
-
     ok = lcd_write(line1, line2)
     if not ok:
         return jsonify({"ok": False, "error": sensor_data["LCD_TOOL"]["error"] or "LCD failed"}), 500
@@ -827,9 +842,9 @@ def api_lcd():
 if __name__ == "__main__":
     print("=" * 80)
     print("TrainerKit Tools Dashboard")
-    print("http://localhost:5000")
-    print("USE_MUX:", USE_MUX, "MUX_ADDRESS:", hex(MUX_ADDRESS))
-    print("LCD_CH:", LCD_MUX_CH, "MPU_CH:", MPU_MUX_CH, "BMP_CH:", BMP_MUX_CH)
+    print("Open: http://localhost:5000")
+    print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
+    print("LCD CH:", LCD_MUX_CH, "MPU CH:", MPU_MUX_CH, "BMP CH:", BMP_MUX_CH)
     print("BUZZER_ACTIVE_LOW:", BUZZER_ACTIVE_LOW)
     print("=" * 80)
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
