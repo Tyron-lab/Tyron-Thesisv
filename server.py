@@ -325,35 +325,25 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES – with extra diagnostics
+#   ROUTES – NOW CORRECT FOR static/template/tools.html
 # ────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.route("/")
 def index():
-    expected_path = os.path.join(BASE_DIR, "template", "tools.html")
-
-    # Debug: list all files in template folder
-    template_dir = os.path.join(BASE_DIR, "template")
-    if os.path.exists(template_dir):
-        files_in_template = os.listdir(template_dir)
-        file_list_html = "<ul>" + "".join(f"<li>{f}</li>" for f in files_in_template) + "</ul>"
-    else:
-        file_list_html = "<p>Template folder does NOT exist!</p>"
-
-    if not os.path.exists(expected_path):
+    path = os.path.join(BASE_DIR, "static", "template", "tools.html")
+    if not os.path.exists(path):
         return f"""
         <h1>ERROR: Dashboard file not found</h1>
-        <p>Expected exact path: <code>{expected_path}</code></p>
-        <p>Current working directory: <code>{os.getcwd()}</code></p>
-        <p>Project root: <code>{BASE_DIR}</code></p>
-        <p>Files found in 'template' folder:</p>
-        {file_list_html}
-        <p><strong>Action:</strong> Make sure the file is named exactly <code>tools.html</code> (lowercase, no extra spaces or capitals).</p>
+        <p>Expected path: {path}</p>
+        <p>Current working directory: {os.getcwd()}</p>
+        <p>Project root: {BASE_DIR}</p>
+        <p>Files in static/template:</p>
+        <pre>{os.listdir(os.path.join(BASE_DIR, "static", "template")) if os.path.exists(os.path.join(BASE_DIR, "static", "template")) else 'Folder not found'}</pre>
+        <p><strong>Fix:</strong> Confirm tools.html exists inside static/template</p>
         """, 404
-
-    return send_from_directory(os.path.join(BASE_DIR, "template"), "tools.html")
+    return send_from_directory(os.path.join(BASE_DIR, "static", "template"), "tools.html")
 
 @app.route("/static/css/<path:filename>")
 def serve_css(filename):
@@ -441,7 +431,7 @@ if __name__ == "__main__":
     print("="*80)
     print("  IoT Sensor Dashboard  (Raspberry Pi)")
     print("  Access: http://localhost:5000  (on this Raspberry Pi)")
-    print("  Or from phone/laptop: http://<pi-ip>:5000")
+    print("  Or from other device: http://<pi-ip>:5000")
     print("="*80)
     print("Available sensors:", list(sensor_state.keys()))
     print("Libraries loaded :", SENSORS_AVAILABLE)
@@ -449,7 +439,7 @@ if __name__ == "__main__":
     print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
     print("Current working dir:", os.getcwd())
     print("Project root:", BASE_DIR)
-    print("Dashboard expected at:", os.path.join(BASE_DIR, "template", "tools.html"))
+    print("Dashboard expected at:", os.path.join(BASE_DIR, "static", "template", "tools.html"))
     print("Tools.js expected at:", os.path.join(BASE_DIR, "static/js", "tools.js"))
     print("Tools.css expected at:", os.path.join(BASE_DIR, "static/css", "tools.css"))
     print("="*80 + "\n")
