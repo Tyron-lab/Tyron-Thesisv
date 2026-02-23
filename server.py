@@ -737,6 +737,10 @@ def tools_page():
     # THIRD PAGE
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
+@app.route("/activityfolder")
+def activityfolder_page():
+    return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
+
 @app.route("/")
 def index():
     # NOTE: this expects tools.html inside: static/template/tools.html

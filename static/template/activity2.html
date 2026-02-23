@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group 2 Activity • TrainerKit</title>
+
+  <!-- ✅ reuse activity1.css -->
+  <link rel="stylesheet" href="/static/css/activity1.css" />
+</head>
+
+<body>
+  <!-- ✅ use the same wrapper as Activity 1 -->
+  <main class="act-wrap" id="pageRoot">
+
+    <div class="nav-card">
+      <a class="nav-btn" href="choice.html">← Back</a>
+      <a class="nav-btn" href="front.html">Tools</a>
+      <a class="nav-btn" href="welcome.html">Home</a>
+    </div>
+
+    <header class="act-header">
+      <h1>Group 2 Activity</h1>
+      <p>Data &amp; Safety Checks</p>
+    </header>
+
+    <h2 class="section-title">Exercises</h2>
+
+    <!-- ✅ IMPORTANT: use .cards (activity1.css positions this perfectly) -->
+    <section class="cards" aria-label="Activity 2 Exercises">
+
+      <!-- EX 6 -->
+      <article class="exercise-card"
+        data-exercise="a2-ex6"
+        data-image="/static/gui/images/ex6.jpg"
+        data-image2="/static/gui/images/ex6_2.jpg"
+        tabindex="0" role="button"
+        data-say-title="Exercise 6: Normal versus Abnormal Data"
+        data-say-text="This exercise checks sensor values and decides if they are normal or abnormal. Normal means stable. Abnormal means warning or blinking.">
+        <div class="ex-card-head">
+          <h3>Exercise 6: Normal vs Abnormal Data</h3>
+          <span class="pill">Check • Status</span>
+        </div>
+        <p class="ex-desc">System checks readings if normal or abnormal, then shows status using LEDs or LCD.</p>
+        <div class="ex-meta">
+          <span><b>Input:</b> Sensor values</span>
+          <span><b>Output:</b> Status indicator</span>
+        </div>
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a2-ex6">Run</button>
+          <button class="speak-btn" type="button" data-speak="a2-ex6">Speak</button>
+          <span class="status" data-status-for="a2-ex6">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 7 -->
+      <article class="exercise-card"
+        data-exercise="a2-ex7"
+        data-image="/static/gui/images/ex7.jpg"
+        data-image2="/static/gui/images/ex7_2.jpg"
+        tabindex="0" role="button"
+        data-say-title="Exercise 7: Gas Safety Check"
+        data-say-text="This exercise reads the gas sensor and decides if the air is safe or unsafe. If unsafe, it triggers a warning indicator.">
+        <div class="ex-card-head">
+          <h3>Exercise 7: Gas Safety Check</h3>
+          <span class="pill">MQ • Safety</span>
+        </div>
+        <p class="ex-desc">Checks gas level and triggers warning when the reading is unsafe.</p>
+        <div class="ex-meta">
+          <span><b>Input:</b> MQ sensor</span>
+          <span><b>Output:</b> Warning</span>
+        </div>
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a2-ex7">Run</button>
+          <button class="speak-btn" type="button" data-speak="a2-ex7">Speak</button>
+          <span class="status" data-status-for="a2-ex7">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 8 -->
+      <article class="exercise-card"
+        data-exercise="a2-ex8"
+        data-image="/static/gui/images/ex8.jpg"
+        data-image2="/static/gui/images/ex8_2.jpg"
+        tabindex="0" role="button"
+        data-say-title="Exercise 8: Motion Activity Check"
+        data-say-text="This exercise counts multiple motion detections and classifies activity level. It displays low, normal, or high activity.">
+        <div class="ex-card-head">
+          <h3>Exercise 8: Motion Activity Check</h3>
+          <span class="pill">PIR • Count</span>
+        </div>
+        <p class="ex-desc">Counts motion events and shows activity level as low, normal, or high.</p>
+        <div class="ex-meta">
+          <span><b>Input:</b> Motion events</span>
+          <span><b>Output:</b> Activity status</span>
+        </div>
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a2-ex8">Run</button>
+          <button class="speak-btn" type="button" data-speak="a2-ex8">Speak</button>
+          <span class="status" data-status-for="a2-ex8">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 9 -->
+      <article class="exercise-card"
+        data-exercise="a2-ex9"
+        data-image="/static/gui/images/ex9.jpg"
+        data-image2="/static/gui/images/ex9_2.jpg"
+        tabindex="0" role="button"
+        data-say-title="Exercise 9: Temperature Alert"
+        data-say-text="This exercise checks the temperature against a safe range. If the temperature is too high, it triggers an alert using buzzer or LED.">
+        <div class="ex-card-head">
+          <h3>Exercise 9: Temperature Alert</h3>
+          <span class="pill">DHT • Alert</span>
+        </div>
+        <p class="ex-desc">Compares temperature to safe range and triggers buzzer or warning if too hot.</p>
+        <div class="ex-meta">
+          <span><b>Input:</b> Temperature</span>
+          <span><b>Output:</b> Alert</span>
+        </div>
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a2-ex9">Run</button>
+          <button class="speak-btn" type="button" data-speak="a2-ex9">Speak</button>
+          <span class="status" data-status-for="a2-ex9">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 10 -->
+      <article class="exercise-card"
+        data-exercise="a2-ex10"
+        data-image="/static/gui/images/ex10.jpg"
+        data-image2="/static/gui/images/ex10_2.jpg"
+        tabindex="0" role="button"
+        data-say-title="Exercise 10: Overall Safety Status"
+        data-say-text="This exercise checks multiple sensors and gives an overall system status. It shows safe or unsafe using LED or LCD.">
+        <div class="ex-card-head">
+          <h3>Exercise 10: Overall Safety Status</h3>
+          <span class="pill">Overall • Safe</span>
+        </div>
+        <p class="ex-desc">Combines multiple sensor checks and shows overall SAFE or UNSAFE status.</p>
+        <div class="ex-meta">
+          <span><b>Input:</b> Multiple sensors</span>
+          <span><b>Output:</b> Overall status</span>
+        </div>
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a2-ex10">Run</button>
+          <button class="speak-btn" type="button" data-speak="a2-ex10">Speak</button>
+          <span class="status" data-status-for="a2-ex10">Checking</span>
+        </div>
+      </article>
+
+    </section>
+  </main>
+
+  <!-- ✅ MODAL (Popup) -->
+  <div class="modal-overlay" id="exModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+
+      <div class="modal-grid">
+        <div class="modal-media">
+          <div class="modal-media-split">
+            <img id="modalImg" alt="" />
+            <img id="modalImg2" alt="" />
+          </div>
+        </div>
+
+        <div class="modal-info">
+          <h2 id="modalTitle">Exercise</h2>
+          <p id="modalDesc" class="modal-desc"></p>
+          <div class="modal-meta" id="modalMeta"></div>
+
+          <div class="modal-actions">
+            <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ correct Flask static path -->
+  <script src="/static/js/activity1.js" defer></script>
+</body>
+</html>

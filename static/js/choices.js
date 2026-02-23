@@ -22,9 +22,9 @@
   // 1 = Activities, 2 = Tools, Esc = back to Welcome
   window.addEventListener("keydown", (e) => {
     if (e.key === "1") {
-      window.location.href = "/ActivityFolder";
+      window.location.href = "/activityfolder";
     } else if (e.key === "2") {
-      window.location.href = "/front";
+      window.location.href = "/tools";
     } else if (e.key === "Escape") {
       window.location.href = "/";
     }

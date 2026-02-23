@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group 5 Activity • TrainerKit</title>
+
+  <!-- ✅ Only CSS you actually have -->
+  <link rel="stylesheet" href="/static/css/activity1.css" />
+</head>
+
+<body>
+  <div class="act-wrap" id="pageRoot">
+
+    <div class="nav-card">
+      <a class="nav-btn" href="/choice.html">← Back</a>
+      <a class="nav-btn" href="/front.html">Tools</a>
+      <a class="nav-btn" href="/welcome.html">Home</a>
+    </div>
+
+    <header class="act-header">
+      <h1>Group 5 Activity</h1>
+      <p>Custom Module</p>
+    </header>
+
+    <section aria-label="Activity 5 Exercises">
+      <h2 class="section-title">Exercises</h2>
+
+      <!-- ✅ activity1.css expects .cards -->
+      <div class="cards">
+        <article class="exercise-card"
+          data-exercise="__a5"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Activity 5"
+          data-say-text="This activity is ready. Add your custom exercises here.">
+          <div class="ex-card-head">
+            <h3>Activity 5: Coming Soon</h3>
+            <span class="pill">Template</span>
+          </div>
+
+          <p class="ex-desc">Add your custom exercises here. Use ids like a5-ex1, a5-ex2, and so on.</p>
+
+          <div class="ex-meta">
+            <span><b>Next:</b> Add exercises</span>
+            <span><b>IDs:</b> a5-ex1, a5-ex2...</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="speak-btn" type="button" data-speak="__a5">Speak</button>
+            <span class="status" data-status-for="__a5">Ready</span>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <!-- ✅ MODAL (styles are inside activity1.css already) -->
+  <div class="modal-overlay" id="exModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+
+      <div class="modal-grid">
+        <div class="modal-media">
+          <div class="modal-media-split">
+            <img id="modalImg" alt="" />
+            <img id="modalImg2" alt="" />
+          </div>
+        </div>
+
+        <div class="modal-info">
+          <h2 id="modalTitle">Exercise</h2>
+          <p id="modalDesc" class="modal-desc"></p>
+
+          <div class="modal-meta" id="modalMeta"></div>
+
+          <div class="modal-actions">
+            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ Absolute JS path (choose the correct one) -->
+  <script src="/static/js/activity1.js" defer></script>
+</body>
+</html>

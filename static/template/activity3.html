@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group 3 Activity • TrainerKit</title>
+
+  <!-- ✅ ONLY CSS you have -->
+  <link rel="stylesheet" href="/static/css/activity1.css" />
+</head>
+
+<body>
+  <!-- ✅ activity1.css expects .act-wrap -->
+  <div class="act-wrap" id="pageRoot">
+
+    <!-- ✅ activity1.css expects .nav-card/.nav-btn (you already have these) -->
+    <div class="nav-card">
+      <!-- ✅ make these absolute so Flask works anywhere -->
+      <a class="nav-btn" href="/choice.html">← Back</a>
+      <a class="nav-btn" href="/front.html">Tools</a>
+      <a class="nav-btn" href="/welcome.html">Home</a>
+    </div>
+
+    <!-- ✅ activity1.css expects .act-header -->
+    <header class="act-header">
+      <h1>Group 3 Activity</h1>
+      <p>I²C &amp; Integration</p>
+    </header>
+
+    <section aria-label="Activity 3 Exercises">
+      <h2 class="section-title">Exercises</h2>
+
+      <!-- ✅ activity1.css expects .cards (NOT exercise-grid) -->
+      <div class="cards">
+        <!-- EX 11 -->
+        <article class="exercise-card"
+          data-exercise="a3-ex11"
+          data-image="/images/ex11.jpg"
+          data-image2="/images/ex11_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 11: I2C Sensor Reading"
+          data-say-text="This exercise reads the BMP280 sensor using I2C and displays the values on the LCD.">
+          <div class="ex-card-head">
+            <h3>Exercise 11: I²C Sensor Reading</h3>
+            <span class="pill">BMP280 • I²C</span>
+          </div>
+          <p class="ex-desc">Read BMP280 through I²C and show pressure/temperature on LCD.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> BMP280</span>
+            <span><b>Output:</b> LCD</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a3-ex11">Run</button>
+            <button class="speak-btn" type="button" data-speak="a3-ex11">Speak</button>
+            <span class="status" data-status-for="a3-ex11">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 12 -->
+        <article class="exercise-card"
+          data-exercise="a3-ex12"
+          data-image="/images/MPU6500.jpg"
+          data-image2="/images/MPU6500_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 12: Motion Sensor Data"
+          data-say-text="This exercise reads motion values from the MPU6050 and shows the status on screen or LCD.">
+          <div class="ex-card-head">
+            <h3>Exercise 12: Motion Sensor Data</h3>
+            <span class="pill">MPU6050</span>
+          </div>
+          <p class="ex-desc">Read accelerometer and gyroscope values from MPU6050.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> MPU6050</span>
+            <span><b>Output:</b> Status display</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a3-ex12">Run</button>
+            <button class="speak-btn" type="button" data-speak="a3-ex12">Speak</button>
+            <span class="status" data-status-for="a3-ex12">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 13 -->
+        <article class="exercise-card"
+          data-exercise="a3-ex13"
+          data-image="/images/ex13.jpg"
+          data-image2="/images/ex13_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 13: Display Output"
+          data-say-text="This exercise formats sensor readings and prints them cleanly to the LCD.">
+          <div class="ex-card-head">
+            <h3>Exercise 13: Display Output</h3>
+            <span class="pill">Format • LCD</span>
+          </div>
+          <p class="ex-desc">Format readings into a clean display output for LCD.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Sensor values</span>
+            <span><b>Output:</b> LCD text</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a3-ex13">Run</button>
+            <button class="speak-btn" type="button" data-speak="a3-ex13">Speak</button>
+            <span class="status" data-status-for="a3-ex13">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 14 -->
+        <article class="exercise-card"
+          data-exercise="a3-ex14"
+          data-image="/images/ex14.jpg"
+          data-image2="/images/ex14_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 14: Multiple I2C Devices"
+          data-say-text="This exercise uses multiple I2C devices on the same bus and checks correct readings from each device.">
+          <div class="ex-card-head">
+            <h3>Exercise 14: Multiple I²C Devices</h3>
+            <span class="pill">Multi • I²C</span>
+          </div>
+          <p class="ex-desc">Read from multiple I²C devices correctly and display results.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Multiple I²C</span>
+            <span><b>Output:</b> Combined status</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a3-ex14">Run</button>
+            <button class="speak-btn" type="button" data-speak="a3-ex14">Speak</button>
+            <span class="status" data-status-for="a3-ex14">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 15 -->
+        <article class="exercise-card"
+          data-exercise="a3-ex15"
+          data-image="/images/ex15.jpg"
+          data-image2="/images/ex15_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 15: Communication Error"
+          data-say-text="This exercise simulates an I2C communication error and shows an error indicator on the LED or LCD.">
+          <div class="ex-card-head">
+            <h3>Exercise 15: Communication Error</h3>
+            <span class="pill">Error • I²C</span>
+          </div>
+          <p class="ex-desc">Detect missing or disconnected I²C device and show an error status.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Missing device</span>
+            <span><b>Output:</b> Error indicator</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a3-ex15">Run</button>
+            <button class="speak-btn" type="button" data-speak="a3-ex15">Speak</button>
+            <span class="status" data-status-for="a3-ex15">Checking...</span>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <!-- ✅ MODAL (your CSS already contains modal styles) -->
+  <div class="modal-overlay" id="exModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+
+      <div class="modal-grid">
+        <div class="modal-media">
+          <div class="modal-media-split">
+            <img id="modalImg" alt="" />
+            <img id="modalImg2" alt="" />
+          </div>
+        </div>
+
+        <div class="modal-info">
+          <h2 id="modalTitle">Exercise</h2>
+          <p id="modalDesc" class="modal-desc"></p>
+          <div class="modal-meta" id="modalMeta"></div>
+
+          <div class="modal-actions">
+            <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ JS path should be absolute too -->
+  <script src="/static/js/activity1.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,223 @@
+:root{
+  /* Main page background */
+  --bg0: #020617;     /* deep navy */
+  --bg1: #0b1220;     /* navy */
+  --bg2: #111a2b;     /* card/nav */
+  --bg3: #0f172a;     /* button */
+
+  /* Borders & text */
+  --border: #334155;
+  --border2: #475569;
+  --text: #e5e7eb;
+  --muted: #cbd5e1;
+
+  /* Accent */
+  --accent: #60a5fa;
+}
+
+*{ box-sizing:border-box; }
+
+/* Fullscreen center + theme background */
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  /* ✅ SOLID gradient background */
+  background: radial-gradient(1200px 800px at 50% 10%, #172554 0%, var(--bg0) 55%, #000 100%);
+}
+
+/* Page container */
+.act-wrap{
+  width:min(1050px, 94vw);
+  padding: 22px 16px 30px;
+}
+
+/* ✅ Universal “card” background helper (optional) */
+.card-solid{
+  background: linear-gradient(180deg, var(--bg2), var(--bg1));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.40);
+}
+
+/* ✅ NAV container (solid) */
+.nav-card{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  width: fit-content;
+  margin: 0 auto 14px;
+  padding: 10px 12px;
+
+  background: linear-gradient(180deg, #1b2638, #0b1220);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+}
+
+/* ✅ NAV buttons (solid) */
+.nav-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+
+  text-decoration:none;
+  color: var(--text);
+
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border2);
+
+  background: linear-gradient(180deg, #111a2b, #0b1220);
+
+  font-weight: 800;
+  font-size: 14px;
+
+  transition: transform 120ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.nav-btn:hover{
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+}
+
+/* Optional: “primary” button */
+.nav-btn.primary{
+  background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+  border-color: #60a5fa;
+  color: #07101f;
+}
+
+.nav-btn.primary:hover{
+  box-shadow: 0 14px 30px rgba(59,130,246,0.25), 0 12px 26px rgba(0,0,0,0.45);
+}
+
+/* Header */
+.act-header{
+  text-align:center;
+  margin: 10px 0 14px;
+}
+
+.act-header h1{
+  margin:0 0 6px 0;
+  font-size: clamp(26px, 3vw, 36px);
+  line-height: 1.1;
+}
+
+.act-header p{
+  margin:0;
+  opacity: .85;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Cards grid */
+.cards{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+@media (min-width: 800px){
+  .cards{
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+}
+
+/* ✅ Activity card (solid theme, no glass) */
+.act-card{
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  min-height: 150px;
+
+  text-decoration:none;
+  color: inherit;
+
+  cursor:pointer;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
+
+  background: linear-gradient(180deg, var(--bg2), var(--bg1));
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.28);
+
+  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+.act-card:hover{
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.40);
+}
+
+/* Card internals */
+.card-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+}
+
+.act-card h2{
+  margin:0 0 6px 0;
+  font-size: 20px;
+}
+
+.act-card p{
+  margin:0;
+  opacity:.9;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+/* Badge (solid) */
+.badge{
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: linear-gradient(180deg, #0f172a, #0b1220);
+  opacity: .95;
+  white-space: nowrap;
+}
+
+/* Bottom row */
+.card-bottom{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-top: 16px;
+  gap: 10px;
+}
+
+.go{
+  font-weight: 700;
+  font-size: 14px;
+  opacity: .95;
+}
+
+.arrow{
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  border: 1px solid var(--border2);
+  background: linear-gradient(180deg, #0f172a, #0b1220);
+}

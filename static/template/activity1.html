@@ -1,0 +1,202 @@
+<!-- activity1.html (FULL) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group 1 Activity • TrainerKit</title>
+
+  <!-- theme.css first (optional but recommended) -->
+  <!-- <link rel="stylesheet" href="/static/css/theme.css" /> -->
+
+  <!-- this page css -->
+  <link rel="stylesheet" href="/static/css/activity1.css" />
+</head>
+
+<body>
+  <main class="act-wrap" id="pageRoot">
+
+    <div class="nav-card">
+      <a class="nav-btn" href="choice.html">← Back</a>
+      <a class="nav-btn" href="front.html">Tools</a>
+      <a class="nav-btn" href="welcome.html">Home</a>
+    </div>
+
+    <header class="act-header">
+      <h1>Group 1 Activities</h1>
+      <p>Sensor Exercises</p>
+    </header>
+
+    <h2 class="section-title">Exercises</h2>
+
+    <!-- ✅ IMPORTANT: keep this class "cards" (your file uses it) -->
+    <section class="cards" aria-label="Activity 1 Exercises">
+
+      <!-- EX 1 -->
+      <article class="exercise-card"
+               data-exercise="a1-ex1"
+               data-image="./images/MPU6500.jpg"
+               data-image2="./images/pir.jpg"
+               tabindex="0" role="button"
+               data-say-title="Exercise 1: Motion Detection"
+               data-say-text="Input: PIR sensor detects movement. Output: LED turns on when motion is detected.">
+        <div class="ex-card-head">
+          <h3>Exercise 1: Motion Detection</h3>
+          <span class="pill">PIR • LED</span>
+        </div>
+
+        <p class="ex-desc">Detect motion using PIR. When motion is detected, LED turns ON.</p>
+
+        <div class="ex-meta">
+          <span><b>Input:</b> PIR</span>
+          <span><b>Output:</b> LED</span>
+        </div>
+
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a1-ex1">Run</button>
+          <button class="speak-btn" type="button" data-speak="a1-ex1">Speak</button>
+          <span class="status" data-status-for="a1-ex1">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 2 -->
+      <article class="exercise-card"
+               data-exercise="a1-ex2"
+               data-image="./images/MPU6500.jpg"
+               data-image2="./images/MHMQ.jpg"
+               tabindex="0" role="button"
+               data-say-title="Exercise 2: Gas Detection"
+               data-say-text="Input: MQ gas sensor. Output: warning LED blinks or alarm when gas is detected.">
+        <div class="ex-card-head">
+          <h3>Exercise 2: Gas Detection</h3>
+          <span class="pill">MQ • Warning</span>
+        </div>
+
+        <p class="ex-desc">Read gas/smoke level. If above threshold, trigger warning LED/alarm.</p>
+
+        <div class="ex-meta">
+          <span><b>Input:</b> MQ Sensor</span>
+          <span><b>Output:</b> LED / Alarm</span>
+        </div>
+
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a1-ex2">Run</button>
+          <button class="speak-btn" type="button" data-speak="a1-ex2">Speak</button>
+          <span class="status" data-status-for="a1-ex2">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 3 -->
+      <article class="exercise-card"
+               data-exercise="a1-ex3"
+               data-image="./images/MPU6500.jpg"
+               data-image2="./images/DHT11.jpg"
+               tabindex="0" role="button"
+               data-say-title="Exercise 3: Temperature and Humidity"
+               data-say-text="Input: DHT11 sensor. Output: LCD displays temperature and humidity.">
+        <div class="ex-card-head">
+          <h3>Exercise 3: Temperature &amp; Humidity</h3>
+          <span class="pill">DHT11 • LCD</span>
+        </div>
+
+        <p class="ex-desc">Measure temperature/humidity with DHT11 and show it on LCD.</p>
+
+        <div class="ex-meta">
+          <span><b>Input:</b> DHT11</span>
+          <span><b>Output:</b> LCD</span>
+        </div>
+
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a1-ex3">Run</button>
+          <button class="speak-btn" type="button" data-speak="a1-ex3">Speak</button>
+          <span class="status" data-status-for="a1-ex3">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 4 -->
+      <article class="exercise-card"
+               data-exercise="a1-ex4"
+               data-image="./images/MPU6500.jpg"
+               data-image2="./images/ultrasonic.jpg"
+               tabindex="0" role="button"
+               data-say-title="Exercise 4: Distance Measurement"
+               data-say-text="Input: ultrasonic sensor. Output: buzzer or LCD indicates distance and warning when near.">
+        <div class="ex-card-head">
+          <h3>Exercise 4: Distance Measurement</h3>
+          <span class="pill">Ultrasonic • Buzzer</span>
+        </div>
+
+        <p class="ex-desc">Measure distance using ultrasonic sensor. Buzzer sounds when near.</p>
+
+        <div class="ex-meta">
+          <span><b>Input:</b> Ultrasonic</span>
+          <span><b>Output:</b> Buzzer/LCD</span>
+        </div>
+
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a1-ex4">Run</button>
+          <button class="speak-btn" type="button" data-speak="a1-ex4">Speak</button>
+          <span class="status" data-status-for="a1-ex4">Checking</span>
+        </div>
+      </article>
+
+      <!-- EX 5 -->
+      <article class="exercise-card"
+               data-exercise="a1-ex5"
+               data-image="./images/MPU6500.jpg"
+               data-image2="./images/BMP280.jpg"
+               tabindex="0" role="button"
+               data-say-title="Exercise 5: Air Pressure Reading"
+               data-say-text="Input: BMP280 sensor via I2C. Output: LCD shows pressure and temperature.">
+        <div class="ex-card-head">
+          <h3>Exercise 5: Air Pressure Reading</h3>
+          <span class="pill">BMP280 • I²C</span>
+        </div>
+
+        <p class="ex-desc">Read pressure/temperature via BMP280 and display values on LCD.</p>
+
+        <div class="ex-meta">
+          <span><b>Input:</b> BMP280</span>
+          <span><b>Output:</b> LCD</span>
+        </div>
+
+        <div class="ex-actions">
+          <button class="run-btn" type="button" data-run="a1-ex5">Run</button>
+          <button class="speak-btn" type="button" data-speak="a1-ex5">Speak</button>
+          <span class="status" data-status-for="a1-ex5">Checking</span>
+        </div>
+      </article>
+
+    </section>
+  </main>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="exModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+
+      <div class="modal-grid">
+        <div class="modal-media">
+          <div class="modal-media-split">
+            <img id="modalImg" alt="" />
+            <img id="modalImg2" alt="" />
+          </div>
+        </div>
+
+        <div class="modal-info">
+          <h2 id="modalTitle">Exercise</h2>
+          <p id="modalDesc" class="modal-desc"></p>
+          <div class="modal-meta" id="modalMeta"></div>
+
+          <div class="modal-actions">
+            <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/activity1.js" defer></script>
+</body>
+</html>

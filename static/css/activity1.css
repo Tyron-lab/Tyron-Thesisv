@@ -1,0 +1,507 @@
+/* activity1.css (FULL) — exact positioning like your reference
+   ✅ IMPORTANT: grid container is .cards (your HTML uses .cards)
+*/
+
+/* ===== Theme fallbacks (if theme.css missing) ===== */
+:root{
+  --bg0:#020617;
+  --bg1:#0b1220;
+  --bg2:#111a2b;
+  --bg3:#0f172a;
+
+  --border:#334155;
+  --border2:#475569;
+
+  --text:#e5e7eb;
+  --muted:#94a3b8;
+
+  --accent:#60a5fa;
+  --good:#22c55e;
+  --danger:#ef4444;
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+
+body{
+  margin:0;
+  min-height:100vh;
+
+  /* ✅ THIS gives your “position” like the screenshot */
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+
+  padding: 26px 18px 40px;
+
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  background: radial-gradient(1200px 800px at 50% 10%, #172554 0%, var(--bg0) 55%, #000 100%);
+}
+
+/* ===== page width ===== */
+.act-wrap{
+  width: min(1400px, 94vw);
+  margin: 0 auto;
+}
+
+/* ===== nav ===== */
+.nav-card{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  width: fit-content;
+  margin: 0 auto 16px;
+  padding: 10px 12px;
+
+  background: linear-gradient(180deg, #1b2638, var(--bg1));
+  border: 1px solid rgba(148,163,184,.35);
+  border-radius: 18px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+}
+
+.nav-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+
+  text-decoration:none;
+  color: var(--text);
+
+  padding: 10px 16px;
+  border-radius: 14px;
+
+  border: 1px solid rgba(148,163,184,.45);
+  background: rgba(2,6,23,.22);
+
+  font-weight: 800;
+  font-size: 14px;
+
+  transition: transform 120ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.nav-btn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(96,165,250,.85);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+  background: rgba(2,6,23,.30);
+}
+
+/* ===== header ===== */
+.act-header{
+  text-align:center;
+  margin: 0 0 18px;
+}
+
+.act-header h1{
+  margin:0 0 6px 0;
+  font-size: clamp(34px, 4vw, 46px);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: .2px;
+  text-shadow: 0 10px 35px rgba(0,0,0,.45);
+}
+
+.act-header p{
+  margin:0;
+  font-size: 14px;
+  color: rgba(203,213,225,.85);
+}
+
+/* ===== section title left ===== */
+.section-title{
+  margin: 22px 0 14px;
+  padding-left: 2px;
+  text-align:left;
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+/* ==================================================
+   ✅ GRID: THIS IS THE MAIN PART THAT FIXES POSITION
+   Your HTML uses .cards (not .exercise-grid)
+================================================== */
+.cards{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 22px;
+}
+
+/* 2 columns (tablet/medium) */
+@media (min-width: 860px){
+  .cards{
+    grid-template-columns: repeat(2, minmax(340px, 1fr));
+  }
+}
+
+/* 3 columns (desktop like screenshot) */
+@media (min-width: 1180px){
+  .cards{
+    grid-template-columns: repeat(3, minmax(340px, 1fr));
+  }
+}
+
+/* ===== card ===== */
+.exercise-card{
+  border-radius: 22px;
+  padding: 22px;
+
+  border: 1px solid rgba(148,163,184,.35);
+  background: linear-gradient(180deg, rgba(17,26,43,.95), rgba(11,18,32,.92));
+  box-shadow: 0 18px 55px rgba(0,0,0,.45);
+
+  cursor:pointer;
+  user-select:none;
+
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  min-height: 240px;
+
+  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  outline:none;
+}
+
+.exercise-card:hover{
+  transform: translateY(-3px);
+  border-color: rgba(96,165,250,.85);
+  box-shadow: 0 24px 70px rgba(0,0,0,.55);
+}
+
+.exercise-card:focus-visible{
+  border-color: rgba(96,165,250,.95);
+  box-shadow: 0 0 0 3px rgba(96,165,250,.25), 0 24px 70px rgba(0,0,0,.55);
+}
+
+/* header row inside card */
+.ex-card-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.ex-card-head h3{
+  margin:0;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+/* pill */
+.pill{
+  font-size: 12px;
+  font-weight: 900;
+
+  padding: 7px 12px;
+  border-radius: 999px;
+
+  border: 1px solid rgba(148,163,184,.40);
+  background: rgba(2,6,23,.22);
+  color: rgba(226,232,240,.92);
+
+  white-space: nowrap;
+}
+
+/* description */
+.ex-desc{
+  margin:0;
+  color: rgba(226,232,240,.88);
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+/* meta row */
+.ex-meta{
+  display:flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 14px 0 18px;
+
+  font-size: 14px;
+  color: rgba(203,213,225,.85);
+}
+
+.ex-meta b{
+  color: rgba(226,232,240,.95);
+}
+
+/* actions */
+.ex-actions{
+  display:flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items:center;
+  margin-top: auto; /* keep buttons at bottom */
+}
+
+.run-btn,
+.speak-btn{
+  appearance:none;
+  border: 1px solid rgba(148,163,184,.45);
+  background: rgba(2,6,23,.22);
+  color: var(--text);
+
+  padding: 10px 18px;
+  border-radius: 14px;
+
+  font-weight: 900;
+  font-size: 13px;
+
+  cursor:pointer;
+  transition: transform 120ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.run-btn:hover,
+.speak-btn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(96,165,250,.85);
+  background: rgba(2,6,23,.30);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+}
+
+.run-btn:active,
+.speak-btn:active{
+  transform: translateY(0);
+}
+
+.status{
+  font-weight: 900;
+  font-size: 14px;
+  color: rgba(203,213,225,.75);
+}
+
+/* state classes */
+.exercise-card.state-running{
+  border-color: rgba(34,197,94,.95);
+  background: linear-gradient(180deg, #064e3b, #022c22);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.25), 0 24px 70px rgba(0,0,0,0.55);
+}
+
+.exercise-card.state-error,
+.exercise-card.state-missing{
+  border-color: rgba(239,68,68,.95);
+  background: linear-gradient(180deg, #7f1d1d, #450a0a);
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.20), 0 24px 70px rgba(0,0,0,0.55);
+}
+
+/* ===== mobile ===== */
+@media (max-width: 700px){
+  body{ padding: 18px 14px 30px; }
+  .section-title{ font-size: 18px; }
+  .exercise-card{ min-height: 220px; }
+}
+
+/* =========================
+   MODAL (your modal.css)
+========================= */
+body.modal-open { overflow: hidden; }
+
+body.modal-open #pageRoot {
+  filter: blur(8px);
+  transform: scale(0.995);
+  transition: filter 180ms ease, transform 180ms ease;
+}
+
+#pageRoot { transition: filter 180ms ease, transform 180ms ease; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0,0,0,0.55);
+  z-index: 9999;
+}
+
+.modal-overlay.open { display: grid; }
+
+.modal-card {
+  width: min(920px, 96vw);
+  border-radius: 18px;
+  background: var(--bg2, #111a2b);
+  border: 1px solid var(--border, #334155);
+  box-shadow: 0 20px 80px rgba(0,0,0,0.55);
+  position: relative;
+  overflow: hidden;
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #334155);
+  background: rgba(255,255,255,0.06);
+  color: var(--text, #e5e7eb);
+  cursor: pointer;
+}
+
+.modal-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 0;
+}
+
+.modal-media {
+  background: rgba(255,255,255,0.03);
+  border-right: 1px solid var(--border, #334155);
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}
+
+.modal-media > img {
+  width: 100%;
+  height: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  display: block;
+}
+
+.modal-info { padding: 18px 18px 16px; }
+
+.modal-desc {
+  margin-top: 8px;
+  color: var(--muted, #cbd5e1);
+  line-height: 1.45;
+}
+
+.modal-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.modal-meta .chip {
+  border: 1px solid var(--border, #334155);
+  background: rgba(255,255,255,0.04);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text, #e5e7eb);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* two images side-by-side */
+.modal-media-split{
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px;
+  align-items: center;
+}
+
+.modal-media-split img{
+  width: 100%;
+  height: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  display: block;
+}
+
+/* mobile modal */
+@media (max-width: 760px) {
+  .modal-grid { grid-template-columns: 1fr; }
+  .modal-media {
+    border-right: none;
+    border-bottom: 1px solid var(--border, #334155);
+  }
+
+  .modal-media-split{ grid-template-columns: 1fr; }
+
+  .modal-media-split img{
+    width: 100%;
+    height: 320px;
+    object-fit: contain;
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.03);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+}
+
+/* ===============================
+   POSITION FIX (center like reference)
+   Paste at VERY BOTTOM of activity1.css
+================================ */
+
+/* make page content centered and not too wide */
+.act-wrap{
+  width: min(1250px, 92vw) !important;  /* tighter than 1400px */
+  margin: 0 auto !important;
+}
+
+/* center the grid area */
+.cards{
+  width: 100% !important;
+  max-width: 1250px !important;
+  margin: 0 auto !important;
+}
+
+/* stop cards from stretching too wide */
+.exercise-card{
+  max-width: 410px;   /* match the reference card width */
+  justify-self: center;
+}
+
+/* Exercises title: align with the grid (not far-left) */
+.section-title{
+  max-width: 1250px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 8px;
+}
+
+/* header stays centered, but give it same max width */
+.act-header{
+  max-width: 1250px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* =========================================
+   BACKGROUND COLOR FIX (remove the seam/band)
+   Paste at VERY BOTTOM
+========================================= */
+
+/* lock the gradient to the screen so it doesn't shift weird on scroll */
+body{
+  background-attachment: fixed;
+}
+
+/* add a soft overlay to smooth the mid section */
+body::before{
+  content:"";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+
+  /* smooth vignette + mid fade (kills the horizontal band) */
+  background:
+    radial-gradient(900px 520px at 50% 8%, rgba(37,99,235,0.20), transparent 62%),
+    radial-gradient(1200px 900px at 50% 40%, rgba(2,6,23,0.00), rgba(0,0,0,0.55) 70%),
+    linear-gradient(180deg, rgba(2,6,23,0.00) 0%, rgba(2,6,23,0.22) 55%, rgba(0,0,0,0.55) 100%);
+}

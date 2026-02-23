@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Group 4 Activity • TrainerKit</title>
+
+  <!-- ✅ Only CSS you actually have -->
+  <link rel="stylesheet" href="/static/css/activity1.css" />
+</head>
+
+<body>
+  <!-- ✅ activity1.css expects .act-wrap -->
+  <div class="act-wrap" id="pageRoot">
+
+    <div class="nav-card">
+      <!-- ✅ absolute links so it works anywhere -->
+      <a class="nav-btn" href="/choice.html">← Back</a>
+      <a class="nav-btn" href="/front.html">Tools</a>
+      <a class="nav-btn" href="/welcome.html">Home</a>
+    </div>
+
+    <!-- ✅ activity1.css expects .act-header -->
+    <header class="act-header">
+      <h1>Group 4 Activity</h1>
+      <p>Outputs &amp; Control</p>
+    </header>
+
+    <section aria-label="Activity 4 Exercises">
+      <h2 class="section-title">Exercises</h2>
+
+      <!-- ✅ activity1.css expects .cards -->
+      <div class="cards">
+        <!-- EX 16 -->
+        <article class="exercise-card"
+          data-exercise="a4-ex16"
+          data-image="/images/ex16.jpg"
+          data-image2="/images/ex16_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 16: Power Indicator"
+          data-say-text="This exercise turns on the power LED to indicate the system is running.">
+          <div class="ex-card-head">
+            <h3>Exercise 16: Power Indicator</h3>
+            <span class="pill">LED</span>
+          </div>
+          <p class="ex-desc">Power LED indicates system ON state.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> System start</span>
+            <span><b>Output:</b> LED</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a4-ex16">Run</button>
+            <button class="speak-btn" type="button" data-speak="a4-ex16">Speak</button>
+            <span class="status" data-status-for="a4-ex16">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 17 -->
+        <article class="exercise-card"
+          data-exercise="a4-ex17"
+          data-image="/images/ex17.jpg"
+          data-image2="/images/ex17_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 17: Warning Indicator"
+          data-say-text="This exercise turns on the warning LED when an abnormal condition is detected.">
+          <div class="ex-card-head">
+            <h3>Exercise 17: Warning Indicator</h3>
+            <span class="pill">LED • Warning</span>
+          </div>
+          <p class="ex-desc">Warning LED lights when abnormal condition occurs.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Abnormal event</span>
+            <span><b>Output:</b> Warning LED</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a4-ex17">Run</button>
+            <button class="speak-btn" type="button" data-speak="a4-ex17">Speak</button>
+            <span class="status" data-status-for="a4-ex17">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 18 -->
+        <article class="exercise-card"
+          data-exercise="a4-ex18"
+          data-image="/images/ex18.jpg"
+          data-image2="/images/ex18_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 18: Sound Alert"
+          data-say-text="This exercise activates a buzzer sound to alert unsafe conditions.">
+          <div class="ex-card-head">
+            <h3>Exercise 18: Sound Alert</h3>
+            <span class="pill">Buzzer</span>
+          </div>
+          <p class="ex-desc">Buzzer sounds as an alert in unsafe conditions.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Unsafe status</span>
+            <span><b>Output:</b> Buzzer</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a4-ex18">Run</button>
+            <button class="speak-btn" type="button" data-speak="a4-ex18">Speak</button>
+            <span class="status" data-status-for="a4-ex18">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 19 -->
+        <article class="exercise-card"
+          data-exercise="a4-ex19"
+          data-image="/images/ex19.jpg"
+          data-image2="/images/ex19_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 19: Device Control"
+          data-say-text="This exercise uses a relay to switch an external device on and off.">
+          <div class="ex-card-head">
+            <h3>Exercise 19: Device Control</h3>
+            <span class="pill">Relay</span>
+          </div>
+          <p class="ex-desc">Control an external device using relay switching.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> Command</span>
+            <span><b>Output:</b> Relay ON/OFF</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a4-ex19">Run</button>
+            <button class="speak-btn" type="button" data-speak="a4-ex19">Speak</button>
+            <span class="status" data-status-for="a4-ex19">Checking...</span>
+          </div>
+        </article>
+
+        <!-- EX 20 -->
+        <article class="exercise-card"
+          data-exercise="a4-ex20"
+          data-image="/images/ex20.jpg"
+          data-image2="/images/ex20_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 20: Status Feedback"
+          data-say-text="This exercise changes LED blinking patterns based on the current system state.">
+          <div class="ex-card-head">
+            <h3>Exercise 20: Status Feedback</h3>
+            <span class="pill">Pattern • LED</span>
+          </div>
+          <p class="ex-desc">Updates LED blinking pattern to show system state changes.</p>
+          <div class="ex-meta">
+            <span><b>Input:</b> State change</span>
+            <span><b>Output:</b> LED pattern</span>
+          </div>
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a4-ex20">Run</button>
+            <button class="speak-btn" type="button" data-speak="a4-ex20">Speak</button>
+            <span class="status" data-status-for="a4-ex20">Checking...</span>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <!-- ✅ MODAL (styles are inside your activity1.css already) -->
+  <div class="modal-overlay" id="exModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+
+      <div class="modal-grid">
+        <div class="modal-media">
+          <div class="modal-media-split">
+            <img id="modalImg" alt="" />
+            <img id="modalImg2" alt="" />
+          </div>
+        </div>
+
+        <div class="modal-info">
+          <h2 id="modalTitle">Exercise</h2>
+          <p id="modalDesc" class="modal-desc"></p>
+          <div class="modal-meta" id="modalMeta"></div>
+
+          <div class="modal-actions">
+            <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ✅ absolute JS path (pick the right one) -->
+  <script src="/static/js/activity1.js" defer></script>
+</body>
+</html>
