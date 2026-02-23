@@ -12,7 +12,7 @@ except Exception as e:
     _import_err = e
 
 # ===== EDIT PIN (board) =====
-RELAY_PIN = "D27"          # change to your relay pin (ex: "D23", "D24", "D17")
+RELAY_PIN = [board.D27, board.D10, board.D26, board.D25]         # change to your relay pin (ex: "D23", "D24", "D17")
 ACTIVE_HIGH = True         # True = HIGH turns relay ON, False = LOW turns relay ON
 # ============================
 
