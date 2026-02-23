@@ -19,7 +19,7 @@
 
     <header class="act-header">
       <h1>Group 4 Activity</h1>
-      <p>Outputs &amp; Control</p>
+      <p>Outputs &amp; Control (LED • Buzzer • Relay)</p>
     </header>
 
     <section aria-label="Activity 4 Exercises">
@@ -33,15 +33,15 @@
           data-image2="/images/ex16_2.jpg"
           tabindex="0" role="button"
           data-say-title="Exercise 16: Power Indicator"
-          data-say-text="This exercise turns on the power LED to indicate the system is running.">
+          data-say-text="System start sequence. Power LED turns on and relays run a loading sequence, then steady on.">
           <div class="ex-card-head">
             <h3>Exercise 16: Power Indicator</h3>
-            <span class="pill">LED</span>
+            <span class="pill">LED • Relay</span>
           </div>
-          <p class="ex-desc">Power LED indicates system ON state.</p>
+          <p class="ex-desc">Boot/Loading: LED + relay sequence. Running: LED ON + relays ON.</p>
           <div class="ex-meta">
             <span><b>Input:</b> System start</span>
-            <span><b>Output:</b> LED</span>
+            <span><b>Output:</b> Power LED + Relay sequence</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex16">Run</button>
@@ -58,15 +58,15 @@
           data-image2="/images/ex17_2.jpg"
           tabindex="0" role="button"
           data-say-title="Exercise 17: Warning Indicator"
-          data-say-text="This exercise turns on the warning LED when an abnormal condition is detected.">
+          data-say-text="Abnormal event triggers warning LED and relay alarm pattern. Normal event turns everything off.">
           <div class="ex-card-head">
             <h3>Exercise 17: Warning Indicator</h3>
-            <span class="pill">LED • Warning</span>
+            <span class="pill">LED • Relay</span>
           </div>
-          <p class="ex-desc">Warning LED lights when abnormal condition occurs.</p>
+          <p class="ex-desc">Abnormal = Warning LED ON + relay alarm sequence. Normal = LED OFF + relays OFF.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Abnormal event</span>
-            <span><b>Output:</b> Warning LED</span>
+            <span><b>Input:</b> Abnormal / Normal event</span>
+            <span><b>Output:</b> Warning LED + Relay pattern</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex17">Run</button>
@@ -83,12 +83,12 @@
           data-image2="/images/ex18_2.jpg"
           tabindex="0" role="button"
           data-say-title="Exercise 18: Sound Alert"
-          data-say-text="This exercise activates a buzzer sound to alert unsafe conditions.">
+          data-say-text="Unsafe condition activates buzzer alert. Stop turns the buzzer off.">
           <div class="ex-card-head">
             <h3>Exercise 18: Sound Alert</h3>
             <span class="pill">Buzzer</span>
           </div>
-          <p class="ex-desc">Buzzer sounds as an alert in unsafe conditions.</p>
+          <p class="ex-desc">Buzzer sounds as an alert during unsafe conditions.</p>
           <div class="ex-meta">
             <span><b>Input:</b> Unsafe status</span>
             <span><b>Output:</b> Buzzer</span>
@@ -108,15 +108,15 @@
           data-image2="/images/ex19_2.jpg"
           tabindex="0" role="button"
           data-say-title="Exercise 19: Device Control"
-          data-say-text="This exercise uses a relay to switch an external device on and off.">
+          data-say-text="Relay control for external device. Supports relay switching and relay sequence on 4-channel relay module.">
           <div class="ex-card-head">
             <h3>Exercise 19: Device Control</h3>
-            <span class="pill">Relay</span>
+            <span class="pill">Relay • 4CH</span>
           </div>
-          <p class="ex-desc">Control an external device using relay switching.</p>
+          <p class="ex-desc">Control external devices using a 4-channel relay (ON/OFF/TOGGLE/SEQUENCE).</p>
           <div class="ex-meta">
             <span><b>Input:</b> Command</span>
-            <span><b>Output:</b> Relay ON/OFF</span>
+            <span><b>Output:</b> Relay switching (4 relays)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex19">Run</button>
@@ -133,15 +133,15 @@
           data-image2="/images/ex20_2.jpg"
           tabindex="0" role="button"
           data-say-title="Exercise 20: Status Feedback"
-          data-say-text="This exercise changes LED blinking patterns based on the current system state.">
+          data-say-text="System state feedback using patterns. LEDs and 4 relays run synchronized sequences to show state changes.">
           <div class="ex-card-head">
             <h3>Exercise 20: Status Feedback</h3>
-            <span class="pill">Pattern • LED</span>
+            <span class="pill">Pattern • LED • Relay</span>
           </div>
-          <p class="ex-desc">Updates LED blinking pattern to show system state changes.</p>
+          <p class="ex-desc">State change updates patterns: LED sequence + 4-relay synchronized sequence.</p>
           <div class="ex-meta">
             <span><b>Input:</b> State change</span>
-            <span><b>Output:</b> LED pattern</span>
+            <span><b>Output:</b> LED pattern + Relay pattern</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex20">Run</button>
