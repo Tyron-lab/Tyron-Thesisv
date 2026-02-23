@@ -30,7 +30,7 @@ RELAY_ACTIVE_HIGH = True    # True=HIGH turns relay ON; False=LOW turns relay ON
 LED_ACTIVE_HIGH = True
 
 # LCD settings (only if you have RPLCD)
-I2C_PORT = 1
+I2C_PORT = 0
 LCD_ADDR = 0x27            # common: 0x27 or 0x3F
 LCD_COLS = 16
 LCD_ROWS = 2
