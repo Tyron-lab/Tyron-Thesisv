@@ -216,7 +216,7 @@ BUZZER_PIN     = board.D16 if SENSORS_AVAILABLE.get("board") else None
 
 # IMPORTANT: many "active buzzers" are ACTIVE-LOW (ON when GPIO is LOW).
 # If your buzzer refuses to turn off, set this True.
-BUZZER_ACTIVE_LOW = True
+BUZZER_ACTIVE_LOW = False
 
 led_red = None
 led_orange = None
