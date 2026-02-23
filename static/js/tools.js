@@ -1,5 +1,7 @@
 /* =============================================
-   SENSOR DASHBOARD – FRONTEND LOGIC (DIAGNOSTIC + FIXED)
+   SENSOR DASHBOARD – FRONTEND LOGIC (FULL)
+   - Shows values for ALL sensors
+   - Adds missing toggleRelay() / toggleServo()
 ============================================= */
 
 const qs  = (sel, root = document) => root.querySelector(sel);
@@ -7,6 +9,14 @@ const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 async function safeJson(res) {
   try { return await res.json(); } catch { return null; }
+}
+
+function setSmall(cardId, text) {
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const el = card.querySelector(".last-update");
+  if (!el) return;
+  el.textContent = text ?? "";
 }
 
 function setCardText(cardId, text, isError=false) {
@@ -17,14 +27,6 @@ function setCardText(cardId, text, isError=false) {
   el.textContent = text ?? "—";
   el.style.opacity = "1";
   el.style.color = isError ? "#ef4444" : "";
-}
-
-function setSmall(cardId, text) {
-  const card = document.getElementById(cardId);
-  if (!card) return;
-  const el = card.querySelector(".last-update");
-  if (!el) return;
-  el.textContent = text ?? "";
 }
 
 async function postJSON(url, payload) {
@@ -38,13 +40,15 @@ async function postJSON(url, payload) {
 }
 
 // -------------------------
-// Card toggles (BMP/MPU etc)
+// Sensor card toggles
 // -------------------------
 qsa(".sensor-card:not(.disabled)").forEach(card => {
   const id = card.id;
 
-  // Exclude non-sensor toggles
+  // Exclude relay/servo (they use inline onclick)
   if (id === "Relay" || id === "servomotor") return;
+
+  // Exclude tools
   if (id === "LED_TOOL" || id === "BUZZER" || id === "LCD_TOOL") return;
 
   card.addEventListener("click", async () => {
@@ -57,11 +61,30 @@ qsa(".sensor-card:not(.disabled)").forEach(card => {
     }
 
     // show backend-side init errors immediately if any
-    if (r.data?.error) {
-      setCardText(id, `Error: ${r.data.error}`, true);
-    }
+    if (r.data?.error) setCardText(id, `Error: ${r.data.error}`, true);
   });
 });
+
+// -------------------------
+// Relay + Servo (MISSING BEFORE)
+// -------------------------
+async function toggleRelay() {
+  const r = await postJSON("/api/toggle", { sensor: "Relay" });
+  if (!r.ok || r.data?.ok === false) {
+    setCardText("Relay", `Error: ${r.data?.error || "Relay toggle failed"}`, true);
+  }
+}
+
+async function toggleServo() {
+  const r = await postJSON("/api/toggle", { sensor: "servomotor" });
+  if (!r.ok || r.data?.ok === false) {
+    setCardText("servomotor", `Error: ${r.data?.error || "Servo toggle failed"}`, true);
+  }
+}
+
+// expose for inline onclick in HTML
+window.toggleRelay = toggleRelay;
+window.toggleServo = toggleServo;
 
 // -------------------------
 // Tool controls
@@ -98,14 +121,6 @@ function buzzerBeep() {
     .catch(e => setCardText("BUZZER", `Error: ${String(e)}`, true));
 }
 
-function buzzerForceOff() {
-  postJSON("/api/buzzer", { mode: "force_off" })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) setCardText("BUZZER", `Error: ${r.data?.error || "Off failed"}`, true);
-      else updateBuzzerStatus({ on: false });
-    });
-}
-
 function lcdSend() {
   const line1 = (qs("#lcd-line1")?.value || "").trim();
   const line2 = (qs("#lcd-line2")?.value || "").trim();
@@ -133,9 +148,21 @@ function lcdClear() {
     .catch(e => setCardText("LCD_TOOL", `Error: ${String(e)}`, true));
 }
 
+window.ledToggle = ledToggle;
+window.buzzerToggle = buzzerToggle;
+window.buzzerBeep = buzzerBeep;
+window.lcdSend = lcdSend;
+window.lcdClear = lcdClear;
+
 // -------------------------
 // Status UI helpers
 // -------------------------
+function updateLedStatus(led) {
+  const el = qs("#led-status");
+  if (!el || !led) return;
+  el.textContent = `red:${led.red ? "ON" : "OFF"} • orange:${led.orange ? "ON" : "OFF"} • green:${led.green ? "ON" : "OFF"}`;
+}
+
 function updateBuzzerStatus(buz) {
   const el = qs("#buzzer-status");
   if (!el) return;
@@ -151,9 +178,33 @@ function updateLcdStatus(lcd) {
   el.textContent = (l1 || l2) ? `${l1} | ${l2}` : "—";
 }
 
+// -------------------------
+// Format ALL sensors (this was missing)
+// -------------------------
 function formatSensorValue(name, data) {
   if (!data) return "—";
   if (data.error) return `Error: ${data.error}`;
+
+  if (name === "DHT11") {
+    const t = data.temperature;
+    const h = data.humidity;
+    if (t == null || h == null) return "Reading...";
+    return `${t} °C • ${h}%`;
+  }
+
+  if (name === "MHMQ") {
+    const lvl = (data.level_percent != null) ? `${data.level_percent}%` : "—";
+    return data.gas_detected ? `Gas Detected! (${lvl})` : `Clear (${lvl})`;
+  }
+
+  if (name === "PIR") {
+    return data.motion ? `MOTION! (${data.count ?? 0})` : `No motion (${data.count ?? 0})`;
+  }
+
+  if (name === "ULTRASONIC") {
+    if (data.distance_cm == null) return "Reading...";
+    return `${data.distance_cm} cm`;
+  }
 
   if (name === "BMP280") {
     if (data.temperature == null || data.pressure == null) return "Reading...";
@@ -170,7 +221,7 @@ function formatSensorValue(name, data) {
 }
 
 // -------------------------
-// Polling
+// Polling (updates ALL cards)
 // -------------------------
 async function updateDashboard() {
   const res = await fetch("/api/sensors", { cache: "no-store" });
@@ -179,22 +230,49 @@ async function updateDashboard() {
 
   const data = state.data || {};
 
-  // Sensor cards
+  // Sensor cards (includes Relay + Servo special UI)
   qsa(".sensor-card").forEach(card => {
     const name = card.id;
-    const isTool = (name === "LED_TOOL" || name === "BUZZER" || name === "LCD_TOOL");
 
+    // Tool cards handled below
+    const isTool = (name === "LED_TOOL" || name === "BUZZER" || name === "LCD_TOOL");
     if (isTool) return;
 
     const active = !!state[name];
     card.classList.toggle("active", active);
 
+    // Relay special UI
+    if (name === "Relay") {
+      const d = data.Relay || {};
+      const anyOn = !!(d.ch1 || d.ch2 || d.ch3 || d.ch4);
+      const el = qs("#relay-status");
+      if (el) {
+        el.textContent = anyOn ? "ON" : "OFF";
+        el.style.color = anyOn ? "#22c55e" : "#ef4444";
+      }
+      return;
+    }
+
+    // Servo special UI
+    if (name === "servomotor") {
+      const d = data.servomotor || {};
+      const el = qs("#servo-status");
+      if (el) {
+        const on = active;
+        el.textContent = on ? `ON – ${d.angle ?? 90}°` : "OFF";
+        el.style.color = on ? "#22c55e" : "#ef4444";
+      }
+      return;
+    }
+
+    // Normal sensor card value
     const val = card.querySelector(".sensor-value");
     if (!val) return;
 
     if (!active) {
       val.textContent = "—";
       val.style.opacity = "0.6";
+      val.style.color = "";
       return;
     }
 
@@ -203,21 +281,16 @@ async function updateDashboard() {
     val.textContent = txt;
     val.style.color = (data[name]?.error) ? "#ef4444" : "";
 
-    if (data[name]?.last_update) setSmall(name, `Last: ${new Date(data[name].last_update).toLocaleTimeString()}`);
+    if (data[name]?.last_update) {
+      setSmall(name, `Last: ${new Date(data[name].last_update).toLocaleTimeString()}`);
+    }
   });
 
   // Tool status cards
+  updateLedStatus(data.LED_TOOL || {});
   updateBuzzerStatus(data.BUZZER || { on: false });
   updateLcdStatus(data.LCD_TOOL || { line1: "", line2: "" });
 }
 
 setInterval(updateDashboard, 900);
 updateDashboard();
-
-// expose to inline onclick in HTML
-window.ledToggle = ledToggle;
-window.buzzerToggle = buzzerToggle;
-window.buzzerBeep = buzzerBeep;
-window.buzzerForceOff = buzzerForceOff;
-window.lcdSend = lcdSend;
-window.lcdClear = lcdClear;
