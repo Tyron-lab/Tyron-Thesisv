@@ -9,9 +9,17 @@
 <body>
 
   <div class="container">
+
+    <!-- NAV -->
+    <div class="nav-card">
+      <a class="nav-btn" href="/static/template/activityfolder.html">← Back</a>
+      <a class="nav-btn" href="/static/template/tools.html">Tools</a>
+      <a class="nav-btn" href="/static/template/welcome.html">Home</a>
+    </div>
+
     <header>
       <h1>Sensor Dashboard</h1>
-      <p>Real-time monitoring & control • Raspberry Pi</p>
+      <p>Real-time monitoring &amp; control • Raspberry Pi</p>
     </header>
 
     <div class="card-grid">
@@ -19,7 +27,7 @@
       <!-- MPU6050 -->
       <div class="sensor-card" id="MPU6050">
         <div class="card-header">
-          <img src="/static/images/" alt="MPU6050" />
+          <img src="/static/images/MPU6050.jpg" alt="MPU6050" />
           <h3>MPU6050</h3>
         </div>
         <p>6-axis IMU (accel + gyro)</p>
@@ -30,7 +38,7 @@
       <!-- BMP280 -->
       <div class="sensor-card" id="BMP280">
         <div class="card-header">
-          <img src="/static/images/" alt="BMP280" />
+          <img src="/static/images/BMP280.jpg" alt="BMP280" />
           <h3>BMP280</h3>
         </div>
         <p>Temperature • Pressure • Altitude</p>
@@ -41,7 +49,7 @@
       <!-- DHT11 -->
       <div class="sensor-card" id="DHT11">
         <div class="card-header">
-          <img src="/static/images/" alt="DHT11" />
+          <img src="/static/images/DHT11.jpg" alt="DHT11" />
           <h3>DHT11</h3>
         </div>
         <p>Temperature & Humidity</p>
@@ -52,7 +60,7 @@
       <!-- MHMQ -->
       <div class="sensor-card" id="MHMQ">
         <div class="card-header">
-          <img src="/static/images/" alt="MQ Gas Sensor" />
+          <img src="/static/images/MQ.jpg" alt="MQ Gas Sensor" />
           <h3>MQ Gas Sensor</h3>
         </div>
         <p>Gas & smoke detection</p>
@@ -63,7 +71,7 @@
       <!-- PIR -->
       <div class="sensor-card" id="PIR">
         <div class="card-header">
-          <img src="/static/images/" alt="PIR" />
+          <img src="/static/images/PIR.jpg" alt="PIR" />
           <h3>PIR Motion</h3>
         </div>
         <p>Motion detection</p>
@@ -74,7 +82,7 @@
       <!-- Ultrasonic -->
       <div class="sensor-card" id="ULTRASONIC">
         <div class="card-header">
-          <img src="/static/images/" alt="HC-SR04" />
+          <img src="/static/images/ULTRASONIC.jpg" alt="HC-SR04" />
           <h3>Ultrasonic</h3>
         </div>
         <p>Distance measurement</p>
@@ -85,7 +93,7 @@
       <!-- Relay -->
       <div class="sensor-card clickable" id="Relay" onclick="toggleRelay()">
         <div class="card-header">
-          <img src="/static/images/" alt="Relay Module" />
+          <img src="/static/images/RELAY.jpg" alt="Relay Module" />
           <h3>Relay Module</h3>
         </div>
         <p>Click to toggle all channels ON/OFF</p>
@@ -96,7 +104,7 @@
       <!-- Servo Motor -->
       <div class="sensor-card clickable" id="servomotor" onclick="toggleServo()">
         <div class="card-header">
-          <img src="/static/images/" alt="Servo Motor" />
+          <img src="/static/images/SERVO.jpg" alt="Servo Motor" />
           <h3>Servo Motor</h3>
         </div>
         <p>Click to toggle ON/OFF (90° when ON)</p>
@@ -107,42 +115,25 @@
       <!-- LED TOOL -->
       <div class="sensor-card tool-card" id="LED_TOOL">
         <div class="card-header">
-          <img src="/static/images/" alt="LED Tool" />
+          <img src="/static/images/LED.jpg" alt="LED Tool" />
           <h3>LED Tool</h3>
         </div>
-        <p>Control RED / ORANGE / GREEN LEDs</p>
+        <p>Control R / O / G LEDs</p>
 
         <div class="tool-row">
-          <button class="btn red" onclick="ledToggle('red'); event.stopPropagation();">RED</button>
-          <button class="btn orange" onclick="ledToggle('orange'); event.stopPropagation();">ORANGE</button>
-          <button class="btn green" onclick="ledToggle('green'); event.stopPropagation();">GREEN</button>
+          <button class="btn red" onclick="ledToggle('red'); event.stopPropagation();">R</button>
+          <button class="btn orange" onclick="ledToggle('orange'); event.stopPropagation();">O</button>
+          <button class="btn green" onclick="ledToggle('green'); event.stopPropagation();">G</button>
         </div>
 
-        <div class="sensor-value" id="led-status">red:OFF • orange:OFF • green:OFF</div>
+        <div class="sensor-value" id="led-status">R:OFF • O:OFF • G:OFF</div>
         <small class="last-update"></small>
       </div>
-
-      <!-- BUZZER TOOL -->
-      <div class="sensor-card tool-card" id="BUZZER">
-        <div class="card-header">
-          <img src="/static/images/" alt="Buzzer" />
-          <h3>Active Buzzer</h3>
-        </div>
-        <p>Toggle ON/OFF or beep</p>
-
-        <div class="tool-row">
-          <button class="btn" onclick="buzzerToggle(); event.stopPropagation();">TOGGLE</button>
-          <button class="btn" onclick="buzzerBeep(); event.stopPropagation();">BEEP</button>
-        </div>
-
-        <div class="sensor-value" id="buzzer-status">OFF</div>
-        <small class="last-update"></small>
-      </div>
-
+        
       <!-- LCD TOOL -->
       <div class="sensor-card tool-card" id="LCD_TOOL">
         <div class="card-header">
-          <img src="/static/images/" alt="LCD" />
+          <img src="/static/images/LCD.jpg" alt="LCD" />
           <h3>LCD Tool</h3>
         </div>
         <p>Send text to I2C LCD (2 lines)</p>
