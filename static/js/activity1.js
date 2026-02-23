@@ -1,19 +1,21 @@
 /* activity1.js
-   Works with your activity1.html markup:
+   Frontend expects:
    - Cards: .exercise-card (tabindex=0, role=button)
-   - Run buttons:  button.run-btn[data-run="<exerciseId>"]
-   - Speak buttons: button.speak-btn[data-speak="<exerciseId>"]
-   - Status: span.status[data-status-for="<exerciseId>"]
-   - Modal: #exModal, #modalClose, #modalRunBtn, #modalSpeakBtn,
-            #modalTitle, #modalDesc, #modalMeta, #modalImg, #modalImg2
-   Backend:
-   - POST /api/exercise  { id: "<exerciseId>" }
-   - GET  /api/exercise_status?id=<exerciseId>   (optional)
+   - Run buttons:  button.run-btn[data-run="<exercise_id>"]
+   - Speak buttons: button.speak-btn[data-speak="<exercise_id>"]
+   - Status: span.status[data-status-for="<exercise_id>"]
+   Backend (server.py):
+   - POST /api/exercise        { exercise_id: "<exercise_id>" }
+   - POST /api/exercise_stop   {}
+   - GET  /api/exercise_status {}
+   - GET  /api/exercise_logs   {}
 */
 
 (() => {
   const API_RUN = "/api/exercise";
-  const API_STATUS = "/api/exercise_status"; // optional if you have it
+  const API_STOP = "/api/exercise_stop";
+  const API_STATUS = "/api/exercise_status";
+  const API_LOGS = "/api/exercise_logs";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -43,7 +45,6 @@
     const el = qs(`[data-status-for="${CSS.escape(exId)}"]`);
     if (el) el.textContent = text;
 
-    // optional: add state class on card
     const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
     if (card) {
       card.classList.remove("state-running", "state-error", "state-missing");
@@ -82,7 +83,6 @@
     const exId = card.dataset.exercise || "";
     modalExerciseId = exId;
 
-    // title/desc for modal (use your data-say-title/text if present)
     const title =
       card.dataset.sayTitle ||
       qs("h3", card)?.textContent?.trim() ||
@@ -95,7 +95,6 @@
     if (modalTitle) modalTitle.textContent = title;
     if (modalDesc) modalDesc.textContent = desc;
 
-    // images (two-image split)
     const img1 = card.dataset.image || "";
     const img2 = card.dataset.image2 || "";
     if (modalImg) {
@@ -109,7 +108,6 @@
       modalImg2.hidden = !img2;
     }
 
-    // meta chips (read from .ex-meta spans)
     if (modalMeta) {
       modalMeta.innerHTML = "";
       const spans = qsa(".ex-meta span", card);
@@ -121,7 +119,6 @@
       });
     }
 
-    // wire modal buttons
     if (modalRunBtn) modalRunBtn.onclick = () => runExercise(exId);
     if (modalSpeakBtn) modalSpeakBtn.onclick = () => {
       const sayTitle = card.dataset.sayTitle || title;
@@ -142,7 +139,6 @@
     modalExerciseId = null;
   }
 
-  // close modal events
   if (modalClose) modalClose.addEventListener("click", closeModal);
   if (modal) {
     modal.addEventListener("click", (e) => {
@@ -154,56 +150,72 @@
   });
 
   // ---------- run logic ----------
+  let currentRunningEx = null;
+
   async function runExercise(exId) {
     if (!exId) return;
 
+    // stop any previous exercise first (your backend only runs one at a time)
+    if (currentRunningEx && currentRunningEx !== exId) {
+      await postJSON(API_STOP, {});
+      setStatus(currentRunningEx, "Stopped");
+      currentRunningEx = null;
+    }
+
     setStatus(exId, "Running...", "state-running");
 
-    const { ok, data, text } = await postJSON(API_RUN, { id: exId });
+    // ✅ FIX: server expects { exercise_id: ... }
+    const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
 
     if (!ok) {
+      const errMsg = (data && data.error) ? data.error : (text || "Error");
       setStatus(exId, "Error", "state-error");
-      console.warn("Run failed:", exId, data || text);
+      console.warn("Run failed:", exId, errMsg);
       return;
     }
 
-    // If backend returns message/status, show it
-    const msg =
-      (data && (data.status || data.message)) ||
-      "Running";
-    setStatus(exId, msg, "state-running");
-
-    // If backend supports status endpoint, refresh after a short delay
-    // (optional; safe if endpoint missing)
-    refreshStatus(exId).catch(() => {});
+    currentRunningEx = exId;
+    setStatus(exId, "Running...", "state-running");
   }
 
-  async function refreshStatus(exId) {
-    // try status endpoint; if not present, silently ignore
-    const url = `${API_STATUS}?id=${encodeURIComponent(exId)}`;
-    const r = await getJSON(url);
+  async function refreshStatus() {
+    const r = await getJSON(API_STATUS);
     if (!r.ok) return;
 
-    const s = r.data || {};
-    // expected: { state: "idle|running|error|missing", text: "Checking" }
-    const txt = s.text || s.status || "Checking";
-    const state = (s.state === "running") ? "state-running"
-                : (s.state === "error") ? "state-error"
-                : (s.state === "missing") ? "state-missing"
-                : "";
-    setStatus(exId, txt, state);
+    const running = !!(r.data && r.data.running);
+
+    // if nothing is running but we had one, show logs once
+    if (!running && currentRunningEx) {
+      // pull logs (stdout/stderr) after it finishes
+      const logs = await getJSON(API_LOGS);
+      const out = logs?.data?.stdout || "";
+      const err = logs?.data?.stderr || "";
+
+      if (err) setStatus(currentRunningEx, "Finished (with errors)", "state-error");
+      else setStatus(currentRunningEx, "Finished");
+
+      // optional: print logs in console
+      if (out) console.log("[Exercise stdout]\n" + out);
+      if (err) console.warn("[Exercise stderr]\n" + err);
+
+      currentRunningEx = null;
+      return;
+    }
+
+    // show running state
+    if (running && currentRunningEx) {
+      setStatus(currentRunningEx, "Running...", "state-running");
+    }
   }
 
   // ---------- bind cards ----------
   qsa(".exercise-card").forEach((card) => {
-    // card click opens modal (but ignore clicks on buttons)
     card.addEventListener("click", (e) => {
       const target = e.target;
       if (target && (target.closest("button") || target.closest("a"))) return;
       openModalFromCard(card);
     });
 
-    // keyboard open
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
@@ -212,7 +224,7 @@
     });
   });
 
-  // ---------- bind run/speak buttons on cards ----------
+  // ---------- bind run/speak buttons ----------
   qsa("button.run-btn[data-run]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -232,19 +244,14 @@
     });
   });
 
-  // ---------- initial statuses ----------
-  // show "Checking" immediately, then try status endpoint
+  // ---------- initial ----------
   qsa(".exercise-card[data-exercise]").forEach((card) => {
     const exId = card.dataset.exercise;
-    setStatus(exId, "Checking");
-    refreshStatus(exId).catch(() => {});
+    setStatus(exId, "Ready");
   });
 
-  // optional: refresh statuses every 4s
-  // comment this out if you don't want polling
+  // poll status every 1s (safe)
   setInterval(() => {
-    qsa(".exercise-card[data-exercise]").forEach((card) => {
-      refreshStatus(card.dataset.exercise).catch(() => {});
-    });
-  }, 4000);
+    refreshStatus().catch(() => {});
+  }, 1000);
 })();

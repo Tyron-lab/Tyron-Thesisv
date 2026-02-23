@@ -770,11 +770,6 @@ def choices_page():
 def tools_page():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
-# optional alias if some HTML uses /front
-@app.route("/tools")
-def tools_page():
-    return send_from_directory(TEMPLATE_DIR, "tools.html")
-
 @app.route("/activityfolder")
 def activityfolder_page():
     return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
@@ -800,6 +795,7 @@ def activity4_page():
 def activity5_page():
     return send_from_directory(TEMPLATE_DIR, "activity5.html")
 
+
 # ===== STATIC (optional, but you used them) =====
 @app.route("/static/css/<path:filename>")
 def serve_css(filename):
@@ -812,6 +808,7 @@ def serve_js(filename):
 @app.route("/static/images/<path:filename>")
 def serve_images(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "images"), filename)
+
 
 # ===== API =====
 @app.route("/api/sensors")
@@ -873,6 +870,7 @@ def toggle_sensor():
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
+
 # ────────────────────────────────────────────────
 #   TOOL ENDPOINTS
 # ────────────────────────────────────────────────
@@ -892,6 +890,7 @@ def api_led():
         return jsonify({"ok": False, "error": sensor_data["LED_TOOL"]["error"] or "LED failed"}), 500
 
     return jsonify({"ok": True, "all": sensor_data["LED_TOOL"]})
+
 
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
@@ -916,6 +915,7 @@ def api_buzzer():
 
     return jsonify({"ok": True, "on": target, "active_low": BUZZER_ACTIVE_LOW})
 
+
 @app.route("/api/lcd", methods=["POST"])
 def api_lcd():
     data = request.json or {}
@@ -933,6 +933,7 @@ def api_lcd():
 
     return jsonify({"ok": True, "line1": line1, "line2": line2})
 
+
 # ────────────────────────────────────────────────
 #   EXERCISE RUNNER ENDPOINTS
 # ────────────────────────────────────────────────
@@ -940,7 +941,6 @@ def api_lcd():
 def api_exercise_run():
     """
     Body: { "exercise_id": "a1-ex1" }
-    Runs: BASE_DIR/Activity1/Exercise1.py
     """
     global exercise_proc
     data = request.json or {}
@@ -970,10 +970,12 @@ def api_exercise_run():
             exercise_proc = None
             return jsonify({"ok": False, "error": str(e)}), 500
 
+
 @app.route("/api/exercise_stop", methods=["POST"])
 def api_exercise_stop():
     ok = stop_current_exercise()
     return jsonify({"ok": bool(ok), "stopped": bool(ok)})
+
 
 @app.route("/api/exercise_status")
 def api_exercise_status():
@@ -981,11 +983,11 @@ def api_exercise_status():
         running = (exercise_proc is not None and exercise_proc.poll() is None)
         return jsonify({"ok": True, "running": bool(running)})
 
+
 @app.route("/api/exercise_logs")
 def api_exercise_logs():
     """
     Returns stdout/stderr when process ends.
-    (If you want LIVE streaming, we can add SSE later.)
     """
     global exercise_proc
     with exercise_lock:
