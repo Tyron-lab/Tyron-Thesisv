@@ -14,13 +14,13 @@ try:
     import board
     import digitalio
     SENSORS_AVAILABLE["board"] = True
-except ImportError:
+except Exception:
     SENSORS_AVAILABLE["board"] = False
 
 try:
     import adafruit_dht
     SENSORS_AVAILABLE["DHT11"] = True
-except ImportError:
+except Exception:
     SENSORS_AVAILABLE["DHT11"] = False
 
 # BMP280 disabled due to Python 3.13 compatibility issue
@@ -29,20 +29,20 @@ SENSORS_AVAILABLE["BMP280"] = False
 try:
     import adafruit_mpu6050
     SENSORS_AVAILABLE["MPU6050"] = True
-except ImportError:
+except Exception:
     SENSORS_AVAILABLE["MPU6050"] = False
 
 try:
     import pwmio
     SENSORS_AVAILABLE["servomotor"] = True
-except ImportError:
+except Exception:
     SENSORS_AVAILABLE["servomotor"] = False
 
 # TCA9548A I2C multiplexer support
 try:
     import adafruit_tca9548a
     SENSORS_AVAILABLE["tca9548a"] = True
-except ImportError:
+except Exception:
     SENSORS_AVAILABLE["tca9548a"] = False
 
 print("Available libraries:", SENSORS_AVAILABLE)
@@ -106,7 +106,8 @@ FREQUENCY = 50
 ultra_trig = None
 ultra_echo = None
 
-log = logging.getLogger('werkzeug')
+# Silence werkzeug request logs
+log = logging.getLogger("werkzeug")
 log.setLevel(logging.ERROR)
 
 # ────────────────────────────────────────────────
@@ -114,25 +115,31 @@ log.setLevel(logging.ERROR)
 # ────────────────────────────────────────────────
 
 def init_mux():
+    """Init mux (safe to do on boot)."""
     global tca, USE_MUX
     if not USE_MUX:
         print("I2C mux not available or disabled")
-        return
+        return False
 
     try:
         i2c = board.I2C()
         tca = adafruit_tca9548a.TCA9548A(i2c, address=MUX_ADDRESS)
         print(f"TCA9548A initialized at address 0x{MUX_ADDRESS:02X}")
+        return True
     except Exception as e:
         print(f"TCA9548A initialization failed: {e}")
         tca = None
         USE_MUX = False
+        return False
 
 def init_ultrasonic():
     """Init ultrasonic ONCE (avoid re-creating GPIO objects in loop)."""
     global ultra_trig, ultra_echo
     if not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if ultra_trig is not None and ultra_echo is not None:
+        return True
 
     try:
         ultra_trig = digitalio.DigitalInOut(board.D23)
@@ -141,10 +148,12 @@ def init_ultrasonic():
         ultra_echo.direction = digitalio.Direction.INPUT
         ultra_trig.value = False
         print("Ultrasonic initialized (TRIG=D23, ECHO=D24)")
+        return True
     except Exception as e:
         print(f"Ultrasonic init failed: {e}")
         ultra_trig = None
         ultra_echo = None
+        return False
 
 def measure_distance(TRIG, ECHO):
     try:
@@ -174,71 +183,96 @@ def init_pir():
     """PIR input with pull-down so it doesn't float."""
     global pir_pin
     if not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if pir_pin is not None:
+        return True
 
     try:
         pir_pin = digitalio.DigitalInOut(board.D18)
         pir_pin.direction = digitalio.Direction.INPUT
 
-        # Prevent floating input (common reason PIR "does nothing")
+        # Prevent floating input
         try:
             pir_pin.pull = digitalio.Pull.DOWN
         except Exception as e:
             print("PIR pull set failed:", e)
 
         print("PIR initialized (D18)")
+        return True
     except Exception as e:
         print(f"PIR init failed: {e}")
         pir_pin = None
+        return False
 
 def init_dht():
     global dht_device
     if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if dht_device is not None:
+        return True
+
     try:
         dht_device = adafruit_dht.DHT11(board.D4)
         print("DHT11 initialized (D4)")
+        return True
     except Exception as e:
         print(f"DHT11 init failed: {e}")
         dht_device = None
+        return False
 
 def init_mpu():
+    """IMPORTANT: no try_lock() here; it can deadlock/hang."""
     global mpu
     if not SENSORS_AVAILABLE.get("MPU6050") or not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if mpu is not None:
+        return True
+
     try:
-        if USE_MUX and tca is not None:
-            channel = tca[MPU_MUX_CH]
-            channel.try_lock()
-            try:
-                mpu = adafruit_mpu6050.MPU6050(channel)
-                print(f"MPU6050 initialized on TCA9548A channel {MPU_MUX_CH}")
-            finally:
-                channel.unlock()
+        if USE_MUX:
+            if tca is None:
+                if not init_mux():
+                    return False
+            mpu = adafruit_mpu6050.MPU6050(tca[MPU_MUX_CH])
+            print(f"MPU6050 initialized on TCA9548A channel {MPU_MUX_CH}")
         else:
             i2c = board.I2C()
             mpu = adafruit_mpu6050.MPU6050(i2c)
             print("MPU6050 initialized (direct I2C)")
+        return True
     except Exception as e:
         print(f"MPU6050 init failed: {e}")
         mpu = None
+        return False
 
 def init_mq():
     global mq_pin
     if not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if mq_pin is not None:
+        return True
+
     try:
         mq_pin = digitalio.DigitalInOut(board.D17)
         mq_pin.direction = digitalio.Direction.INPUT
         print("MHMQ initialized (D17)")
+        return True
     except Exception as e:
         print(f"MHMQ init failed: {e}")
         mq_pin = None
+        return False
 
 def init_relay():
     global relay_pins
     if not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+
+    if relay_pins:
+        return True
 
     # Active-low relay (True = OFF)
     RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]
@@ -256,24 +290,39 @@ def init_relay():
             "last_update": datetime.now().isoformat()
         })
         print("Relay initialized (4ch)")
+        return True
     except Exception as e:
         print(f"Relay init failed: {e}")
         relay_pins = {}
+        return False
 
 def init_servomotor():
+    """Safe 'availability' check; does not keep PWM running."""
     global servo_pwm
     if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board"):
-        return
+        return False
+    if SERVO_PIN is None:
+        return False
+
+    # Do a one-time quick init/off test (optional)
     try:
-        servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
+        if servo_pwm is None:
+            servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
         set_servo_angle(0)
         servo_pwm.duty_cycle = 0
         servo_pwm.deinit()
         servo_pwm = None
         print("Servo initialized OFF at 0° (PWM stopped)")
+        return True
     except Exception as e:
         print(f"Servo init failed: {e}")
+        try:
+            if servo_pwm is not None:
+                servo_pwm.deinit()
+        except Exception:
+            pass
         servo_pwm = None
+        return False
 
 def set_servo_angle(angle):
     global servo_pwm
@@ -282,7 +331,7 @@ def set_servo_angle(angle):
     if SERVO_PIN is None:
         return False
 
-    if not servo_pwm:
+    if servo_pwm is None:
         try:
             servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
             print("PWM restarted for servo")
@@ -291,8 +340,8 @@ def set_servo_angle(angle):
             return False
 
     angle = max(0, min(180, angle))
-    pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180)
-    duty = int((pulse_us / 20000) * 65535)
+    pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
+    duty = int((pulse_us / 20000.0) * 65535.0)
     servo_pwm.duty_cycle = duty
 
     sensor_data["servomotor"]["angle"] = angle
@@ -300,18 +349,31 @@ def set_servo_angle(angle):
     print(f"Servo moved to {angle}°")
     return True
 
+def ensure_sensor_init(sensor: str) -> bool:
+    """Lazy init on demand so Flask never hangs at boot."""
+    if sensor == "PIR":
+        return init_pir()
+    if sensor == "DHT11":
+        return init_dht()
+    if sensor == "MPU6050":
+        return init_mpu()
+    if sensor == "MHMQ":
+        return init_mq()
+    if sensor == "ULTRASONIC":
+        return init_ultrasonic()
+    if sensor == "Relay":
+        return init_relay()
+    if sensor == "servomotor":
+        # just confirm it's available; real PWM starts in set_servo_angle()
+        return SENSORS_AVAILABLE.get("servomotor", False) and SENSORS_AVAILABLE.get("board", False) and SERVO_PIN is not None
+    return True
+
 # ────────────────────────────────────────────────
-#   INITIALIZE HARDWARE (MUX FIRST!)
+#   INITIALIZE HARDWARE (BOOT SAFE)
 # ────────────────────────────────────────────────
 if SENSORS_AVAILABLE.get("board"):
+    # Only init mux at boot to avoid any sensor deadlocks blocking Flask startup
     init_mux()
-    init_pir()
-    init_dht()
-    init_mpu()
-    init_mq()
-    init_relay()
-    init_servomotor()
-    init_ultrasonic()  # <-- init ONCE
 
 # ────────────────────────────────────────────────
 #   BACKGROUND READERS
@@ -336,7 +398,6 @@ def sensor_reader(sensor_name):
                             "last_update": now
                         })
                 except Exception as e:
-                    # DHT often throws transient read errors; don't crash the thread
                     print("DHT read error:", e)
 
             elif sensor_name == "MPU6050" and mpu:
@@ -353,11 +414,10 @@ def sensor_reader(sensor_name):
             elif sensor_name == "PIR" and pir_pin:
                 state = bool(pir_pin.value)
 
-                # Count rising edges (motion starts)
                 if state and not last_pir_state:
                     motion_count += 1
 
-                # ALWAYS update each loop so UI shows it is alive
+                # Always update so UI sees it's alive
                 sensor_data["PIR"].update({
                     "motion": state,
                     "count": int(motion_count),
@@ -371,7 +431,7 @@ def sensor_reader(sensor_name):
                 sensor_data["ULTRASONIC"].update({"distance_cm": dist, "last_update": now})
 
             elif sensor_name == "MHMQ" and mq_pin:
-                detected = not mq_pin.value  # common: active-low digital output
+                detected = not mq_pin.value  # common active-low digital output
                 sensor_data["MHMQ"].update({"gas_detected": bool(detected), "last_update": now})
 
         except Exception as e:
@@ -439,45 +499,59 @@ def toggle_sensor():
     if sensor not in sensor_state:
         return jsonify({"error": "Unknown sensor"}), 400
 
+    # flip state
     sensor_state[sensor] = not sensor_state[sensor]
     active = sensor_state[sensor]
 
     # Relay: toggle all channels together
     if sensor == "Relay":
+        if active:
+            if not ensure_sensor_init("Relay"):
+                sensor_state[sensor] = False
+                return jsonify({"sensor": sensor, "active": False, "error": "Relay init failed"}), 500
         for ch in range(1, 5):
             set_relay_channel(ch, active)
         print(f"Relay {'all ON' if active else 'all OFF'}")
+        return jsonify({"sensor": sensor, "active": active})
 
     # Servo: on -> 180, off -> 0 then stop PWM
-    elif sensor == "servomotor":
+    if sensor == "servomotor":
         global servo_pwm
         if active:
+            if not ensure_sensor_init("servomotor"):
+                sensor_state[sensor] = False
+                return jsonify({"sensor": sensor, "active": False, "error": "Servo not available"}), 500
             set_servo_angle(180)
             print("Servo ON → 180° (holding)")
         else:
             set_servo_angle(0)
             time.sleep(0.8)
             if servo_pwm is not None:
-                servo_pwm.duty_cycle = 0
-                servo_pwm.deinit()
+                try:
+                    servo_pwm.duty_cycle = 0
+                    servo_pwm.deinit()
+                except Exception:
+                    pass
                 servo_pwm = None
                 print("Servo OFF → 0° and PWM STOPPED")
+        return jsonify({"sensor": sensor, "active": active})
 
     # All other sensors: start/stop background thread
-    else:
-        if active:
-            # ✅ IMPORTANT FIX: Always set flag TRUE when turning ON,
-            # even if old thread is still alive for a moment.
-            running_flags[sensor] = True
+    if active:
+        # Lazy init so boot never hangs
+        if not ensure_sensor_init(sensor):
+            sensor_state[sensor] = False
+            return jsonify({"sensor": sensor, "active": False, "error": f"{sensor} init failed"}), 500
 
-            # Start a new thread only if none running
-            if sensor not in threads or not threads[sensor].is_alive():
-                threads[sensor] = threading.Thread(
-                    target=sensor_reader, args=(sensor,), daemon=True
-                )
-                threads[sensor].start()
-        else:
-            running_flags[sensor] = False
+        # IMPORTANT: Always set flag TRUE when turning ON
+        running_flags[sensor] = True
+
+        # Start a new thread only if none running
+        if sensor not in threads or not threads[sensor].is_alive():
+            threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
+            threads[sensor].start()
+    else:
+        running_flags[sensor] = False
 
     return jsonify({"sensor": sensor, "active": active})
 
@@ -490,6 +564,9 @@ def control_relay():
     if channel not in [1, 2, 3, 4] or action not in ["on", "off", "toggle"]:
         return jsonify({"error": "Invalid"}), 400
 
+    if not ensure_sensor_init("Relay"):
+        return jsonify({"error": "Relay init failed"}), 500
+
     current = bool(sensor_data["Relay"].get(f"ch{channel}", False))
     target = (not current) if action == "toggle" else (action == "on")
     success = set_relay_channel(channel, target)
@@ -500,8 +577,11 @@ def control_servomotor():
     data = request.json or {}
     angle = data.get("angle")
 
-    if angle is None or not (0 <= angle <= 180):
+    if angle is None or not (0 <= int(angle) <= 180):
         return jsonify({"error": "Angle must be 0–180"}), 400
+
+    if not ensure_sensor_init("servomotor"):
+        return jsonify({"error": "Servo not available"}), 500
 
     success = set_servo_angle(int(angle))
     return jsonify({"success": success, "angle": int(angle)})
@@ -526,4 +606,5 @@ if __name__ == "__main__":
     print("Tools.css expected at:", os.path.join(BASE_DIR, "static/css", "tools.css"))
     print("=" * 80 + "\n")
 
+    # If you still see "flask won't run", it's usually port 5000 already used.
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
