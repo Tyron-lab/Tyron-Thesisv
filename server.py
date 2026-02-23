@@ -98,6 +98,18 @@ EXERCISE_MAP = {
     "a1-ex4": os.path.join(BASE_DIR, "activity1", "Exercise4.py"),
     "a1-ex5": os.path.join(BASE_DIR, "activity1", "Exercise5.py"),
 
+    "a2-ex6":  os.path.join(BASE_DIR, "Activity2", "Exercise6.py"),
+    "a2-ex7":  os.path.join(BASE_DIR, "Activity2", "Exercise7.py"),
+    "a2-ex8":  os.path.join(BASE_DIR, "Activity2", "Exercise8.py"),
+    "a2-ex9":  os.path.join(BASE_DIR, "Activity2", "Exercise9.py"),
+    "a2-ex10": os.path.join(BASE_DIR, "Activity2", "Exercise10.py"),
+
+    "a3-ex11": os.path.join(BASE_DIR, "Activity3", "Exercise11.py"),
+    "a3-ex12": os.path.join(BASE_DIR, "Activity3", "Exercise12.py"),
+    "a3-ex13": os.path.join(BASE_DIR, "Activity3", "Exercise13.py"),
+    "a3-ex14": os.path.join(BASE_DIR, "Activity3", "Exercise14.py"),
+    "a3-ex15": os.path.join(BASE_DIR, "Activity3", "Exercise15.py"),
+
     # Add more later like:
     # "a2-ex1": os.path.join(BASE_DIR, "Activity2", "Exercise1.py"),
 }
