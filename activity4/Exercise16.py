@@ -6,7 +6,7 @@ import time
 import board
 import digitalio
 
-POWER_LED_PIN = board.D27  # uses your GREEN LED from Exercise 1
+POWER_LED_PIN = board.D5  # uses your GREEN LED from Exercise 1
 
 def make_out(pin, initial=False):
     io = digitalio.DigitalInOut(pin)
