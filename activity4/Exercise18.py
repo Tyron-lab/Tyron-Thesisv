@@ -1,4 +1,6 @@
 # Exercise18.py (board / digitalio) - Unsafe Alert using RELAY + LED + LCD countdown
+# LCD is behind TCA9548A I2C mux (channel 0)
+
 import time
 
 # ===== GPIO (board/digitalio) =====
@@ -12,6 +14,15 @@ except Exception as e:
     GPIO_OK = False
     _import_err = e
 
+# ===== I2C MUX (TCA9548A) =====
+try:
+    from smbus2 import SMBus
+    SMBUS_OK = True
+except Exception as e:
+    SMBus = None
+    SMBUS_OK = False
+    _smbus_err = e
+
 # ===== OPTIONAL LCD (RPLCD) =====
 LCD_OK = False
 _lcd = None
@@ -23,15 +34,17 @@ except Exception:
     LCD_OK = False
 
 # ===== EDIT PINS =====
-RELAY_PIN = board.D27       # change to your relay (or use relay1)
-ALERT_LED_PIN = board.D13   # change to your alert LED (red/orange)
+RELAY_PIN = board.D27       # relay channel you want to "click"
+ALERT_LED_PIN = board.D13   # alert LED (red/orange)
 
 RELAY_ACTIVE_HIGH = True    # True=HIGH turns relay ON; False=LOW turns relay ON
 LED_ACTIVE_HIGH = True
 
-# LCD settings (only if you have RPLCD)
-I2C_PORT = 0
-LCD_ADDR = 0x27            # common: 0x27 or 0x3F
+# ===== I2C SETTINGS =====
+I2C_BUS = 1
+MUX_ADDR = 0x70             # TCA9548A default address
+LCD_CH = 0                  # <<< YOU SAID CHANNEL 0
+LCD_ADDR = 0x27             # LCD I2C address (0x27 or 0x3F commonly)
 LCD_COLS = 16
 LCD_ROWS = 2
 
@@ -41,7 +54,7 @@ COUNTDOWN_SEC = 10.0
 # Speed curve: start slow -> end fast
 OFF_START = 0.35   # seconds between clicks at start
 OFF_END   = 0.06   # seconds between clicks near the end
-ON_PULSE  = 0.03   # relay ON time per click (short "tick")
+ON_PULSE  = 0.03   # relay ON time per tick/click
 # =====================
 
 _relay = None
@@ -59,13 +72,27 @@ def set_out(dev, on: bool, active_high: bool = True):
     dev.value = (on if active_high else (not on))
 
 
+def mux_select(ch: int):
+    """Select TCA9548A channel 0..7."""
+    if not SMBUS_OK:
+        return
+    if ch is None:
+        return
+    if not (0 <= int(ch) <= 7):
+        raise ValueError("MUX channel must be 0..7")
+    with SMBus(I2C_BUS) as bus:
+        bus.write_byte(MUX_ADDR, 1 << int(ch))
+
+
 def lcd_init():
-    """Init LCD if available. Safe no-op if not installed."""
+    """Init LCD if available. Uses mux channel selection."""
     global _lcd
     if not LCD_OK or _lcd is not None:
         return _lcd
+
     try:
-        _lcd = CharLCD("PCF8574", LCD_ADDR, port=I2C_PORT, cols=LCD_COLS, rows=LCD_ROWS)
+        mux_select(LCD_CH)
+        _lcd = CharLCD("PCF8574", LCD_ADDR, port=I2C_BUS, cols=LCD_COLS, rows=LCD_ROWS)
         _lcd.clear()
     except Exception:
         _lcd = None
@@ -73,13 +100,14 @@ def lcd_init():
 
 
 def lcd_write(line1: str, line2: str = ""):
-    """Write to LCD if available; otherwise print."""
+    """Write to LCD if available; otherwise print. Always selects mux channel first."""
     line1 = (line1 or "")[:16].ljust(16)
     line2 = (line2 or "")[:16].ljust(16)
 
     lcd = lcd_init()
     if lcd:
         try:
+            mux_select(LCD_CH)
             lcd.clear()
             lcd.cursor_pos = (0, 0)
             lcd.write_string(line1)
@@ -94,16 +122,11 @@ def lcd_write(line1: str, line2: str = ""):
 
 
 def relay_click(off_sec: float):
-    """
-    One 'click': relay pulse + LED flash.
-    off_sec controls how long to wait after the pulse.
-    """
-    # pulse ON
+    """One 'click': relay pulse + LED flash."""
     set_out(_relay, True, RELAY_ACTIVE_HIGH)
     set_out(_led, True, LED_ACTIVE_HIGH)
     time.sleep(max(0.01, float(ON_PULSE)))
 
-    # back OFF
     set_out(_relay, False, RELAY_ACTIVE_HIGH)
     set_out(_led, False, LED_ACTIVE_HIGH)
     time.sleep(max(0.01, float(off_sec)))
@@ -111,9 +134,9 @@ def relay_click(off_sec: float):
 
 def run(unsafe: bool = True):
     """
-    Exercise 18: Sound Alert (but using RELAY clicking + LED + LCD)
+    Exercise 18: Unsafe Alert (RELAY countdown + LED + LCD)
     Input: unsafe condition (bool)
-    Output: relay 'click' pattern gets faster for 10 seconds + LED flash + LCD countdown
+    Output: relay click pattern gets faster for 10 seconds + LED flash + LCD countdown
     """
     global _relay, _led
 
@@ -136,7 +159,9 @@ def run(unsafe: bool = True):
 
     # UNSAFE countdown
     t_end = time.time() + float(COUNTDOWN_SEC)
-    lcd_write("UNSAFE!", "T-minus 10s")
+    lcd_write("UNSAFE ALERT!", "T-minus: 10s")
+
+    last_shown = None
 
     while True:
         now = time.time()
@@ -144,18 +169,14 @@ def run(unsafe: bool = True):
         if remain <= 0:
             break
 
-        # progress 0..1 (0=start, 1=end)
         prog = 1.0 - (remain / float(COUNTDOWN_SEC))
-        # interpolate off time slow -> fast
         off_sec = OFF_START + (OFF_END - OFF_START) * prog
 
-        # update LCD once per second (stable display)
-        remain_int = int(remain + 0.999)  # ceil-ish
-        lcd_write("UNSAFE ALERT!", f"T-minus: {remain_int:02d}s")
+        remain_int = int(remain + 0.999)
+        if remain_int != last_shown:
+            lcd_write("UNSAFE ALERT!", f"T-minus: {remain_int:02d}s")
+            last_shown = remain_int
 
-        # do a few clicks within this second using current off_sec
-        # (makes it feel like "faster and faster")
-        # keep it responsive without sleeping a full second
         relay_click(off_sec)
 
     # end signal: 3 fast clicks
@@ -163,10 +184,8 @@ def run(unsafe: bool = True):
     for _ in range(3):
         relay_click(0.05)
 
-    # keep outputs OFF after
     set_out(_relay, False, RELAY_ACTIVE_HIGH)
     set_out(_led, False, LED_ACTIVE_HIGH)
-
     return {"ok": True, "unsafe": True, "message": "Unsafe countdown relay pattern completed"}
 
 
@@ -199,6 +218,7 @@ def stop():
         pass
     try:
         if _lcd:
+            mux_select(LCD_CH)
             _lcd.clear()
             _lcd.close(clear=True)
             _lcd = None
@@ -209,7 +229,6 @@ def stop():
 
 
 if __name__ == "__main__":
-    # demo
     run(True)
     time.sleep(1)
     stop()
