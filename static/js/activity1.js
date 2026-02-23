@@ -1,7 +1,8 @@
 /* activity1.js
    Frontend expects:
    - Cards: .exercise-card (tabindex=0, role=button)
-   - Run buttons:  button.run-btn[data-run="<exercise_id>"]
+   - Run buttons:   button.run-btn[data-run="<exercise_id>"]
+   - Stop buttons:  button.stop-btn[data-stop="<exercise_id>"]
    - Speak buttons: button.speak-btn[data-speak="<exercise_id>"]
    - Status: span.status[data-status-for="<exercise_id>"]
    Backend (server.py):
@@ -74,6 +75,7 @@
   const modalImg = qs("#modalImg");
   const modalImg2 = qs("#modalImg2");
   const modalRunBtn = qs("#modalRunBtn");
+  const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
 
   let modalExerciseId = null;
@@ -120,6 +122,8 @@
     }
 
     if (modalRunBtn) modalRunBtn.onclick = () => runExercise(exId);
+    if (modalStopBtn) modalStopBtn.onclick = () => stopExercise(exId);
+
     if (modalSpeakBtn) modalSpeakBtn.onclick = () => {
       const sayTitle = card.dataset.sayTitle || title;
       const sayText = card.dataset.sayText || desc;
@@ -149,13 +153,13 @@
     if (e.key === "Escape") closeModal();
   });
 
-  // ---------- run logic ----------
+  // ---------- run/stop logic ----------
   let currentRunningEx = null;
 
   async function runExercise(exId) {
     if (!exId) return;
 
-    // stop any previous exercise first (your backend only runs one at a time)
+    // stop any previous exercise first (backend runs one at a time)
     if (currentRunningEx && currentRunningEx !== exId) {
       await postJSON(API_STOP, {});
       setStatus(currentRunningEx, "Stopped");
@@ -164,7 +168,7 @@
 
     setStatus(exId, "Running...", "state-running");
 
-    // ✅ FIX: server expects { exercise_id: ... }
+    // server expects { exercise_id: ... }
     const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
 
     if (!ok) {
@@ -178,6 +182,35 @@
     setStatus(exId, "Running...", "state-running");
   }
 
+  async function stopExercise(requestedExId = null) {
+    // If user presses stop for a specific card, only stop if it matches the running one
+    if (requestedExId && currentRunningEx && requestedExId !== currentRunningEx) {
+      // Nothing to stop for that card; keep UI clear & simple
+      setStatus(requestedExId, "Ready");
+      return;
+    }
+
+    // If nothing running, just normalize UI
+    if (!currentRunningEx) {
+      if (requestedExId) setStatus(requestedExId, "Ready");
+      return;
+    }
+
+    const stoppingId = currentRunningEx;
+    setStatus(stoppingId, "Stopping...");
+
+    const { ok, data, text } = await postJSON(API_STOP, {});
+    if (!ok) {
+      const errMsg = (data && data.error) ? data.error : (text || "Stop error");
+      setStatus(stoppingId, "Stop failed", "state-error");
+      console.warn("Stop failed:", errMsg);
+      return;
+    }
+
+    setStatus(stoppingId, "Stopped");
+    currentRunningEx = null;
+  }
+
   async function refreshStatus() {
     const r = await getJSON(API_STATUS);
     if (!r.ok) return;
@@ -186,15 +219,15 @@
 
     // if nothing is running but we had one, show logs once
     if (!running && currentRunningEx) {
-      // pull logs (stdout/stderr) after it finishes
+      const finishedId = currentRunningEx;
+
       const logs = await getJSON(API_LOGS);
       const out = logs?.data?.stdout || "";
       const err = logs?.data?.stderr || "";
 
-      if (err) setStatus(currentRunningEx, "Finished (with errors)", "state-error");
-      else setStatus(currentRunningEx, "Finished");
+      if (err) setStatus(finishedId, "Finished (with errors)", "state-error");
+      else setStatus(finishedId, "Finished");
 
-      // optional: print logs in console
       if (out) console.log("[Exercise stdout]\n" + out);
       if (err) console.warn("[Exercise stderr]\n" + err);
 
@@ -224,11 +257,18 @@
     });
   });
 
-  // ---------- bind run/speak buttons ----------
+  // ---------- bind run/stop/speak buttons ----------
   qsa("button.run-btn[data-run]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       runExercise(btn.dataset.run);
+    });
+  });
+
+  qsa("button.stop-btn[data-stop]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      stopExercise(btn.dataset.stop);
     });
   });
 
@@ -250,7 +290,7 @@
     setStatus(exId, "Ready");
   });
 
-  // poll status every 1s (safe)
+  // poll status every 1s
   setInterval(() => {
     refreshStatus().catch(() => {});
   }, 1000);
