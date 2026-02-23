@@ -98,20 +98,29 @@ EXERCISE_MAP = {
     "a1-ex4": os.path.join(BASE_DIR, "activity1", "Exercise4.py"),
     "a1-ex5": os.path.join(BASE_DIR, "activity1", "Exercise5.py"),
 
-    "a2-ex6":  os.path.join(BASE_DIR, "Activity2", "Exercise6.py"),
-    "a2-ex7":  os.path.join(BASE_DIR, "Activity2", "Exercise7.py"),
-    "a2-ex8":  os.path.join(BASE_DIR, "Activity2", "Exercise8.py"),
-    "a2-ex9":  os.path.join(BASE_DIR, "Activity2", "Exercise9.py"),
-    "a2-ex10": os.path.join(BASE_DIR, "Activity2", "Exercise10.py"),
+    "a2-ex6":  os.path.join(BASE_DIR, "activity2", "Exercise6.py"),
+    "a2-ex7":  os.path.join(BASE_DIR, "activity2", "Exercise7.py"),
+    "a2-ex8":  os.path.join(BASE_DIR, "activity2", "Exercise8.py"),
+    "a2-ex9":  os.path.join(BASE_DIR, "activity2", "Exercise9.py"),
+    "a2-ex10": os.path.join(BASE_DIR, "activity2", "Exercise10.py"),
 
-    "a3-ex11": os.path.join(BASE_DIR, "Activity3", "Exercise11.py"),
-    "a3-ex12": os.path.join(BASE_DIR, "Activity3", "Exercise12.py"),
-    "a3-ex13": os.path.join(BASE_DIR, "Activity3", "Exercise13.py"),
-    "a3-ex14": os.path.join(BASE_DIR, "Activity3", "Exercise14.py"),
-    "a3-ex15": os.path.join(BASE_DIR, "Activity3", "Exercise15.py"),
+    "a3-ex11": os.path.join(BASE_DIR, "activity3", "Exercise11.py"),
+    "a3-ex12": os.path.join(BASE_DIR, "activity3", "Exercise12.py"),
+    "a3-ex13": os.path.join(BASE_DIR, "activity3", "Exercise13.py"),
+    "a3-ex14": os.path.join(BASE_DIR, "activity3", "Exercise14.py"),
+    "a3-ex15": os.path.join(BASE_DIR, "activity3", "Exercise15.py"),
 
-    # Add more later like:
-    # "a2-ex1": os.path.join(BASE_DIR, "Activity2", "Exercise1.py"),
+    "a4-ex16": os.path.join(BASE_DIR, "activity4", "Exercise16.py"),
+    "a4-ex17": os.path.join(BASE_DIR, "activity4", "Exercise17.py"),
+    "a4-ex18": os.path.join(BASE_DIR, "activity4", "Exercise18.py"),
+    "a4-ex19": os.path.join(BASE_DIR, "activity4", "Exercise19.py"),
+    "a4-ex20": os.path.join(BASE_DIR, "activity4", "Exercise20.py"),
+
+    "a5-ex21": os.path.join(BASE_DIR, "activity5", "Exercise21.py"),
+    "a5-ex22": os.path.join(BASE_DIR, "activity5", "Exercise22.py"),
+    "a5-ex23": os.path.join(BASE_DIR, "activity5", "Exercise23.py"),
+    "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
+    "a5-ex25": os.path.join(BASE_DIR, "activity5", "Exercise25.py"),
 }
 
 exercise_proc = None
