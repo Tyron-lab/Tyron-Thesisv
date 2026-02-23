@@ -23,10 +23,6 @@ except ImportError:
     SENSORS_AVAILABLE["DHT11"] = False
 
 # BMP280 disabled due to Python 3.13 compatibility issue
-# try:
-#     import adafruit_bmp280
-#     SENSORS_AVAILABLE["BMP280"] = True
-# except ImportError:
 SENSORS_AVAILABLE["BMP280"] = False
 
 try:
@@ -41,7 +37,7 @@ try:
 except ImportError:
     SENSORS_AVAILABLE["servomotor"] = False
 
-# TCA9548A I2C multiplexer
+# TCA9548A I2C multiplexer support
 try:
     import adafruit_tca9548a
     SENSORS_AVAILABLE["tca9548a"] = True
@@ -54,14 +50,12 @@ print("Available libraries:", SENSORS_AVAILABLE)
 #   I2C MUX (TCA9548A) CONFIGURATION
 # ────────────────────────────────────────────────
 USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
-MUX_ADDRESS = 0x70          # default TCA9548A address (change if yours is different)
-MUX_BUS = 1                 # usually I2C bus 1 on Raspberry Pi
-
+MUX_ADDRESS = 0x70          # default TCA9548A address
 MPU_MUX_CH = 1              # MPU6050 on channel 1
 BMP_MUX_CH = 2              # BMP280 on channel 2 (when enabled)
 LCD_MUX_CH = 0              # LCD extender on channel 0
 
-tca = None                  # global mux object
+tca = None
 
 print(f"I2C Multiplexer (TCA9548A): {'ENABLED' if USE_MUX else 'DISABLED'}")
 
@@ -113,13 +107,16 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 # ────────────────────────────────────────────────
-#   HARDWARE INITIALIZATION
+#   HARDWARE INITIALIZATION FUNCTIONS
 # ────────────────────────────────────────────────
 
 def init_mux():
-    global tca
+    global tca, USE_MUX     # Declare globals FIRST
+
     if not USE_MUX:
+        print("I2C mux not available or disabled")
         return
+
     try:
         i2c = board.I2C()
         tca = adafruit_tca9548a.TCA9548A(i2c, address=MUX_ADDRESS)
@@ -127,7 +124,6 @@ def init_mux():
     except Exception as e:
         print(f"TCA9548A initialization failed: {e}")
         tca = None
-        global USE_MUX
         USE_MUX = False
 
 def init_ultrasonic():
@@ -187,30 +183,9 @@ def init_mpu():
         else:
             i2c = board.I2C()
             mpu = adafruit_mpu6050.MPU6050(i2c)
-            print("MPU6050 initialized (no mux)")
+            print("MPU6050 initialized (direct I2C)")
     except Exception as e:
         print(f"MPU6050 init failed: {e}")
-
-# BMP280 init – commented out until Python 3.13 issue is resolved
-# def init_bmp():
-#     global bmp280
-#     if not SENSORS_AVAILABLE.get("BMP280") or not SENSORS_AVAILABLE.get("board"): return
-#     try:
-#         if USE_MUX and tca is not None:
-#             channel = tca[BMP_MUX_CH]
-#             channel.try_lock()
-#             try:
-#                 bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(channel, address=0x76)
-#                 bmp280.sea_level_pressure = 1013.25
-#                 print(f"BMP280 initialized on TCA9548A channel {BMP_MUX_CH}")
-#             finally:
-#                 channel.unlock()
-#         else:
-#             i2c = board.I2C()
-#             bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
-#             bmp280.sea_level_pressure = 1013.25
-#     except Exception as e:
-#         print(f"BMP280 init failed: {e}")
 
 def init_mq():
     global mq_pin
@@ -268,13 +243,12 @@ def set_servo_angle(angle):
     return True
 
 # ────────────────────────────────────────────────
-#   INITIALIZE HARDWARE
+#   INITIALIZE HARDWARE (MUX FIRST!)
 # ────────────────────────────────────────────────
 if SENSORS_AVAILABLE.get("board"):
-    init_mux()           # Must come first!
+    init_mux()           # Must be first
     init_pir()
     init_dht()
-    # init_bmp()         # commented out
     init_mpu()
     init_mq()
     init_relay()
@@ -338,7 +312,7 @@ def sensor_reader(sensor_name):
         time.sleep(1.2)
 
 # ────────────────────────────────────────────────
-#   CONTROL FUNCTIONS & ROUTES (unchanged from your last version)
+#   CONTROL FUNCTIONS
 # ────────────────────────────────────────────────
 
 def set_relay_channel(channel: int, on: bool):
@@ -348,6 +322,10 @@ def set_relay_channel(channel: int, on: bool):
     sensor_data["Relay"]["last_update"] = datetime.now().isoformat()
     print(f"Relay Ch{channel} → {'ON' if on else 'OFF'}")
     return True
+
+# ────────────────────────────────────────────────
+#   ROUTES
+# ────────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -411,7 +389,26 @@ def toggle_sensor():
 
     return jsonify({"sensor": sensor, "active": active})
 
-# (your other routes: /api/relay, /api/servomotor remain unchanged)
+@app.route("/api/relay", methods=["POST"])
+def control_relay():
+    data = request.json
+    channel = data.get("channel")
+    action = data.get("action")
+    if channel not in [1,2,3,4] or action not in ["on","off","toggle"]:
+        return jsonify({"error": "Invalid"}), 400
+    current = sensor_data["Relay"][f"ch{channel}"]
+    target = not current if action == "toggle" else (action == "on")
+    success = set_relay_channel(channel, target)
+    return jsonify({"success": success, "state": target})
+
+@app.route("/api/servomotor", methods=["POST"])
+def control_servomotor():
+    data = request.json
+    angle = data.get("angle")
+    if angle is None or not (0 <= angle <= 180):
+        return jsonify({"error": "Angle must be 0–180"}), 400
+    success = set_servo_angle(angle)
+    return jsonify({"success": success, "angle": angle})
 
 # ────────────────────────────────────────────────
 #   START SERVER
@@ -426,8 +423,6 @@ if __name__ == "__main__":
     print("Servo pin:", SERVO_PIN if SENSORS_AVAILABLE.get("servomotor") else "Not available")
     print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
     print("MPU6050 mux channel:", MPU_MUX_CH)
-    print("BMP280 mux channel (when enabled):", BMP_MUX_CH)
-    print("LCD mux channel:", LCD_MUX_CH)
     print("="*80 + "\n")
 
     app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
