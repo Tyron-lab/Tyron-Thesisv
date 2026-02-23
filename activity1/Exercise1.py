@@ -49,9 +49,9 @@ def make_in(pin):
     return io
 
 # Status LEDs
-R = make_out(board.D17, False)   # RED
-G = make_out(board.D27, False)   # GREEN
-O = make_out(board.D22, False)   # ORANGE
+R = make_out(board.D5, False)   # RED
+G = make_out(board.D6, False)   # GREEN
+O = make_out(board.D13, False)   # ORANGE
 
 # PIR input
 pir = make_in(board.D18)
