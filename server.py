@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
+# Optional: uncomment if you rename 'template' → 'templates' folder
+# from flask import render_template
 import threading
 import time
 from datetime import datetime
@@ -324,25 +326,30 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES
+#   ROUTES – FIXED for your folder structure (static + template)
 # ────────────────────────────────────────────────
 
 @app.route("/")
 def index():
-    return send_from_directory("gui", "front.html")
+    # Serve your dashboard page from template folder
+    return send_from_directory("template", "tools.html")
 
-@app.route("/script.js")
-def script():
-    return send_from_directory("gui", "script.js")
+# Serve JS files
+@app.route("/static/js/<path:filename>")
+def serve_js(filename):
+    return send_from_directory("static/js", filename)
 
-@app.route("/style.css")
-def style():
-    return send_from_directory("gui", "style.css")
+# Serve CSS files
+@app.route("/static/css/<path:filename>")
+def serve_css(filename):
+    return send_from_directory("static/css", filename)
 
-@app.route("/images/<path:filename>")
-def images(filename):
-    return send_from_directory("gui/images", filename)
+# Serve images
+@app.route("/static/images/<path:filename>")
+def serve_images(filename):
+    return send_from_directory("static/images", filename)
 
+# API routes (unchanged)
 @app.route("/api/sensors")
 def get_sensors():
     response = sensor_state.copy()
