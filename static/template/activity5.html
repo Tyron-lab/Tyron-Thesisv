@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Group 5 Activity • TrainerKit</title>
 
-  <!-- ✅ Only CSS you actually have -->
   <link rel="stylesheet" href="/static/css/activity1.css" />
 </head>
 
@@ -26,17 +25,16 @@
     <section aria-label="Activity 5 Exercises">
       <h2 class="section-title">Exercises</h2>
 
-      <!-- ✅ activity1.css expects .cards -->
       <div class="cards">
         <article class="exercise-card"
-          data-exercise="__a5"
+          data-exercise="a5-ex1"
           data-image="/images/ex_placeholder.jpg"
           data-image2="/images/ex_placeholder_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Activity 5"
-          data-say-text="This activity is ready. Add your custom exercises here.">
+          data-say-title="Activity 5: Custom Module"
+          data-say-text="This is a template. Replace a5-ex1 with your real exercise ids and update the description.">
           <div class="ex-card-head">
-            <h3>Activity 5: Coming Soon</h3>
+            <h3>Activity 5: Custom Module</h3>
             <span class="pill">Template</span>
           </div>
 
@@ -48,15 +46,16 @@
           </div>
 
           <div class="ex-actions">
-            <button class="speak-btn" type="button" data-speak="__a5">Speak</button>
-            <span class="status" data-status-for="__a5">Ready</span>
+            <button class="run-btn" type="button" data-run="a5-ex1">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex1">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex1">Speak</button>
+            <span class="status" data-status-for="a5-ex1">Ready</span>
           </div>
         </article>
       </div>
     </section>
   </div>
 
-  <!-- ✅ MODAL (styles are inside activity1.css already) -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
@@ -76,6 +75,8 @@
           <div class="modal-meta" id="modalMeta"></div>
 
           <div class="modal-actions">
+            <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
             <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
           </div>
         </div>
@@ -83,7 +84,6 @@
     </div>
   </div>
 
-  <!-- ✅ Absolute JS path (choose the correct one) -->
   <script src="/static/js/activity1.js" defer></script>
 </body>
 </html>

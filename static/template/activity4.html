@@ -5,22 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Group 4 Activity • TrainerKit</title>
 
-  <!-- ✅ Only CSS you actually have -->
   <link rel="stylesheet" href="/static/css/activity1.css" />
 </head>
 
 <body>
-  <!-- ✅ activity1.css expects .act-wrap -->
   <div class="act-wrap" id="pageRoot">
 
     <div class="nav-card">
-      <!-- ✅ absolute links so it works anywhere -->
       <a class="nav-btn" href="/choice.html">← Back</a>
       <a class="nav-btn" href="/tools.html">Tools</a>
       <a class="nav-btn" href="/welcome.html">Home</a>
     </div>
 
-    <!-- ✅ activity1.css expects .act-header -->
     <header class="act-header">
       <h1>Group 4 Activity</h1>
       <p>Outputs &amp; Control</p>
@@ -29,7 +25,6 @@
     <section aria-label="Activity 4 Exercises">
       <h2 class="section-title">Exercises</h2>
 
-      <!-- ✅ activity1.css expects .cards -->
       <div class="cards">
         <!-- EX 16 -->
         <article class="exercise-card"
@@ -50,6 +45,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex16">Run</button>
+            <button class="stop-btn" type="button" data-stop="a4-ex16">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex16">Speak</button>
             <span class="status" data-status-for="a4-ex16">Checking...</span>
           </div>
@@ -74,6 +70,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex17">Run</button>
+            <button class="stop-btn" type="button" data-stop="a4-ex17">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex17">Speak</button>
             <span class="status" data-status-for="a4-ex17">Checking...</span>
           </div>
@@ -98,6 +95,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex18">Run</button>
+            <button class="stop-btn" type="button" data-stop="a4-ex18">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex18">Speak</button>
             <span class="status" data-status-for="a4-ex18">Checking...</span>
           </div>
@@ -122,6 +120,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex19">Run</button>
+            <button class="stop-btn" type="button" data-stop="a4-ex19">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex19">Speak</button>
             <span class="status" data-status-for="a4-ex19">Checking...</span>
           </div>
@@ -146,6 +145,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex20">Run</button>
+            <button class="stop-btn" type="button" data-stop="a4-ex20">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex20">Speak</button>
             <span class="status" data-status-for="a4-ex20">Checking...</span>
           </div>
@@ -154,7 +154,6 @@
     </section>
   </div>
 
-  <!-- ✅ MODAL (styles are inside your activity1.css already) -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
@@ -174,6 +173,7 @@
 
           <div class="modal-actions">
             <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
             <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
           </div>
         </div>
@@ -181,7 +181,6 @@
     </div>
   </div>
 
-  <!-- ✅ absolute JS path (pick the right one) -->
   <script src="/static/js/activity1.js" defer></script>
 </body>
 </html>

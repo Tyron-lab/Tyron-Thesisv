@@ -5,23 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Group 3 Activity • TrainerKit</title>
 
-  <!-- ✅ ONLY CSS you have -->
   <link rel="stylesheet" href="/static/css/activity1.css" />
 </head>
 
 <body>
-  <!-- ✅ activity1.css expects .act-wrap -->
   <div class="act-wrap" id="pageRoot">
 
-    <!-- ✅ activity1.css expects .nav-card/.nav-btn (you already have these) -->
     <div class="nav-card">
-      <!-- ✅ make these absolute so Flask works anywhere -->
       <a class="nav-btn" href="/choice.html">← Back</a>
       <a class="nav-btn" href="/tools.html">Tools</a>
       <a class="nav-btn" href="/welcome.html">Home</a>
     </div>
 
-    <!-- ✅ activity1.css expects .act-header -->
     <header class="act-header">
       <h1>Group 3 Activity</h1>
       <p>I²C &amp; Integration</p>
@@ -30,7 +25,6 @@
     <section aria-label="Activity 3 Exercises">
       <h2 class="section-title">Exercises</h2>
 
-      <!-- ✅ activity1.css expects .cards (NOT exercise-grid) -->
       <div class="cards">
         <!-- EX 11 -->
         <article class="exercise-card"
@@ -51,6 +45,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex11">Run</button>
+            <button class="stop-btn" type="button" data-stop="a3-ex11">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex11">Speak</button>
             <span class="status" data-status-for="a3-ex11">Checking...</span>
           </div>
@@ -75,6 +70,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex12">Run</button>
+            <button class="stop-btn" type="button" data-stop="a3-ex12">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex12">Speak</button>
             <span class="status" data-status-for="a3-ex12">Checking...</span>
           </div>
@@ -99,6 +95,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex13">Run</button>
+            <button class="stop-btn" type="button" data-stop="a3-ex13">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex13">Speak</button>
             <span class="status" data-status-for="a3-ex13">Checking...</span>
           </div>
@@ -123,6 +120,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex14">Run</button>
+            <button class="stop-btn" type="button" data-stop="a3-ex14">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex14">Speak</button>
             <span class="status" data-status-for="a3-ex14">Checking...</span>
           </div>
@@ -147,6 +145,7 @@
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex15">Run</button>
+            <button class="stop-btn" type="button" data-stop="a3-ex15">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex15">Speak</button>
             <span class="status" data-status-for="a3-ex15">Checking...</span>
           </div>
@@ -155,7 +154,6 @@
     </section>
   </div>
 
-  <!-- ✅ MODAL (your CSS already contains modal styles) -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
@@ -175,6 +173,7 @@
 
           <div class="modal-actions">
             <button class="run-btn" type="button" id="modalRunBtn">Run</button>
+            <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
             <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
           </div>
         </div>
@@ -182,7 +181,6 @@
     </div>
   </div>
 
-  <!-- ✅ JS path should be absolute too -->
   <script src="/static/js/activity1.js" defer></script>
 </body>
 </html>
