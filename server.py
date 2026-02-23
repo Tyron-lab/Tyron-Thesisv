@@ -325,7 +325,7 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES – NOW CORRECT FOR static/template/tools.html
+#   ROUTES – FIXED for your folder structure
 # ────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -336,12 +336,12 @@ def index():
     if not os.path.exists(path):
         return f"""
         <h1>ERROR: Dashboard file not found</h1>
-        <p>Expected path: {path}</p>
-        <p>Current working directory: {os.getcwd()}</p>
-        <p>Project root: {BASE_DIR}</p>
-        <p>Files in static/template:</p>
+        <p>Expected path: <code>{path}</code></p>
+        <p>Current working directory: <code>{os.getcwd()}</code></p>
+        <p>Project root: <code>{BASE_DIR}</code></p>
+        <p>Files found in static/template:</p>
         <pre>{os.listdir(os.path.join(BASE_DIR, "static", "template")) if os.path.exists(os.path.join(BASE_DIR, "static", "template")) else 'Folder not found'}</pre>
-        <p><strong>Fix:</strong> Confirm tools.html exists inside static/template</p>
+        <p>Make sure the file is named exactly <code>tools.html</code> (lowercase) inside <code>static/template</code>.</p>
         """, 404
     return send_from_directory(os.path.join(BASE_DIR, "static", "template"), "tools.html")
 
