@@ -43,15 +43,15 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.write_string((line2 or "")[:LCD_COLS])
 
 # ---- Ultrasonic pins (your working ones) ----
-TRIG = digitalio.DigitalInOut(board.D5)
-ECHO = digitalio.DigitalInOut(board.D6)
+TRIG = digitalio.DigitalInOut(board.D23)
+ECHO = digitalio.DigitalInOut(board.D24)
 TRIG.direction = digitalio.Direction.OUTPUT
 ECHO.direction = digitalio.Direction.INPUT
 TRIG.value = False
 
 # ---- Passive buzzer pin (pick a free one) ----
 # D12 = GPIO12 (change to D13/D19/D26 if needed)
-BUZZER_PIN = board.D12
+BUZZER_PIN = board.D16
 buzzer = digitalio.DigitalInOut(BUZZER_PIN)
 buzzer.direction = digitalio.Direction.OUTPUT
 

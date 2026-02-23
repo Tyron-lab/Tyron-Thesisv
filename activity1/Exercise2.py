@@ -53,14 +53,14 @@ def make_in(pin, pull_up=False):
     return io
 
 # Status LEDs
-R = make_out(board.D17, False)   # RED
-G = make_out(board.D27, False)   # GREEN
-O = make_out(board.D22, False)   # ORANGE
+R = make_out(board.D5, False)   # RED
+G = make_out(board.D6, False)   # GREEN
+O = make_out(board.D13, False)   # ORANGE
 
 # --- Gas sensor input pin ---
 # Connect GAS SENSOR "DO" to this GPIO (and VCC/GND accordingly).
 # Change this if you used a different GPIO.
-GAS_PIN = board.D23
+GAS_PIN = board.D17
 gas = make_in(GAS_PIN, pull_up=False)
 
 def all_off():
