@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 import logging
 import os
+import subprocess
+import sys
 
 # ────────────────────────────────────────────────
 #   Conditional imports – only load what we can
@@ -65,6 +67,11 @@ app = Flask(__name__)
 # Reduce spammy request logs in terminal
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# HTML PAGES live here:
+TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
+
 # I2C lock is CRITICAL: BMP/MPU (Blinka I2C) + LCD (smbus2) will fight otherwise
 i2c_lock = threading.Lock()
 
@@ -79,6 +86,44 @@ def set_error(key: str, msg):
 def clear_error(key: str):
     if key in sensor_data:
         sensor_data[key]["error"] = ""
+
+# ────────────────────────────────────────────────
+#   EXERCISE MAP (RUN PY FILES FROM FOLDERS)
+# ────────────────────────────────────────────────
+EXERCISE_MAP = {
+    # Activity 1
+    "a1-ex1": os.path.join(BASE_DIR, "Activity1", "Exercise1.py"),
+    "a1-ex2": os.path.join(BASE_DIR, "Activity1", "Exercise2.py"),
+    "a1-ex3": os.path.join(BASE_DIR, "Activity1", "Exercise3.py"),
+    "a1-ex4": os.path.join(BASE_DIR, "Activity1", "Exercise4.py"),
+    "a1-ex5": os.path.join(BASE_DIR, "Activity1", "Exercise5.py"),
+
+    # Add more later like:
+    # "a2-ex1": os.path.join(BASE_DIR, "Activity2", "Exercise1.py"),
+}
+
+exercise_proc = None
+exercise_lock = threading.Lock()
+
+def _python_cmd():
+    # Uses current interpreter (venv python if you started server inside venv)
+    return sys.executable
+
+def stop_current_exercise():
+    global exercise_proc
+    with exercise_lock:
+        if exercise_proc is None:
+            return True
+        try:
+            exercise_proc.terminate()
+            try:
+                exercise_proc.wait(timeout=2)
+            except Exception:
+                exercise_proc.kill()
+            exercise_proc = None
+            return True
+        except Exception:
+            return False
 
 # ────────────────────────────────────────────────
 #   MUX (TCA9548A) CONFIG
@@ -129,7 +174,6 @@ def mux_select_for_lcd():
     if not USE_MUX:
         return True  # direct I2C
     try:
-        # IMPORTANT: this is smbus2 (not Blinka) — lock it
         with i2c_lock:
             with SMBus(LCD_I2C_BUS) as bus:
                 bus.write_byte(MUX_ADDRESS, 1 << LCD_MUX_CH)
@@ -214,8 +258,6 @@ LED_ORANGE_PIN = board.D6  if SENSORS_AVAILABLE.get("board") else None
 LED_GREEN_PIN  = board.D13 if SENSORS_AVAILABLE.get("board") else None
 BUZZER_PIN     = board.D16 if SENSORS_AVAILABLE.get("board") else None
 
-# IMPORTANT: many "active buzzers" are ACTIVE-LOW (ON when GPIO is LOW).
-# If your buzzer refuses to turn off, set this True.
 BUZZER_ACTIVE_LOW = False
 
 led_red = None
@@ -244,7 +286,6 @@ def init_tools_outputs():
             led_green = make_out(LED_GREEN_PIN, False)
 
         if buzzer is None and BUZZER_PIN is not None:
-            # set OFF at boot depending on polarity
             off_value = True if BUZZER_ACTIVE_LOW else False
             buzzer = make_out(BUZZER_PIN, off_value)
 
@@ -318,7 +359,6 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
 
-    # Tools (always available; controlled via their own endpoints)
     "LED_TOOL":   True,
     "BUZZER":     True,
     "LCD_TOOL":   True,
@@ -419,7 +459,6 @@ def init_bmp():
     if bmp is not None:
         return True
 
-    # BMP280 is often 0x76, sometimes 0x77
     last = None
     for addr in (0x76, 0x77):
         try:
@@ -473,7 +512,6 @@ def init_ultrasonic():
     if ultra_trig is not None and ultra_echo is not None:
         return True
     try:
-        # EDIT these pins if D23/D24 are conflicting in your build
         ultra_trig = digitalio.DigitalInOut(board.D23)
         ultra_echo = digitalio.DigitalInOut(board.D24)
         ultra_trig.direction = digitalio.Direction.OUTPUT
@@ -716,17 +754,10 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES (PAGES + STATIC + API)
+#   ROUTES (PAGES + STATIC + API + EXERCISES)
 # ────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Your HTML files are here:
-TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
-
-# -------------------------
-# PAGES (FLOW)
-# welcome -> choices -> tools -> activityfolder -> activity1..5
-# -------------------------
+# ===== PAGES FLOW =====
 @app.route("/")
 def welcome_page():
     return send_from_directory(TEMPLATE_DIR, "welcome.html")
@@ -739,16 +770,16 @@ def choices_page():
 def tools_page():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
-# (Optional alias) if some old HTML still links to /front
+# optional alias if some HTML uses /front
 @app.route("/front")
-def front_alias():
+def tools_alias_front():
     return send_from_directory(TEMPLATE_DIR, "tools.html")
 
 @app.route("/activityfolder")
 def activityfolder_page():
     return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
 
-# ✅ Activities (this fixes: /activity1 not found)
+# Activity pages
 @app.route("/activity1")
 def activity1_page():
     return send_from_directory(TEMPLATE_DIR, "activity1.html")
@@ -769,11 +800,7 @@ def activity4_page():
 def activity5_page():
     return send_from_directory(TEMPLATE_DIR, "activity5.html")
 
-# -------------------------
-# STATIC (ONLY if you want explicit routes)
-# Note: Flask can already serve /static automatically,
-# but keeping these is fine if you rely on them.
-# -------------------------
+# ===== STATIC (optional, but you used them) =====
 @app.route("/static/css/<path:filename>")
 def serve_css(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "css"), filename)
@@ -786,9 +813,7 @@ def serve_js(filename):
 def serve_images(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "images"), filename)
 
-# -------------------------
-# API
-# -------------------------
+# ===== API =====
 @app.route("/api/sensors")
 def get_sensors():
     resp = sensor_state.copy()
@@ -848,9 +873,9 @@ def toggle_sensor():
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
-# -------------------------
-# TOOL ENDPOINTS
-# -------------------------
+# ────────────────────────────────────────────────
+#   TOOL ENDPOINTS
+# ────────────────────────────────────────────────
 @app.route("/api/led", methods=["POST"])
 def api_led():
     data = request.json or {}
@@ -909,12 +934,85 @@ def api_lcd():
     return jsonify({"ok": True, "line1": line1, "line2": line2})
 
 # ────────────────────────────────────────────────
+#   EXERCISE RUNNER ENDPOINTS
+# ────────────────────────────────────────────────
+@app.route("/api/exercise", methods=["POST"])
+def api_exercise_run():
+    """
+    Body: { "exercise_id": "a1-ex1" }
+    Runs: BASE_DIR/Activity1/Exercise1.py
+    """
+    global exercise_proc
+    data = request.json or {}
+    ex_id = data.get("exercise_id")
+
+    if not ex_id or ex_id not in EXERCISE_MAP:
+        return jsonify({"ok": False, "error": "Unknown exercise_id"}), 400
+
+    script_path = EXERCISE_MAP[ex_id]
+    if not os.path.exists(script_path):
+        return jsonify({"ok": False, "error": f"File not found: {script_path}"}), 404
+
+    with exercise_lock:
+        # Stop previous if running
+        if exercise_proc is not None and exercise_proc.poll() is None:
+            stop_current_exercise()
+
+        try:
+            exercise_proc = subprocess.Popen(
+                [_python_cmd(), script_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            return jsonify({"ok": True, "exercise_id": ex_id, "started": True, "path": script_path})
+        except Exception as e:
+            exercise_proc = None
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/exercise_stop", methods=["POST"])
+def api_exercise_stop():
+    ok = stop_current_exercise()
+    return jsonify({"ok": bool(ok), "stopped": bool(ok)})
+
+@app.route("/api/exercise_status")
+def api_exercise_status():
+    with exercise_lock:
+        running = (exercise_proc is not None and exercise_proc.poll() is None)
+        return jsonify({"ok": True, "running": bool(running)})
+
+@app.route("/api/exercise_logs")
+def api_exercise_logs():
+    """
+    Returns stdout/stderr when process ends.
+    (If you want LIVE streaming, we can add SSE later.)
+    """
+    global exercise_proc
+    with exercise_lock:
+        if exercise_proc is None:
+            return jsonify({"ok": True, "running": False, "stdout": "", "stderr": ""})
+
+        running = (exercise_proc.poll() is None)
+        out = ""
+        err = ""
+
+        if not running:
+            try:
+                out, err = exercise_proc.communicate(timeout=1)
+            except Exception:
+                pass
+            exercise_proc = None
+
+        return jsonify({"ok": True, "running": bool(running), "stdout": out, "stderr": err})
+
+# ────────────────────────────────────────────────
 #   START
 # ────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 80)
     print("TrainerKit Tools Dashboard")
     print("Open: http://localhost:5000")
+    print("Template Dir:", TEMPLATE_DIR)
     print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
     print("LCD MUX CH:", LCD_MUX_CH, "MPU CH:", MPU_MUX_CH, "BMP CH:", BMP_MUX_CH)
     print("BUZZER_ACTIVE_LOW:", BUZZER_ACTIVE_LOW)
