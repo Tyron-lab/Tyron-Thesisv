@@ -51,10 +51,10 @@ print("Available libraries:", SENSORS_AVAILABLE)
 #   I2C MUX (TCA9548A) CONFIGURATION
 # ────────────────────────────────────────────────
 USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
-MUX_ADDRESS = 0x70          # default TCA9548A address
-MPU_MUX_CH = 1              # MPU6050 on channel 1
-BMP_MUX_CH = 2              # BMP280 on channel 2 (when enabled)
-LCD_MUX_CH = 0              # LCD extender on channel 0
+MUX_ADDRESS = 0x70
+MPU_MUX_CH = 1
+BMP_MUX_CH = 2
+LCD_MUX_CH = 0
 
 tca = None
 
@@ -112,7 +112,7 @@ log.setLevel(logging.ERROR)
 # ────────────────────────────────────────────────
 
 def init_mux():
-    global tca, USE_MUX     # Declare globals FIRST
+    global tca, USE_MUX
 
     if not USE_MUX:
         print("I2C mux not available or disabled")
@@ -247,7 +247,7 @@ def set_servo_angle(angle):
 #   INITIALIZE HARDWARE (MUX FIRST!)
 # ────────────────────────────────────────────────
 if SENSORS_AVAILABLE.get("board"):
-    init_mux()           # Must be first
+    init_mux()
     init_pir()
     init_dht()
     init_mpu()
@@ -325,22 +325,34 @@ def set_relay_channel(channel: int, on: bool):
     return True
 
 # ────────────────────────────────────────────────
-#   ROUTES – FIXED for your folder structure
+#   ROUTES – with extra diagnostics
 # ────────────────────────────────────────────────
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.route("/")
 def index():
-    path = os.path.join(BASE_DIR, "template", "tools.html")
-    if not os.path.exists(path):
+    expected_path = os.path.join(BASE_DIR, "template", "tools.html")
+
+    # Debug: list all files in template folder
+    template_dir = os.path.join(BASE_DIR, "template")
+    if os.path.exists(template_dir):
+        files_in_template = os.listdir(template_dir)
+        file_list_html = "<ul>" + "".join(f"<li>{f}</li>" for f in files_in_template) + "</ul>"
+    else:
+        file_list_html = "<p>Template folder does NOT exist!</p>"
+
+    if not os.path.exists(expected_path):
         return f"""
         <h1>ERROR: Dashboard file not found</h1>
-        <p>Expected path: {path}</p>
-        <p>Current working directory: {os.getcwd()}</p>
-        <p>Project root: {BASE_DIR}</p>
-        <p>Please check if 'template/tools.html' exists.</p>
+        <p>Expected exact path: <code>{expected_path}</code></p>
+        <p>Current working directory: <code>{os.getcwd()}</code></p>
+        <p>Project root: <code>{BASE_DIR}</code></p>
+        <p>Files found in 'template' folder:</p>
+        {file_list_html}
+        <p><strong>Action:</strong> Make sure the file is named exactly <code>tools.html</code> (lowercase, no extra spaces or capitals).</p>
         """, 404
+
     return send_from_directory(os.path.join(BASE_DIR, "template"), "tools.html")
 
 @app.route("/static/css/<path:filename>")
@@ -429,7 +441,7 @@ if __name__ == "__main__":
     print("="*80)
     print("  IoT Sensor Dashboard  (Raspberry Pi)")
     print("  Access: http://localhost:5000  (on this Raspberry Pi)")
-    print("  Or from other device: http://<pi-ip>:5000")
+    print("  Or from phone/laptop: http://<pi-ip>:5000")
     print("="*80)
     print("Available sensors:", list(sensor_state.keys()))
     print("Libraries loaded :", SENSORS_AVAILABLE)
