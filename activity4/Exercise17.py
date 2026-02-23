@@ -9,7 +9,7 @@ except Exception:
     GPIO_OK = False
 
 # ===== EDIT PIN (BCM) =====
-WARNING_LED_PIN = 5
+WARNING_LED_PIN = 13
 # ==========================
 
 _running = False
