@@ -1,8 +1,8 @@
 # Exercise 1: Motion Detection (PIR -> Status LEDs) + LCD messages via TCA9548A
 # Uses GPIO pins:
-#   LED RED    = D5
-#   LED GREEN  = D6
-#   LED ORANGE = D13
+#   LED RED    = D5   (MOTION DETECTED)
+#   LED GREEN  = D6   (NO MOTION)
+#   LED ORANGE = D13  (WARMUP / CALIBRATING)
 #   PIR INPUT  = D18
 
 import time
@@ -74,6 +74,18 @@ def all_off():
     G.value = False
     O.value = False
 
+def show_detected():
+    """RED on when motion detected."""
+    R.value = True
+    G.value = False
+    O.value = False
+
+def show_no_motion():
+    """GREEN on when no motion."""
+    R.value = False
+    G.value = True
+    O.value = False
+
 print("PIR Motion Detection: warming up PIR (30s)...")
 all_off()
 
@@ -90,9 +102,11 @@ warmup_seconds = 30
 if lcd:
     lcd_write(lcd, "Calibrating...", f"Wait {warmup_seconds}s")
 
+# Warmup blink ORANGE
 for sec_left in range(warmup_seconds, 0, -1):
     if _should_exit:
         break
+
     O.value = True
     time.sleep(0.5)
     O.value = False
@@ -111,10 +125,8 @@ else:
 last_motion = None
 
 try:
-    G.value = True
-    O.value = False
-    R.value = False
-
+    # Start as "no motion"
+    show_no_motion()
     if lcd:
         lcd_write(lcd, "Ready", "No motion")
 
@@ -124,16 +136,15 @@ try:
         if motion != last_motion:
             if motion:
                 print("🚨 MOTION DETECTED")
-                G.value = False
-                O.value = True
+                show_detected()
                 if lcd:
                     lcd_write(lcd, "Detected!", "Motion found")
             else:
                 print("✅ NO MOTION")
-                O.value = False
-                G.value = True
+                show_no_motion()
                 if lcd:
                     lcd_write(lcd, "Ready", "No motion")
+
             last_motion = motion
 
         time.sleep(0.05)
@@ -144,6 +155,7 @@ except KeyboardInterrupt:
 except Exception as e:
     print(f"❌ ERROR: {e}")
     all_off()
+    # Use RED for error too (same as detected, but with LCD "ERROR")
     R.value = True
     if lcd:
         try:
