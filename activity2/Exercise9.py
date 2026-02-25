@@ -1,10 +1,16 @@
 # Exercise 9: Voice Activated System (INMP441 I2S / VoiceHAT) + LCD (RPLCD via TCA9548A) + Buzzer
 #
 # Input: Voice detected (speaking)
-# What happens: System detects speaking from mic intensity (sustained)
 # Output:
 #   LCD shows "VOICE DETECTED"
 #   Buzzer beeps
+#
+# Updated: Buzzer logic copied from Exercise 4:
+#   - supports ACTIVE-LOW modules
+#   - MUTE option
+#   - force OFF on start
+#   - force OFF on any exit (clean + error)
+#   - never drive buzzer.value directly (use buzzer_set)
 
 import time
 import signal
@@ -20,7 +26,7 @@ from smbus2 import SMBus
 from RPLCD.i2c import CharLCD
 
 # ==========================
-# LCD via TCA9548A (same as Exercise 1)
+# LCD via TCA9548A
 # ==========================
 I2C_BUS  = 1
 MUX_ADDR = 0x70
@@ -55,7 +61,7 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.write_string((line2 or "")[:LCD_COLS])
 
 # ==========================
-# Stop handling (same pattern)
+# Stop handling
 # ==========================
 _should_exit = False
 def _handle_term(signum, frame):
@@ -66,22 +72,59 @@ signal.signal(signal.SIGTERM, _handle_term)
 signal.signal(signal.SIGINT, _handle_term)
 
 # ==========================
-# Buzzer (active buzzer recommended)
+# Buzzer (Exercise 4 hardened logic)
 # ==========================
-BUZZER_PIN = board.D21  # CHANGE if your buzzer is on a different pin
+BUZZER_PIN = board.D21   # change if your buzzer is on a different pin
+
+# ✅ If you want COMPLETELY SILENT, set True
+MUTE = False
+
+# If your buzzer module is active-low (beeps when pin is LOW), set True.
+# If it beeps when pin is HIGH, set False.
+BUZZER_ACTIVE_LOW = True
+
 buzzer = digitalio.DigitalInOut(BUZZER_PIN)
 buzzer.direction = digitalio.Direction.OUTPUT
-buzzer.value = False
+
+def buzzer_set(on: bool):
+    """Hard ON/OFF with correct polarity. Always use this (never buzzer.value directly)."""
+    global MUTE
+    if MUTE:
+        # Force silence
+        buzzer.value = BUZZER_ACTIVE_LOW
+        return
+
+    if BUZZER_ACTIVE_LOW:
+        # ON = LOW, OFF = HIGH
+        buzzer.value = (not on)
+    else:
+        # ON = HIGH, OFF = LOW
+        buzzer.value = bool(on)
+
+def buzzer_off_hard():
+    """Force OFF no matter what."""
+    buzzer.value = BUZZER_ACTIVE_LOW  # OFF state for active-low is HIGH(True), for active-high is LOW(False)
+    time.sleep(0.02)
+
+# ✅ First thing: silence buzzer immediately
+buzzer_off_hard()
+buzzer_set(False)
+
+def beep_once(on_s: float, off_s: float):
+    if MUTE:
+        time.sleep(on_s + off_s)
+        return
+    buzzer_set(True)
+    time.sleep(on_s)
+    buzzer_set(False)
+    time.sleep(off_s)
 
 def beep(times=2, on_s=0.10, off_s=0.10):
     for _ in range(times):
-        buzzer.value = True
-        time.sleep(on_s)
-        buzzer.value = False
-        time.sleep(off_s)
+        beep_once(on_s, off_s)
 
 # ==========================
-# Audio settings (like Exercise 6)
+# Audio settings
 # ==========================
 SAMPLE_RATE = 48000
 BLOCK_MS = 20
@@ -100,9 +143,6 @@ def audio_callback(indata, frames, time_info, status):
 # ==========================
 # Voice detection tuning
 # ==========================
-# We'll treat "voice" as intensity sustained above threshold for VOICE_MIN_MS.
-# Auto threshold adapts to room noise.
-
 USE_AUTO_THRESHOLD = True
 AUTO_MULTIPLIER = 5.0
 AUTO_FLOOR = 0.08
@@ -128,8 +168,16 @@ def get_threshold():
     return max(thr, FIXED_THRESHOLD)
 
 def safe_exit(lcd=None, code=0):
+    """Exercise 4 style: force silence and cleanup reliably."""
+    global MUTE
     try:
-        buzzer.value = False
+        MUTE = True
+        buzzer_set(False)
+        buzzer_off_hard()
+    except Exception:
+        pass
+
+    try:
         buzzer.deinit()
     except Exception:
         pass
@@ -153,6 +201,8 @@ print("Exercise 9: Voice Activated System running (INMP441 / VoiceHAT)")
 print(f"Using INPUT_DEVICE={INPUT_DEVICE}, SAMPLE_RATE={SAMPLE_RATE}")
 print("LCD: RPLCD via TCA9548A | Output: LCD 'VOICE DETECTED' + buzzer beeps")
 print("Stop: Stop button or Ctrl+C")
+print("Buzzer muted?", MUTE)
+print("BUZZER_ACTIVE_LOW =", BUZZER_ACTIVE_LOW)
 
 # Init LCD (keep running if LCD fails)
 lcd = None
@@ -212,8 +262,6 @@ try:
                 last_state = "idle"
                 if lcd:
                     lcd_write(lcd, "Listening...", "Say something")
-                else:
-                    pass
 
             # trigger buzzer on voice detect with cooldown
             cooldown_ok = (now_t - last_trigger_t) >= TRIGGER_COOLDOWN_S
@@ -228,6 +276,9 @@ try:
 
             time.sleep(0.01)
 
+    safe_exit(lcd, 0)
+
+except KeyboardInterrupt:
     safe_exit(lcd, 0)
 
 except Exception as e:
