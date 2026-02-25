@@ -1,145 +1,69 @@
 import time
-import threading
 import sys
-import select
-import termios
-import tty
+import signal
 
 import board
 import digitalio
 
-# Change to your pin (example: board.D18 for GPIO18)
 BUZZER_PIN = board.D16
 
-# Keys
-START_KEY = "b"   # press this to START beeping
-STOP_KEY  = "q"   # press this to STOP beeping / exit
+# ✅ KEEP THIS TRUE FIRST (so it will NEVER beep)
+MUTE = True
 
-# Safety: auto-stop beeping after N seconds (so it won't annoy neighbors)
-AUTO_STOP_SECONDS = 10
+# ✅ ACTIVE BUZZER modules are VERY OFTEN active-low:
+#    beep when input LOW, silent when input HIGH
+ACTIVE_LOW = True
 
-# If True, buzzer will NEVER beep (hard mute)
-MUTE = False
+_should_exit = False
+def _term(sig, frame):
+    global _should_exit
+    _should_exit = True
 
-# Some buzzer modules are active-low (beep when pin is LOW).
-# If your buzzer is noisy even when "off", flip this to True.
-ACTIVE_LOW = False
+signal.signal(signal.SIGTERM, _term)
+signal.signal(signal.SIGINT, _term)
 
+buzzer = digitalio.DigitalInOut(BUZZER_PIN)
+buzzer.direction = digitalio.Direction.OUTPUT
 
-class ActiveBuzzer:
-    def __init__(self, pin, active_low=False):
-        self.active_low = bool(active_low)
-        self.buzzer = digitalio.DigitalInOut(pin)
-        self.buzzer.direction = digitalio.Direction.OUTPUT
-        self._stop = threading.Event()
-        self._thread = None
-        self.off()  # ✅ force OFF immediately
+def buzzer_write(on: bool):
+    # active-low: ON=LOW, OFF=HIGH
+    if ACTIVE_LOW:
+        buzzer.value = (not on)
+    else:
+        buzzer.value = bool(on)
 
-    def _write(self, on: bool):
-        if self.active_low:
-            # ON = LOW, OFF = HIGH
-            self.buzzer.value = (not on)
+def buzzer_off_hard():
+    # Force OFF level strongly
+    buzzer_write(False)
+    time.sleep(0.05)
+    buzzer_write(False)
+
+# ✅ force silent immediately
+buzzer_off_hard()
+
+print("BUZZER: forced silent.")
+print("If it's still beeping now, the module is wired to 5V/GND wrong or not controlled by this pin.")
+print("Running... (Ctrl+C to exit)")
+
+try:
+    while not _should_exit:
+        # stay silent
+        buzzer_off_hard()
+
+        # if you later set MUTE=False, it will beep once per second
+        if not MUTE:
+            buzzer_write(True)
+            time.sleep(0.15)
+            buzzer_write(False)
+            time.sleep(0.85)
         else:
-            # ON = HIGH, OFF = LOW
-            self.buzzer.value = bool(on)
+            time.sleep(0.3)
 
-    def on(self):
-        self._write(True)
-
-    def off(self):
-        self._write(False)
-
-    def start_beeping(self, on_time=0.2, off_time=0.2, auto_stop_s=None):
-        """Start beeping in a background thread (silent until called)."""
-        if MUTE:
-            self.off()
-            return
-
-        self.stop()  # stop any previous thread
-        self._stop.clear()
-        start_t = time.time()
-
-        def loop():
-            try:
-                while not self._stop.is_set():
-                    # ✅ failsafe auto-stop
-                    if auto_stop_s is not None and (time.time() - start_t) >= auto_stop_s:
-                        break
-
-                    self.on()
-                    time.sleep(on_time)
-                    self.off()
-                    time.sleep(off_time)
-            finally:
-                # ensure OFF when stopping
-                self.off()
-
-        self._thread = threading.Thread(target=loop, daemon=True)
-        self._thread.start()
-
-    def stop(self):
-        """Stop beeping and force OFF."""
-        self._stop.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=0.5)
-        self.off()
-
-    def deinit(self):
-        self.stop()
-        self.buzzer.deinit()
-
-
-def read_key_nonblocking():
-    """Return a single key if available, else None."""
-    dr, _, _ = select.select([sys.stdin], [], [], 0)
-    if dr:
-        return sys.stdin.read(1)
-    return None
-
-
-def main():
-    buzzer = ActiveBuzzer(BUZZER_PIN, active_low=ACTIVE_LOW)
-
-    print("✅ BUZZER SAFE MODE")
-    print(f"- Starts SILENT")
-    print(f"- Press '{START_KEY}' to start beeping (auto-stops in {AUTO_STOP_SECONDS}s)")
-    print(f"- Press '{STOP_KEY}' to stop + exit")
-    print("(Click the terminal first so it receives your keypress.)")
-
-    # Put terminal into raw mode so keypresses are read instantly
-    old_settings = termios.tcgetattr(sys.stdin)
+finally:
+    # ensure silent
     try:
-        tty.setcbreak(sys.stdin.fileno())
-
-        # ✅ stays silent until you press 'b'
-        while True:
-            k = read_key_nonblocking()
-            if k:
-                k = k.lower()
-
-                if k == START_KEY:
-                    print("🔊 Beeping started (failsafe auto-stop on).")
-                    buzzer.start_beeping(on_time=0.12, off_time=0.18, auto_stop_s=AUTO_STOP_SECONDS)
-
-                elif k == STOP_KEY:
-                    print("🛑 Stopping and exiting...")
-                    break
-
-            time.sleep(0.02)
-
-    except KeyboardInterrupt:
-        print("\n🛑 Ctrl+C pressed — stopping...")
-
-    finally:
-        # restore terminal + cleanup buzzer (FORCE OFF)
-        try:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-        except Exception:
-            pass
+        buzzer_off_hard()
         buzzer.deinit()
-
-    print("✅ Stopped (silent).")
-
-
-if __name__ == "__main__":
-    main()
+    except Exception:
+        pass
+    sys.exit(0)
