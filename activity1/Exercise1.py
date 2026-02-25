@@ -1,9 +1,8 @@
 # Exercise 1: Motion Detection (PIR -> Status LEDs) + LCD messages via TCA9548A
-# Uses GPIO pins:
-#   LED RED    = D5   (MOTION DETECTED)
-#   LED GREEN  = D6   (NO MOTION)
-#   LED ORANGE = D13  (WARMUP / CALIBRATING)
-#   PIR INPUT  = D18
+# LED RED    = D5   (MOTION DETECTED)
+# LED GREEN  = D6   (NO MOTION)
+# LED ORANGE = D13  (WARMUP / CALIBRATING)
+# PIR INPUT  = D18
 
 import time
 import signal
@@ -24,14 +23,17 @@ LCD_ADDR = 0x27
 LCD_COLS = 16
 LCD_ROWS = 2
 
-_should_exit = False
+# ✅ If your PIR logic is reversed, set this True
+INVERT_PIR = False
 
+_should_exit = False
 def _handle_term(signum, frame):
     global _should_exit
     _should_exit = True
 
-# Stop button (server terminate) sends SIGTERM -> exit gracefully
+# Stop button sends SIGTERM, Ctrl+C sends SIGINT
 signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)
 
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
@@ -39,7 +41,14 @@ def mux_select(channel: int):
 
 def lcd_init():
     mux_select(LCD_CH)
-    lcd = CharLCD('PCF8574', address=LCD_ADDR, port=I2C_BUS, cols=LCD_COLS, rows=LCD_ROWS, charmap='A00')
+    lcd = CharLCD(
+        "PCF8574",
+        address=LCD_ADDR,
+        port=I2C_BUS,
+        cols=LCD_COLS,
+        rows=LCD_ROWS,
+        charmap="A00"
+    )
     lcd.clear()
     return lcd
 
@@ -56,18 +65,23 @@ def make_out(pin, initial=False):
     io.value = bool(initial)
     return io
 
-def make_in(pin):
+def make_in_pir(pin):
     io = digitalio.DigitalInOut(pin)
     io.direction = digitalio.Direction.INPUT
+    # ✅ stabilize idle state
+    try:
+        io.pull = digitalio.Pull.DOWN
+    except Exception:
+        pass
     return io
 
-# Status LEDs (match Tools pins)
+# Status LEDs
 R = make_out(board.D5, False)    # RED
 G = make_out(board.D6, False)    # GREEN
 O = make_out(board.D13, False)   # ORANGE
 
 # PIR input
-pir = make_in(board.D18)
+pir = make_in_pir(board.D18)
 
 def all_off():
     R.value = False
@@ -75,16 +89,20 @@ def all_off():
     O.value = False
 
 def show_detected():
-    """RED on when motion detected."""
+    # ✅ RED = motion
     R.value = True
     G.value = False
     O.value = False
 
 def show_no_motion():
-    """GREEN on when no motion."""
+    # ✅ GREEN = no motion
     R.value = False
     G.value = True
     O.value = False
+
+def read_motion() -> bool:
+    v = bool(pir.value)
+    return (not v) if INVERT_PIR else v
 
 print("PIR Motion Detection: warming up PIR (30s)...")
 all_off()
@@ -106,12 +124,10 @@ if lcd:
 for sec_left in range(warmup_seconds, 0, -1):
     if _should_exit:
         break
-
     O.value = True
     time.sleep(0.5)
     O.value = False
     time.sleep(0.5)
-
     if lcd:
         lcd_write(lcd, "Calibrating...", f"Wait {sec_left-1}s")
 
@@ -125,37 +141,36 @@ else:
 last_motion = None
 
 try:
-    # Start as "no motion"
+    # Start safe
     show_no_motion()
     if lcd:
         lcd_write(lcd, "Ready", "No motion")
 
     while not _should_exit:
-        motion = bool(pir.value)
+        motion = read_motion()
+
+        # ✅ enforce LED state every cycle (prevents weird stuck states)
+        if motion:
+            show_detected()
+        else:
+            show_no_motion()
 
         if motion != last_motion:
             if motion:
                 print("🚨 MOTION DETECTED")
-                show_detected()
                 if lcd:
                     lcd_write(lcd, "Detected!", "Motion found")
             else:
                 print("✅ NO MOTION")
-                show_no_motion()
                 if lcd:
                     lcd_write(lcd, "Ready", "No motion")
-
             last_motion = motion
 
         time.sleep(0.05)
 
-except KeyboardInterrupt:
-    print("Stopped by user (KeyboardInterrupt).")
-
 except Exception as e:
     print(f"❌ ERROR: {e}")
     all_off()
-    # Use RED for error too (same as detected, but with LCD "ERROR")
     R.value = True
     if lcd:
         try:
@@ -165,7 +180,6 @@ except Exception as e:
     time.sleep(1)
 
 finally:
-    # Clean shutdown
     try:
         if lcd:
             lcd_write(lcd, "Stopped", "")
