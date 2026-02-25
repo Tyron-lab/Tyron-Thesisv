@@ -1,5 +1,8 @@
 # Exercise 7 (Activity 1): Sound Detection Indicator using INMP441 I2S (Google VoiceHAT SoundCard)
-# Measures sound level and turns LED ON when loud, OFF when quiet.
+# Measures sound level and shows 3 levels using LEDs:
+#   RED    (board.D5)  = LOUD (high noise)
+#   ORANGE (board.D13) = MID  (medium noise)
+#   GREEN  (board.D6)  = QUIET (low/no noise)
 #
 # Uses supported sample rate (48k) + explicit INPUT_DEVICE like Exercise 6.
 
@@ -13,14 +16,39 @@ import digitalio
 import numpy as np
 import sounddevice as sd
 
-# ---------------- LED ----------------
-LED_PIN = board.D13
-led = digitalio.DigitalInOut(LED_PIN)
-led.direction = digitalio.Direction.OUTPUT
-led.value = False
+# ---------------- LED PINS ----------------
+LED_RED_PIN    = board.D5     # RED  = HIGH noise
+LED_GREEN_PIN  = board.D6     # GREEN= NO noise / quiet
+LED_ORANGE_PIN = board.D13    # ORANGE = MID noise
 
-def set_led(on: bool):
-    led.value = bool(on)
+red = digitalio.DigitalInOut(LED_RED_PIN)
+green = digitalio.DigitalInOut(LED_GREEN_PIN)
+orange = digitalio.DigitalInOut(LED_ORANGE_PIN)
+
+red.direction = digitalio.Direction.OUTPUT
+green.direction = digitalio.Direction.OUTPUT
+orange.direction = digitalio.Direction.OUTPUT
+
+red.value = False
+green.value = True   # start as quiet
+orange.value = False
+
+def set_level(level: str):
+    """
+    level: 'quiet' | 'mid' | 'loud'
+    """
+    if level == "quiet":
+        red.value = False
+        orange.value = False
+        green.value = True
+    elif level == "mid":
+        red.value = False
+        orange.value = True
+        green.value = False
+    else:  # loud
+        red.value = True
+        orange.value = False
+        green.value = False
 
 # ---------------- Stop handling ----------------
 _should_exit = False
@@ -37,21 +65,24 @@ BLOCK_MS = 20
 CHANNELS = 1
 BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
 
-# ✅ Use the same input device index that works in Exercise 6
+# ✅ same as Exercise 6
 INPUT_DEVICE = 1
 
-# ---------------- Loud/quiet detection tuning ----------------
-# We'll use PEAK amplitude as a simple "sound level" signal (works well for indicators).
-# You can switch to RMS later if you want, but peak is responsive and simple.
+# ---------------- Detection tuning ----------------
+# We use PEAK amplitude as sound level indicator.
 
 USE_AUTO_THRESHOLD = True
-AUTO_MULTIPLIER = 4.5     # raise if too sensitive, lower if not detecting
-AUTO_FLOOR = 0.06         # minimum threshold so it doesn't turn ON in silence
 
-FIXED_THRESHOLD = 0.12    # used if USE_AUTO_THRESHOLD = False
+# Auto threshold for "MID". LOUD will be a multiplier above MID.
+AUTO_MULTIPLIER = 4.5      # sensitivity baseline (mid threshold)
+AUTO_FLOOR = 0.06          # minimum threshold
 
-HOLD_ON_MS = 120          # keep LED ON briefly after loud sound
-HOLD_ON_S = HOLD_ON_MS / 1000.0
+FIXED_MID_THRESHOLD = 0.12 # used if USE_AUTO_THRESHOLD = False
+LOUD_MULTIPLIER = 1.8      # loud_threshold = mid_threshold * LOUD_MULTIPLIER
+
+# Keep indicator stable (avoid flicker)
+HOLD_MS = 140
+HOLD_S = HOLD_MS / 1000.0
 
 _latest_peak = 0.0
 
@@ -61,32 +92,43 @@ def audio_callback(indata, frames, time_info, status):
     _latest_peak = float(np.max(np.abs(x)))
 
 noise_peaks = []
-NOISE_WINDOW = 120
+NOISE_WINDOW = 140
 
-def get_threshold():
+def get_mid_threshold():
     if not USE_AUTO_THRESHOLD:
-        return FIXED_THRESHOLD
+        return FIXED_MID_THRESHOLD
     if len(noise_peaks) < 12:
-        return max(FIXED_THRESHOLD, AUTO_FLOOR)
+        return max(FIXED_MID_THRESHOLD, AUTO_FLOOR)
     base = float(np.median(noise_peaks))
     thr = max(AUTO_FLOOR, base * AUTO_MULTIPLIER)
-    return max(thr, FIXED_THRESHOLD)
+    return max(thr, FIXED_MID_THRESHOLD)
 
 def safe_exit(code=0):
     try:
-        set_led(False)
-        led.deinit()
+        # turn all off on exit
+        red.value = False
+        orange.value = False
+        green.value = False
+        red.deinit()
+        orange.deinit()
+        green.deinit()
     except Exception:
         pass
     print("Exercise 7 exited cleanly.")
     sys.exit(code)
 
-print("Exercise 7: INMP441 Sound Detection Indicator running (Google VoiceHAT card)")
-print("LED: board.D13 | Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
+print("Exercise 7: INMP441 Sound Detection Indicator (3 levels) running")
+print("RED=board.D5 (LOUD), ORANGE=board.D13 (MID), GREEN=board.D6 (QUIET)")
+print("Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
 print("Stop: Stop button or Ctrl+C")
-print("Tip: If always ON, raise AUTO_MULTIPLIER / FIXED_THRESHOLD. If never ON, lower them.")
+print("Tuning tips:")
+print(" - Too sensitive? raise AUTO_MULTIPLIER or FIXED_MID_THRESHOLD")
+print(" - Not detecting? lower AUTO_MULTIPLIER or FIXED_MID_THRESHOLD")
+print(" - LOUD too easy/hard? adjust LOUD_MULTIPLIER")
 
-last_loud_t = 0.0
+last_state_change_t = 0.0
+current_level = "quiet"
+set_level(current_level)
 
 try:
     with sd.InputStream(
@@ -98,7 +140,6 @@ try:
         callback=audio_callback,
     ):
         last_print = 0.0
-        led_on = False
 
         while not _should_exit:
             now_t = time.time()
@@ -109,22 +150,29 @@ try:
                 if len(noise_peaks) > NOISE_WINDOW:
                     noise_peaks.pop(0)
 
-            thr = get_threshold()
+            mid_thr = get_mid_threshold()
+            loud_thr = mid_thr * LOUD_MULTIPLIER
 
-            loud = (_latest_peak >= thr)
+            # Decide target level
+            if _latest_peak >= loud_thr:
+                target = "loud"
+            elif _latest_peak >= mid_thr:
+                target = "mid"
+            else:
+                target = "quiet"
 
-            if loud:
-                last_loud_t = now_t
-
-            # Hold behavior so LED doesn't flicker too fast
-            should_on = (now_t - last_loud_t) <= HOLD_ON_S
-
-            if should_on != led_on:
-                led_on = should_on
-                set_led(led_on)
+            # Hold to prevent flicker: only switch if enough time passed
+            if target != current_level:
+                if (now_t - last_state_change_t) >= HOLD_S:
+                    current_level = target
+                    set_level(current_level)
+                    last_state_change_t = now_t
 
             if now_t - last_print > 1.0:
-                print(f"peak={_latest_peak:.3f} thr={thr:.3f} LED={'ON' if led_on else 'OFF'}")
+                print(
+                    f"peak={_latest_peak:.3f} mid_thr={mid_thr:.3f} loud_thr={loud_thr:.3f} "
+                    f"LEVEL={current_level.upper()}"
+                )
                 last_print = now_t
 
             time.sleep(0.01)
