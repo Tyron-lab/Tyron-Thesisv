@@ -68,7 +68,7 @@ signal.signal(signal.SIGINT, _handle_term)
 # ==========================
 # Buzzer (active buzzer recommended)
 # ==========================
-BUZZER_PIN = board.D16  # CHANGE if your buzzer is on a different pin
+BUZZER_PIN = board.D21  # CHANGE if your buzzer is on a different pin
 buzzer = digitalio.DigitalInOut(BUZZER_PIN)
 buzzer.direction = digitalio.Direction.OUTPUT
 buzzer.value = False
