@@ -1,10 +1,12 @@
-# Exercise 2: Gas Detection (Gas sensor -> Warning blink) + LCD messages via TCA9548A
-# Reuses the same LCD/TCA9548A approach as Exercise 1.
-# RED = error (D17)
-# ORANGE = warning blink (D22)
-# GREEN = ok (D27)
+# Exercise 2: Gas Detection (Gas sensor -> Warning) + LCD via TCA9548A
+# GREEN = SAFE / CLEAR
+# RED   = DETECTED / ALERT
+# ORANGE = optional warning blink during ALERT (can disable if you want)
 
 import time
+import signal
+import sys
+
 import board
 import digitalio
 
@@ -21,14 +23,29 @@ LCD_ADDR = 0x27      # LCD backpack address (often 0x27 or 0x3F)
 LCD_COLS = 16
 LCD_ROWS = 2
 
+_should_exit = False
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+# Stop button sends SIGTERM
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)  # Ctrl+C too
+
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
 
 def lcd_init():
     mux_select(LCD_CH)
-    lcd = CharLCD('PCF8574', address=LCD_ADDR, port=I2C_BUS,
-                  cols=LCD_COLS, rows=LCD_ROWS, charmap='A00')
+    lcd = CharLCD(
+        "PCF8574",
+        address=LCD_ADDR,
+        port=I2C_BUS,
+        cols=LCD_COLS,
+        rows=LCD_ROWS,
+        charmap="A00"
+    )
     lcd.clear()
     return lcd
 
@@ -42,24 +59,25 @@ def lcd_write(lcd, line1: str, line2: str = ""):
 def make_out(pin, initial=False):
     io = digitalio.DigitalInOut(pin)
     io.direction = digitalio.Direction.OUTPUT
-    io.value = initial
+    io.value = bool(initial)
     return io
 
 def make_in(pin, pull_up=False):
     io = digitalio.DigitalInOut(pin)
     io.direction = digitalio.Direction.INPUT
     if pull_up:
-        io.pull = digitalio.Pull.UP
+        try:
+            io.pull = digitalio.Pull.UP
+        except Exception:
+            pass
     return io
 
-# Status LEDs
-R = make_out(board.D5, False)   # RED
-G = make_out(board.D6, False)   # GREEN
-O = make_out(board.D13, False)   # ORANGE
+# Status LEDs (match your Tools pins)
+R = make_out(board.D5, False)    # RED = DETECT
+G = make_out(board.D6, False)    # GREEN = SAFE
+O = make_out(board.D13, False)   # ORANGE = warning blink (optional)
 
 # --- Gas sensor input pin ---
-# Connect GAS SENSOR "DO" to this GPIO (and VCC/GND accordingly).
-# Change this if you used a different GPIO.
 GAS_PIN = board.D17
 gas = make_in(GAS_PIN, pull_up=False)
 
@@ -68,36 +86,52 @@ def all_off():
     G.value = False
     O.value = False
 
-def blink(pin_io, times=3, on_s=0.15, off_s=0.15):
+def show_safe():
+    # GREEN ON only
+    R.value = False
+    O.value = False
+    G.value = True
+
+def show_alert_static():
+    # RED ON (no blink)
+    G.value = False
+    O.value = False
+    R.value = True
+
+def blink_orange(times=2, on_s=0.12, off_s=0.12):
+    # Blink ORANGE without blocking stop too long
     for _ in range(times):
-        pin_io.value = True
+        if _should_exit:
+            break
+        O.value = True
         time.sleep(on_s)
-        pin_io.value = False
+        O.value = False
         time.sleep(off_s)
 
 # --- Detection tuning ---
-# We "check gas level" by sampling DO many times and computing % triggered.
 SAMPLES = 20
-SAMPLE_DELAY = 0.02  # seconds between samples
-ALERT_PERCENT = 30   # trigger alert if DO is active in >=30% of samples
+SAMPLE_DELAY = 0.02
+ALERT_PERCENT = 30
 
-# If your module outputs inverted logic, set this True.
-# Typical MQ modules: DO often goes HIGH when gas/smoke exceeds threshold,
-# but some boards are opposite.
+# If your module outputs inverted logic, set this True/False
 INVERT_DO = True
 
 def read_level_percent():
     hits = 0
     for _ in range(SAMPLES):
+        if _should_exit:
+            break
         v = gas.value
         if INVERT_DO:
             v = not v
         if v:
             hits += 1
         time.sleep(SAMPLE_DELAY)
+    if SAMPLES <= 0:
+        return 0
     return int(round(100 * hits / SAMPLES))
 
-print("Gas Detection running... Ctrl+C to stop.")
+print("Gas Detection running... (Stop button / Ctrl+C to stop)")
 all_off()
 
 # Init LCD (if it fails, keep running without LCD)
@@ -112,11 +146,11 @@ last_state = None  # "SAFE" or "ALERT"
 
 try:
     # default SAFE
-    G.value = True
+    show_safe()
     if lcd:
         lcd_write(lcd, "Ready", "Checking gas")
 
-    while True:
+    while not _should_exit:
         level = read_level_percent()
         alert = (level >= ALERT_PERCENT)
 
@@ -124,57 +158,70 @@ try:
             state = "ALERT"
             if state != last_state:
                 print(f"🚨 GAS/SMOKE DETECTED (level {level}%)")
-                G.value = False
 
-            # Blink warning LED continuously while alert
-            blink(O, times=2, on_s=0.12, off_s=0.12)
+            # ✅ Your requested logic:
+            # RED = detect, GREEN off
+            show_alert_static()
+
+            # Optional orange blink while alert
+            blink_orange(times=2, on_s=0.12, off_s=0.12)
 
             if lcd:
-                lcd_write(lcd, "GAS ALERT!", f"Level: {level}%")
+                lcd_write(lcd, "GAS DETECTED!", f"Level: {level}%")
+
         else:
             state = "SAFE"
             if state != last_state:
-                print(f"✅ Gas OK (level {level}%)")
-                O.value = False
-                G.value = True
+                print(f"✅ Gas CLEAR (level {level}%)")
+
+            # ✅ Your requested logic:
+            # GREEN = clear, RED off
+            show_safe()
 
             if lcd:
-                lcd_write(lcd, "Gas OK", f"Level: {level}%")
+                lcd_write(lcd, "Gas CLEAR", f"Level: {level}%")
+
+            # short sleep but responsive to stop
             time.sleep(0.2)
 
         last_state = state
 
-except KeyboardInterrupt:
-    print("\nStopped by user.")
-    if lcd:
-        try:
-            lcd_write(lcd, "Stopped", "")
-            time.sleep(0.8)
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
-
 except Exception as e:
     print(f"\n❌ ERROR: {e}")
     all_off()
+    # In error, turn RED on
     R.value = True
     if lcd:
         try:
             lcd_write(lcd, "ERROR", str(e)[:16])
         except Exception:
             pass
-    time.sleep(5)
+    time.sleep(2)
 
 finally:
+    # ✅ Clean stop (same idea as Exercise 3)
     all_off()
-    gas.deinit()
-    R.deinit()
-    G.deinit()
-    O.deinit()
+
+    try:
+        gas.deinit()
+    except Exception:
+        pass
+
+    try:
+        R.deinit()
+        G.deinit()
+        O.deinit()
+    except Exception:
+        pass
+
     if lcd:
         try:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.6)
             mux_select(LCD_CH)
             lcd.clear()
         except Exception:
             pass
+
+    print("Exercise 2 exited cleanly.")
+    sys.exit(0)
