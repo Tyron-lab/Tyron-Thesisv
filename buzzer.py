@@ -5,7 +5,7 @@ import signal
 import board
 import digitalio
 
-BUZZER_PIN = board.D12
+BUZZER_PIN = board.D16
 
 # ✅ KEEP THIS TRUE FIRST (so it will NEVER beep)
 MUTE = True

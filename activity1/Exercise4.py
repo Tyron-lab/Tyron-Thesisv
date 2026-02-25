@@ -27,14 +27,13 @@ TRIG_PIN = board.D23
 ECHO_PIN = board.D24
 
 # ---- Buzzer pin ----
-BUZZER_PIN = board.D16
+BUZZER_PIN = board.D16  # <-- your current buzzer pin
 
 # ✅ If you want COMPLETELY SILENT even when near, set this True.
 MUTE = False
 
 # If your buzzer is wired as active-low (beeps when pin is LOW), set True.
 # If it beeps when pin is HIGH, set False.
-# If you're unsure, start with False. If it's always buzzing, flip it.
 BUZZER_ACTIVE_LOW = True
 
 _should_exit = False
@@ -42,7 +41,9 @@ def _handle_term(signum, frame):
     global _should_exit
     _should_exit = True
 
+# Stop button sends SIGTERM, Ctrl+C sends SIGINT
 signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)
 
 # ---------------- LCD helpers ----------------
 def mux_select(channel: int):
@@ -76,32 +77,56 @@ TRIG.direction = digitalio.Direction.OUTPUT
 ECHO.direction = digitalio.Direction.INPUT
 TRIG.value = False
 
-buzzer = digitalio.DigitalInOut(BUZZER_PIN)
-buzzer.direction = digitalio.Direction.OUTPUT
+# ---------------- Buzzer setup (SAFE) ----------------
+buzzer = None
+BUZZER_OK = False
 
 def buzzer_set(on: bool):
     """Hard ON/OFF with correct polarity. Always use this (never buzzer.value directly)."""
-    if MUTE:
-        # Force silence
-        buzzer.value = BUZZER_ACTIVE_LOW
+    global buzzer, BUZZER_OK
+    if (not BUZZER_OK) or (buzzer is None) or MUTE:
         return
 
     if BUZZER_ACTIVE_LOW:
-        # ON = LOW, OFF = HIGH
+        # ON = LOW(False), OFF = HIGH(True)
         buzzer.value = (not on)
     else:
-        # ON = HIGH, OFF = LOW
+        # ON = HIGH(True), OFF = LOW(False)
         buzzer.value = bool(on)
 
 def buzzer_off_hard():
     """Force OFF no matter what."""
-    buzzer.value = BUZZER_ACTIVE_LOW  # OFF state for active-low is HIGH(True), for active-high is LOW(False)
-    # Wait a tiny moment to let module settle
+    global buzzer, BUZZER_OK
+    if (not BUZZER_OK) or (buzzer is None):
+        return
+    # OFF state: active-low -> HIGH(True), active-high -> LOW(False)
+    buzzer.value = True if BUZZER_ACTIVE_LOW else False
     time.sleep(0.02)
 
-# ✅ First thing: silence buzzer immediately
-buzzer_off_hard()
-buzzer_set(False)
+def init_buzzer():
+    """Try to claim buzzer pin. If GPIO busy, continue without buzzer."""
+    global buzzer, BUZZER_OK
+    try:
+        buzzer = digitalio.DigitalInOut(BUZZER_PIN)
+        buzzer.direction = digitalio.Direction.OUTPUT
+        BUZZER_OK = True
+
+        # ✅ First thing: silence buzzer immediately
+        buzzer_off_hard()
+        buzzer_set(False)
+        return True
+    except Exception as e:
+        BUZZER_OK = False
+        buzzer = None
+        print(f"[BUZZER] init failed (GPIO busy or pin conflict): {repr(e)}")
+        print("[BUZZER] Continuing WITHOUT buzzer. (Ultrasonic + LCD will still work)")
+        print("[BUZZER] Fix options:")
+        print("  1) Stop other exercises still running (they may hold GPIO)")
+        print("  2) Change BUZZER_PIN to another free pin (e.g. board.D17 / board.D22 / board.D25)")
+        return False
+
+# Attempt buzzer init once
+init_buzzer()
 
 # ---------------- Behavior tuning ----------------
 NEAR_CM = 20.0
@@ -113,10 +138,10 @@ def measure_distance():
     time.sleep(0.00001)
     TRIG.value = False
 
-    # Wait for echo high
     pulse_start = time.time()
     timeout = pulse_start + 0.1  # 100ms timeout
 
+    # Wait for echo high
     while (not ECHO.value) and time.time() < timeout:
         pulse_start = time.time()
 
@@ -134,7 +159,7 @@ def measure_distance():
     return round(distance_cm, 1)
 
 def beep_once(on_s: float, off_s: float):
-    if MUTE:
+    if MUTE or not BUZZER_OK:
         time.sleep(on_s + off_s)
         return
     buzzer_set(True)
@@ -144,7 +169,7 @@ def beep_once(on_s: float, off_s: float):
 
 def beep_pattern(distance_cm: float):
     # Simple ON/OFF beeps (works without PWM)
-    if MUTE:
+    if MUTE or not BUZZER_OK:
         return
 
     if distance_cm <= VERY_NEAR_CM:
@@ -158,6 +183,7 @@ def beep_pattern(distance_cm: float):
 print("Exercise 4 running (ultrasonic)... Stop button / Ctrl+C to stop.")
 print("Buzzer muted?" , MUTE)
 print("BUZZER_ACTIVE_LOW =", BUZZER_ACTIVE_LOW)
+print("BUZZER_OK =", BUZZER_OK)
 
 # Init LCD
 lcd = None
@@ -181,7 +207,10 @@ try:
             time.sleep(0.2)
         else:
             line1 = f"Dist: {dist:>6.1f}cm"
-            line2 = "NEAR! BEEP!" if (not MUTE and dist <= NEAR_CM) else ("OK" if not MUTE else "MUTED")
+            if MUTE:
+                line2 = "MUTED"
+            else:
+                line2 = "NEAR! BEEP!" if (BUZZER_OK and dist <= NEAR_CM) else "OK"
             beep_pattern(dist)
 
         # LCD update (reduce flicker)
@@ -204,7 +233,8 @@ finally:
         pass
 
     try:
-        buzzer.deinit()
+        if buzzer is not None:
+            buzzer.deinit()
     except Exception:
         pass
 
