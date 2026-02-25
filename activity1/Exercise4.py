@@ -35,7 +35,7 @@ MUTE = False
 # If your buzzer is wired as active-low (beeps when pin is LOW), set True.
 # If it beeps when pin is HIGH, set False.
 # If you're unsure, start with False. If it's always buzzing, flip it.
-BUZZER_ACTIVE_LOW = False
+BUZZER_ACTIVE_LOW = True
 
 _should_exit = False
 def _handle_term(signum, frame):
