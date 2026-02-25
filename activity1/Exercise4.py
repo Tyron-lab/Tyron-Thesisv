@@ -1,16 +1,20 @@
 # Exercise 4: Distance Measurement (HC-SR04) using digitalio timing + Passive Buzzer + LCD via TCA9548A
-# TRIG = board.D5, ECHO = board.D6
+# TRIG = board.D23, ECHO = board.D24
 # Output: LCD shows distance; buzzer beeps when object is near
+# NOTE: Buzzer is forced OFF on start + clean exit (SIGTERM safe)
 
 import time
+import signal
+import sys
+
 import board
 import digitalio
 
-# ---- LCD via TCA9548A (same style as Exercise 2) ----
+# ---- LCD via TCA9548A ----
 from smbus2 import SMBus
 from RPLCD.i2c import CharLCD
 
-# --- I2C / MUX / LCD settings (match your setup) ---
+# --- I2C / MUX / LCD settings ---
 I2C_BUS  = 1
 MUX_ADDR = 0x70
 LCD_CH   = 0
@@ -18,6 +22,29 @@ LCD_ADDR = 0x27
 LCD_COLS = 16
 LCD_ROWS = 2
 
+# ---- Ultrasonic pins ----
+TRIG_PIN = board.D23
+ECHO_PIN = board.D24
+
+# ---- Buzzer pin ----
+BUZZER_PIN = board.D16
+
+# ✅ If you want COMPLETELY SILENT even when near, set this True.
+MUTE = False
+
+# If your buzzer is wired as active-low (beeps when pin is LOW), set True.
+# If it beeps when pin is HIGH, set False.
+# If you're unsure, start with False. If it's always buzzing, flip it.
+BUZZER_ACTIVE_LOW = False
+
+_should_exit = False
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+signal.signal(signal.SIGTERM, _handle_term)
+
+# ---------------- LCD helpers ----------------
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
@@ -25,12 +52,12 @@ def mux_select(channel: int):
 def lcd_init():
     mux_select(LCD_CH)
     lcd = CharLCD(
-        'PCF8574',
+        "PCF8574",
         address=LCD_ADDR,
         port=I2C_BUS,
         cols=LCD_COLS,
         rows=LCD_ROWS,
-        charmap='A00'
+        charmap="A00"
     )
     lcd.clear()
     return lcd
@@ -42,32 +69,41 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.cursor_pos = (1, 0)
     lcd.write_string((line2 or "")[:LCD_COLS])
 
-# ---- Ultrasonic pins (your working ones) ----
-TRIG = digitalio.DigitalInOut(board.D5)
-ECHO = digitalio.DigitalInOut(board.D6)
+# ---------------- GPIO setup ----------------
+TRIG = digitalio.DigitalInOut(TRIG_PIN)
+ECHO = digitalio.DigitalInOut(ECHO_PIN)
 TRIG.direction = digitalio.Direction.OUTPUT
 ECHO.direction = digitalio.Direction.INPUT
 TRIG.value = False
 
-# ---- Passive buzzer pin (pick a free one) ----
-# D12 = GPIO12 (change to D13/D19/D26 if needed)
-BUZZER_PIN = board.D16
 buzzer = digitalio.DigitalInOut(BUZZER_PIN)
 buzzer.direction = digitalio.Direction.OUTPUT
 
-# If your buzzer module is active-low (beeps when pin is LOW), set this True.
-# If it beeps when pin is HIGH, set this False.
-BUZZER_ACTIVE_LOW = False
+def buzzer_set(on: bool):
+    """Hard ON/OFF with correct polarity. Always use this (never buzzer.value directly)."""
+    if MUTE:
+        # Force silence
+        buzzer.value = BUZZER_ACTIVE_LOW
+        return
 
-def buzzer_on():
-    buzzer.value = (not BUZZER_ACTIVE_LOW)
+    if BUZZER_ACTIVE_LOW:
+        # ON = LOW, OFF = HIGH
+        buzzer.value = (not on)
+    else:
+        # ON = HIGH, OFF = LOW
+        buzzer.value = bool(on)
 
-def buzzer_off():
-    buzzer.value = BUZZER_ACTIVE_LOW
+def buzzer_off_hard():
+    """Force OFF no matter what."""
+    buzzer.value = BUZZER_ACTIVE_LOW  # OFF state for active-low is HIGH(True), for active-high is LOW(False)
+    # Wait a tiny moment to let module settle
+    time.sleep(0.02)
 
-buzzer_off()  # start silent
+# ✅ First thing: silence buzzer immediately
+buzzer_off_hard()
+buzzer_set(False)
 
-# ---- Behavior tuning ----
+# ---------------- Behavior tuning ----------------
 NEAR_CM = 20.0
 VERY_NEAR_CM = 8.0
 
@@ -98,22 +134,30 @@ def measure_distance():
     return round(distance_cm, 1)
 
 def beep_once(on_s: float, off_s: float):
-    buzzer_on()
+    if MUTE:
+        time.sleep(on_s + off_s)
+        return
+    buzzer_set(True)
     time.sleep(on_s)
-    buzzer_off()
+    buzzer_set(False)
     time.sleep(off_s)
 
 def beep_pattern(distance_cm: float):
-    # Passive buzzer: simple ON/OFF beeps (works even without PWM)
+    # Simple ON/OFF beeps (works without PWM)
+    if MUTE:
+        return
+
     if distance_cm <= VERY_NEAR_CM:
         beep_once(0.06, 0.06)
     elif distance_cm <= NEAR_CM:
         beep_once(0.10, 0.18)
     else:
-        buzzer_off()
+        buzzer_set(False)
         time.sleep(0.12)
 
-print("Exercise 4 running (digitalio ultrasonic)... Ctrl+C to stop.")
+print("Exercise 4 running (ultrasonic)... Stop button / Ctrl+C to stop.")
+print("Buzzer muted?" , MUTE)
+print("BUZZER_ACTIVE_LOW =", BUZZER_ACTIVE_LOW)
 
 # Init LCD
 lcd = None
@@ -127,17 +171,17 @@ except Exception as e:
 last_display = None
 
 try:
-    while True:
+    while not _should_exit:
         dist = measure_distance()
 
         if dist is None or not (2 <= dist <= 400):
             line1 = "Dist: ---"
             line2 = "Out of range"
-            buzzer_off()
+            buzzer_set(False)
             time.sleep(0.2)
         else:
             line1 = f"Dist: {dist:>6.1f}cm"
-            line2 = "NEAR! BEEP!" if dist <= NEAR_CM else "OK"
+            line2 = "NEAR! BEEP!" if (not MUTE and dist <= NEAR_CM) else ("OK" if not MUTE else "MUTED")
             beep_pattern(dist)
 
         # LCD update (reduce flicker)
@@ -148,17 +192,24 @@ try:
                 last_display = display
 
 except KeyboardInterrupt:
-    print("\nStopped.")
+    print("\nStopped (KeyboardInterrupt).")
 
 finally:
-    # cleanup
+    # ✅ cleanup: FORCE SILENT
     try:
-        buzzer_off()
+        MUTE = True
+        buzzer_set(False)
+        buzzer_off_hard()
+    except Exception:
+        pass
+
+    try:
         buzzer.deinit()
     except Exception:
         pass
 
     try:
+        TRIG.value = False
         TRIG.deinit()
         ECHO.deinit()
     except Exception:
@@ -170,3 +221,6 @@ finally:
             lcd.clear()
         except Exception:
             pass
+
+    print("Exercise 4 exited cleanly.")
+    sys.exit(0)
