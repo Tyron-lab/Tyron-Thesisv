@@ -1,7 +1,6 @@
-# Exercise 9: Sound Alert System (INMP441) + Buzzer (+ optional LCD via TCA9548A)
-# Input: Loud sound detected (shout/alarm)
-# What happens: checks if sound exceeds threshold for a short time
-# Output: buzzer alarm pattern (and LCD message if available)
+# Exercise 9: Sound Alert System (INMP441) + Buzzer + RED/ORANGE LEDs (+ optional LCD)
+# Input: Loud sound detected (e.g., shout or alarm)
+# Output: Buzzer alarm + blink RED (D5) + ORANGE (D13)
 
 import time
 import signal
@@ -28,6 +27,15 @@ def _handle_term(signum, frame):
 
 signal.signal(signal.SIGTERM, _handle_term)
 signal.signal(signal.SIGINT, _handle_term)
+
+# ==========================
+# Helper: make output pin (your style)
+# ==========================
+def make_out(pin, initial=False):
+    d = digitalio.DigitalInOut(pin)
+    d.direction = digitalio.Direction.OUTPUT
+    d.value = bool(initial)
+    return d
 
 # ==========================
 # LCD via TCA9548A (optional)
@@ -66,25 +74,22 @@ def lcd_write(lcd, line1: str, line2: str = ""):
 # ==========================
 # Buzzer (Exercise 4 hardened logic)
 # ==========================
-BUZZER_PIN = board.D21   # <-- your new buzzer pin (change if needed)
-
+BUZZER_PIN = board.D21     # change if your buzzer is on another pin
 MUTE = False
+BUZZER_ACTIVE_LOW = True   # True if buzzer ON when GPIO LOW
 
-# If buzzer beeps when IN is LOW => True (active-low). If beeps when HIGH => False.
-BUZZER_ACTIVE_LOW = True
-
-buzzer = digitalio.DigitalInOut(BUZZER_PIN)
-buzzer.direction = digitalio.Direction.OUTPUT
+buzzer = make_out(BUZZER_PIN, False)
 
 def buzzer_set(on: bool):
     global MUTE
     if MUTE:
+        # force silence
         buzzer.value = BUZZER_ACTIVE_LOW
         return
     if BUZZER_ACTIVE_LOW:
-        buzzer.value = (not on)  # ON=LOW, OFF=HIGH
+        buzzer.value = (not on)   # ON=LOW, OFF=HIGH
     else:
-        buzzer.value = bool(on)  # ON=HIGH, OFF=LOW
+        buzzer.value = bool(on)   # ON=HIGH, OFF=LOW
 
 def buzzer_off_hard():
     buzzer.value = BUZZER_ACTIVE_LOW
@@ -94,15 +99,40 @@ def buzzer_off_hard():
 buzzer_off_hard()
 buzzer_set(False)
 
-def alarm_pattern(duration_s: float = 2.0):
-    """Alarm beeps for duration_s seconds."""
-    if MUTE:
-        time.sleep(duration_s)
-        return
+# ==========================
+# LEDs (your pins)
+# ==========================
+# Red + Orange LEDs as you requested:
+R = make_out(board.D5, False)     # Red
+O = make_out(board.D13, False)    # Orange
+
+def leds_off():
+    R.value = False
+    O.value = False
+
+def leds_blink_step(state: bool):
+    """One blink step: state True=ON, False=OFF."""
+    R.value = state
+    O.value = state
+
+# ==========================
+# Alarm pattern (buzzer + blink LEDs)
+# ==========================
+def alarm_pattern(duration_s: float = 2.0, on_s: float = 0.12, off_s: float = 0.12):
     end_t = time.time() + duration_s
+    blink_state = False
     while time.time() < end_t and (not _should_exit):
-        buzzer_set(True);  time.sleep(0.12)
-        buzzer_set(False); time.sleep(0.12)
+        blink_state = not blink_state
+        leds_blink_step(blink_state)
+
+        buzzer_set(True)
+        time.sleep(on_s)
+        buzzer_set(False)
+        time.sleep(off_s)
+
+    # return to OFF after alarm
+    leds_off()
+    buzzer_set(False)
 
 def safe_exit(lcd=None, code=0):
     global MUTE
@@ -112,10 +142,19 @@ def safe_exit(lcd=None, code=0):
         buzzer_off_hard()
     except Exception:
         pass
+
     try:
-        buzzer.deinit()
+        leds_off()
     except Exception:
         pass
+
+    # deinit pins
+    for obj in (buzzer, R, O):
+        try:
+            obj.deinit()
+        except Exception:
+            pass
+
     if lcd:
         try:
             lcd_write(lcd, "Stopped", "")
@@ -124,6 +163,7 @@ def safe_exit(lcd=None, code=0):
             lcd.clear()
         except Exception:
             pass
+
     print("Exercise 9 exited cleanly.")
     sys.exit(code)
 
@@ -134,9 +174,7 @@ SAMPLE_RATE = 48000
 BLOCK_MS = 20
 CHANNELS = 1
 BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
-
-# Use the same working device index you used before (change if needed)
-INPUT_DEVICE = 1
+INPUT_DEVICE = 1  # set to your working device index
 
 _latest_peak = 0.0
 def audio_callback(indata, frames, time_info, status):
@@ -147,23 +185,17 @@ def audio_callback(indata, frames, time_info, status):
 # ==========================
 # Loud detection tuning
 # ==========================
-# If you want automatic threshold based on ambient noise:
 USE_AUTO_THRESHOLD = True
-AUTO_MULTIPLIER = 7.0   # bigger = less sensitive
-AUTO_FLOOR = 0.12       # minimum threshold (prevents triggering on silence)
+AUTO_MULTIPLIER = 7.0
+AUTO_FLOOR = 0.12
+FIXED_THRESHOLD = 0.20
 
-# If not using auto:
-FIXED_THRESHOLD = 0.20  # raise if it triggers too easily
-
-# Must stay loud for this long to count (prevents single click spikes)
 HOLD_MS = 120
 HOLD_S = HOLD_MS / 1000.0
 
-# After an alert, ignore triggers for cooldown
 COOLDOWN_MS = 1500
 COOLDOWN_S = COOLDOWN_MS / 1000.0
 
-# Ambient noise learning window
 noise_peaks = []
 NOISE_WINDOW = 200
 
@@ -182,8 +214,7 @@ def get_threshold():
 print("Exercise 9: Sound Alert System running...")
 print(f"Mic device={INPUT_DEVICE} SR={SAMPLE_RATE} block={BLOCK_MS}ms")
 print("Stop: Stop button or Ctrl+C")
-print("Buzzer muted?", MUTE)
-print("BUZZER_ACTIVE_LOW =", BUZZER_ACTIVE_LOW)
+print("Red LED: D5 | Orange LED: D13 | Buzzer pin:", BUZZER_PIN)
 
 lcd = None
 if USE_LCD:
@@ -196,8 +227,8 @@ if USE_LCD:
 
 loud_started = None
 last_alert_t = 0.0
-last_state = None
 last_print = 0.0
+state = "IDLE"
 
 try:
     with sd.InputStream(
@@ -230,20 +261,20 @@ try:
             loud_confirmed = (loud_started is not None) and ((now - loud_started) >= HOLD_S)
             cooldown_ok = (now - last_alert_t) >= COOLDOWN_S
 
-            # UI state
-            if loud_confirmed and last_state != "LOUD":
-                last_state = "LOUD"
+            if loud_confirmed and state != "ALERT":
+                state = "ALERT"
                 if lcd:
                     lcd_write(lcd, "LOUD SOUND!", "ALERT!")
                 print("🚨 LOUD SOUND DETECTED")
 
-            if (not loud_confirmed) and last_state != "IDLE":
-                last_state = "IDLE"
+            if (not loud_confirmed) and state != "IDLE":
+                state = "IDLE"
+                leds_off()
+                buzzer_set(False)
                 if lcd:
                     lcd_write(lcd, "Listening...", f"thr {thr:.2f}")
-                # no spam print here
 
-            # Trigger alarm
+            # Trigger alarm (buzzer + blink LEDs)
             if loud_confirmed and cooldown_ok:
                 last_alert_t = now
                 alarm_pattern(duration_s=2.0)
