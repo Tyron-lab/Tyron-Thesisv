@@ -24,7 +24,7 @@ LCD_COLS = 16
 LCD_ROWS = 2
 
 # ✅ If your PIR logic is reversed, set this True
-INVERT_PIR = False
+INVERT_PIR = True
 
 _should_exit = False
 def _handle_term(signum, frame):

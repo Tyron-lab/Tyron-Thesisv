@@ -1,7 +1,7 @@
-# Exercise 2: Gas Detection (Gas sensor -> Warning) + LCD via TCA9548A
+# Exercise 2: Gas Detection (Gas sensor -> Status) + LCD via TCA9548A
 # GREEN = SAFE / CLEAR
 # RED   = DETECTED / ALERT
-# ORANGE = optional warning blink during ALERT (can disable if you want)
+# (ORANGE NOT USED)
 
 import time
 import signal
@@ -75,7 +75,6 @@ def make_in(pin, pull_up=False):
 # Status LEDs (match your Tools pins)
 R = make_out(board.D5, False)    # RED = DETECT
 G = make_out(board.D6, False)    # GREEN = SAFE
-O = make_out(board.D13, False)   # ORANGE = warning blink (optional)
 
 # --- Gas sensor input pin ---
 GAS_PIN = board.D17
@@ -84,29 +83,16 @@ gas = make_in(GAS_PIN, pull_up=False)
 def all_off():
     R.value = False
     G.value = False
-    O.value = False
 
 def show_safe():
     # GREEN ON only
     R.value = False
-    O.value = False
     G.value = True
 
-def show_alert_static():
-    # RED ON (no blink)
+def show_alert():
+    # RED ON only
     G.value = False
-    O.value = False
     R.value = True
-
-def blink_orange(times=2, on_s=0.12, off_s=0.12):
-    # Blink ORANGE without blocking stop too long
-    for _ in range(times):
-        if _should_exit:
-            break
-        O.value = True
-        time.sleep(on_s)
-        O.value = False
-        time.sleep(off_s)
 
 # --- Detection tuning ---
 SAMPLES = 20
@@ -157,31 +143,26 @@ try:
         if alert:
             state = "ALERT"
             if state != last_state:
-                print(f"🚨 GAS/SMOKE DETECTED (level {level}%)")
+                print(f"🚨 SMOKE/GAS DETECTED (level {level}%)")
 
-            # ✅ Your requested logic:
-            # RED = detect, GREEN off
-            show_alert_static()
-
-            # Optional orange blink while alert
-            blink_orange(times=2, on_s=0.12, off_s=0.12)
+            show_alert()
 
             if lcd:
-                lcd_write(lcd, "GAS DETECTED!", f"Level: {level}%")
+                lcd_write(lcd, "SMOKE DETECT!", f"Level: {level}%")
+
+            # small delay but responsive
+            time.sleep(0.12)
 
         else:
             state = "SAFE"
             if state != last_state:
-                print(f"✅ Gas CLEAR (level {level}%)")
+                print(f"✅ CLEAR (level {level}%)")
 
-            # ✅ Your requested logic:
-            # GREEN = clear, RED off
             show_safe()
 
             if lcd:
-                lcd_write(lcd, "Gas CLEAR", f"Level: {level}%")
+                lcd_write(lcd, "CLEAR / SAFE", f"Level: {level}%")
 
-            # short sleep but responsive to stop
             time.sleep(0.2)
 
         last_state = state
@@ -189,7 +170,6 @@ try:
 except Exception as e:
     print(f"\n❌ ERROR: {e}")
     all_off()
-    # In error, turn RED on
     R.value = True
     if lcd:
         try:
@@ -199,7 +179,7 @@ except Exception as e:
     time.sleep(2)
 
 finally:
-    # ✅ Clean stop (same idea as Exercise 3)
+    # ✅ Clean stop
     all_off()
 
     try:
@@ -210,7 +190,6 @@ finally:
     try:
         R.deinit()
         G.deinit()
-        O.deinit()
     except Exception:
         pass
 
