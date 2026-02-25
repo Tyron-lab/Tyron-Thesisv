@@ -1,24 +1,37 @@
 # Exercise 1: Motion Detection (PIR -> Status LEDs) + LCD messages via TCA9548A
-# RED = error (D17)
-# ORANGE = warning/motion (D22)
-# GREEN = success/ok (D27)
+# Uses GPIO pins:
+#   LED RED    = D5
+#   LED GREEN  = D6
+#   LED ORANGE = D13
+#   PIR INPUT  = D18
 
 import time
+import signal
+import sys
+
 import board
 import digitalio
 
-# ---- LCD via TCA9548A ----
 from smbus2 import SMBus
 from RPLCD.i2c import CharLCD
 
 # CHANGE THESE IF NEEDED:
 I2C_BUS  = 1
-MUX_ADDR = 0x70      # TCA9548A default
-LCD_CH   = 0         # channel where LCD is plugged (SC0/SD0=0, SC1/SD1=1, ...)
-LCD_ADDR = 0x27      # LCD backpack address (often 0x27 or 0x3F)
+MUX_ADDR = 0x70
+LCD_CH   = 0
+LCD_ADDR = 0x27
 
 LCD_COLS = 16
 LCD_ROWS = 2
+
+_should_exit = False
+
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+# Stop button (server terminate) sends SIGTERM -> exit gracefully
+signal.signal(signal.SIGTERM, _handle_term)
 
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
@@ -40,7 +53,7 @@ def lcd_write(lcd, line1: str, line2: str = ""):
 def make_out(pin, initial=False):
     io = digitalio.DigitalInOut(pin)
     io.direction = digitalio.Direction.OUTPUT
-    io.value = initial
+    io.value = bool(initial)
     return io
 
 def make_in(pin):
@@ -48,9 +61,9 @@ def make_in(pin):
     io.direction = digitalio.Direction.INPUT
     return io
 
-# Status LEDs
-R = make_out(board.D5, False)   # RED
-G = make_out(board.D6, False)   # GREEN
+# Status LEDs (match Tools pins)
+R = make_out(board.D5, False)    # RED
+G = make_out(board.D6, False)    # GREEN
 O = make_out(board.D13, False)   # ORANGE
 
 # PIR input
@@ -64,7 +77,7 @@ def all_off():
 print("PIR Motion Detection: warming up PIR (30s)...")
 all_off()
 
-# Init LCD (if it fails, we keep running without LCD)
+# Init LCD (if it fails, keep running without LCD)
 lcd = None
 try:
     lcd = lcd_init()
@@ -72,28 +85,31 @@ except Exception as e:
     print(f"[LCD] init failed, continuing without LCD: {e}")
     lcd = None
 
-# Warm-up: blink ORANGE + show calibrating on LCD
 warmup_seconds = 30
 
 if lcd:
     lcd_write(lcd, "Calibrating...", f"Wait {warmup_seconds}s")
 
 for sec_left in range(warmup_seconds, 0, -1):
-    # blink every 0.5s twice per second
+    if _should_exit:
+        break
     O.value = True
     time.sleep(0.5)
     O.value = False
     time.sleep(0.5)
 
-    if lcd and sec_left % 1 == 0:
+    if lcd:
         lcd_write(lcd, "Calibrating...", f"Wait {sec_left-1}s")
 
 O.value = False
 
-print("Monitoring motion... Ctrl+C to stop.")
+if _should_exit:
+    print("Stopped (SIGTERM) during warmup.")
+else:
+    print("Monitoring motion... (Stop button to end)")
 
-# Default state: OK
 last_motion = None
+
 try:
     G.value = True
     O.value = False
@@ -102,45 +118,31 @@ try:
     if lcd:
         lcd_write(lcd, "Ready", "No motion")
 
-    while True:
-        motion = pir.value  # True = motion detected
+    while not _should_exit:
+        motion = bool(pir.value)
 
-        # Only update when state changes (prevents LCD flicker)
         if motion != last_motion:
             if motion:
                 print("🚨 MOTION DETECTED")
-                # LEDs
                 G.value = False
                 O.value = True
-                # LCD
                 if lcd:
                     lcd_write(lcd, "Detected!", "Motion found")
             else:
                 print("✅ NO MOTION")
-                # LEDs
                 O.value = False
                 G.value = True
-                # LCD
                 if lcd:
                     lcd_write(lcd, "Ready", "No motion")
-
             last_motion = motion
 
         time.sleep(0.05)
 
 except KeyboardInterrupt:
-    print("\nStopped by user.")
-    if lcd:
-        try:
-            lcd_write(lcd, "Stopped", "")
-            time.sleep(0.8)
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
+    print("Stopped by user (KeyboardInterrupt).")
 
 except Exception as e:
-    print(f"\n❌ ERROR: {e}")
+    print(f"❌ ERROR: {e}")
     all_off()
     R.value = True
     if lcd:
@@ -148,17 +150,28 @@ except Exception as e:
             lcd_write(lcd, "ERROR", str(e)[:16])
         except Exception:
             pass
-    time.sleep(5)
+    time.sleep(1)
 
 finally:
-    all_off()
-    pir.deinit()
-    R.deinit()
-    G.deinit()
-    O.deinit()
-    if lcd:
-        try:
+    # Clean shutdown
+    try:
+        if lcd:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.4)
             mux_select(LCD_CH)
             lcd.clear()
-        except Exception:
-            pass
+    except Exception:
+        pass
+
+    all_off()
+    try: pir.deinit()
+    except Exception: pass
+    try: R.deinit()
+    except Exception: pass
+    try: G.deinit()
+    except Exception: pass
+    try: O.deinit()
+    except Exception: pass
+
+    print("Exercise 1 exited cleanly.")
+    sys.exit(0)

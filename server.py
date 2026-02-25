@@ -6,6 +6,8 @@ import logging
 import os
 import subprocess
 import sys
+import signal
+from collections import deque
 
 # ────────────────────────────────────────────────
 #   Conditional imports – only load what we can
@@ -63,13 +65,9 @@ print("Available libraries:", SENSORS_AVAILABLE)
 #   APP + GLOBALS
 # ────────────────────────────────────────────────
 app = Flask(__name__)
-
-# Reduce spammy request logs in terminal
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# HTML PAGES live here:
 TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
 
 # I2C lock is CRITICAL: BMP/MPU (Blinka I2C) + LCD (smbus2) will fight otherwise
@@ -91,7 +89,6 @@ def clear_error(key: str):
 #   EXERCISE MAP (RUN PY FILES FROM FOLDERS)
 # ────────────────────────────────────────────────
 EXERCISE_MAP = {
-    # Activity 1
     "a1-ex1": os.path.join(BASE_DIR, "activity1", "Exercise1.py"),
     "a1-ex2": os.path.join(BASE_DIR, "activity1", "Exercise2.py"),
     "a1-ex3": os.path.join(BASE_DIR, "activity1", "Exercise3.py"),
@@ -126,25 +123,32 @@ EXERCISE_MAP = {
 exercise_proc = None
 exercise_lock = threading.Lock()
 
+# Keep last logs/status (so UI won’t say error when it was just stopped)
+exercise_status = {
+    "exercise_id": None,
+    "running": False,
+    "ended": False,
+    "end_reason": "",      # "stopped" | "finished" | "error"
+    "exit_code": None,
+    "started_at": None,
+    "ended_at": None,
+}
+exercise_stdout = deque(maxlen=600)
+exercise_stderr = deque(maxlen=600)
+exercise_log_lock = threading.Lock()
+exercise_reader_thread = None
+exercise_stop_requested = False
+
 def _python_cmd():
     # Uses current interpreter (venv python if you started server inside venv)
     return sys.executable
 
-def stop_current_exercise():
-    global exercise_proc
-    with exercise_lock:
-        if exercise_proc is None:
-            return True
-        try:
-            exercise_proc.terminate()
-            try:
-                exercise_proc.wait(timeout=2)
-            except Exception:
-                exercise_proc.kill()
-            exercise_proc = None
-            return True
-        except Exception:
-            return False
+def _safe_deinit(io):
+    try:
+        if io is not None:
+            io.deinit()
+    except Exception:
+        pass
 
 # ────────────────────────────────────────────────
 #   MUX (TCA9548A) CONFIG
@@ -152,7 +156,6 @@ def stop_current_exercise():
 USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
 MUX_ADDRESS = 0x70
 
-# Channels (edit if yours is different)
 LCD_MUX_CH = 0
 MPU_MUX_CH = 1
 BMP_MUX_CH = 2
@@ -175,7 +178,6 @@ def init_mux():
         USE_MUX = False
         return False
 
-# Try to init mux early (safe)
 if SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("tca9548a"):
     init_mux()
 
@@ -183,7 +185,7 @@ if SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("tca9548a"):
 #   LCD CONFIG
 # ────────────────────────────────────────────────
 LCD_I2C_BUS = 1
-LCD_ADDRS = [0x27, 0x3F]  # common PCF8574 backpacks
+LCD_ADDRS = [0x27, 0x3F]
 LCD_COLS = 16
 LCD_ROWS = 2
 _lcd = None
@@ -193,7 +195,7 @@ def mux_select_for_lcd():
     if not SENSORS_AVAILABLE.get("LCD"):
         return False
     if not USE_MUX:
-        return True  # direct I2C
+        return True
     try:
         with i2c_lock:
             with SMBus(LCD_I2C_BUS) as bus:
@@ -271,6 +273,17 @@ def lcd_clear():
         set_error("LCD_TOOL", f"clear failed: {e}")
         return False
 
+def lcd_release():
+    global _lcd
+    try:
+        if _lcd is not None:
+            if mux_select_for_lcd():
+                with i2c_lock:
+                    _lcd.clear()
+            _lcd = None
+    except Exception:
+        _lcd = None
+
 # ────────────────────────────────────────────────
 #   GPIO OUTPUTS (LEDs + BUZZER)
 # ────────────────────────────────────────────────
@@ -315,6 +328,14 @@ def init_tools_outputs():
         set_error("LED_TOOL", f"init failed: {e}")
         set_error("BUZZER", f"init failed: {e}")
         return False
+
+def release_tools_outputs():
+    """Release LED + buzzer GPIO so exercise scripts can use same pins."""
+    global led_red, led_orange, led_green, buzzer
+    _safe_deinit(led_red); led_red = None
+    _safe_deinit(led_orange); led_orange = None
+    _safe_deinit(led_green); led_green = None
+    _safe_deinit(buzzer); buzzer = None
 
 def set_led(color: str, on: bool):
     if not init_tools_outputs():
@@ -418,7 +439,6 @@ ultra_trig = None
 ultra_echo = None
 
 mq_pin = None
-
 relay_pins = {}
 
 servo_pwm = None
@@ -427,9 +447,46 @@ MIN_PULSE = 500
 MAX_PULSE = 2500
 FREQUENCY = 50
 
-# ────────────────────────────────────────────────
-#   SENSOR INIT
-# ────────────────────────────────────────────────
+def release_all_sensor_gpio():
+    """Stop threads + deinit pins so exercise scripts can reuse them safely."""
+    global pir_pin, ultra_trig, ultra_echo, mq_pin, relay_pins, servo_pwm
+
+    # stop reader loops
+    for k in list(running_flags.keys()):
+        running_flags[k] = False
+
+    # give threads a short moment to exit
+    time.sleep(0.15)
+
+    # deinit GPIO pins
+    _safe_deinit(pir_pin); pir_pin = None
+    _safe_deinit(ultra_trig); ultra_trig = None
+    _safe_deinit(ultra_echo); ultra_echo = None
+    _safe_deinit(mq_pin); mq_pin = None
+
+    # relay pins
+    if relay_pins:
+        for ch, io in list(relay_pins.items()):
+            _safe_deinit(io)
+        relay_pins = {}
+
+    # servo pwm
+    try:
+        if servo_pwm is not None:
+            servo_pwm.duty_cycle = 0
+            servo_pwm.deinit()
+    except Exception:
+        pass
+    servo_pwm = None
+
+    # release tool outputs + lcd
+    release_tools_outputs()
+    lcd_release()
+
+    # mark states off (tools remain logically available)
+    for s in ("MPU6050", "BMP280", "DHT11", "MHMQ", "PIR", "ULTRASONIC", "Relay", "servomotor"):
+        sensor_state[s] = False
+
 def init_dht():
     global dht_device
     if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
@@ -601,7 +658,7 @@ def init_relay():
         for ch, pin in enumerate(RELAY_PINS, 1):
             io = digitalio.DigitalInOut(pin)
             io.direction = digitalio.Direction.OUTPUT
-            io.value = True  # OFF (active-low)
+            io.value = True
             relay_pins[ch] = io
         sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
         clear_error("Relay")
@@ -635,18 +692,8 @@ def set_servo_angle(angle):
     sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
     return True
 
-def stop_servo_pwm():
-    global servo_pwm
-    if servo_pwm is not None:
-        try:
-            servo_pwm.duty_cycle = 0
-            servo_pwm.deinit()
-        except Exception:
-            pass
-        servo_pwm = None
-
 # ────────────────────────────────────────────────
-#   GAS LEVEL (DO sampling -> percent)
+#   GAS LEVEL
 # ────────────────────────────────────────────────
 GAS_SAMPLES = 20
 GAS_SAMPLE_DELAY = 0.02
@@ -763,22 +810,8 @@ def sensor_reader(sensor_name):
         time.sleep(1.0)
 
 # ────────────────────────────────────────────────
-#   RELAY HELPERS
-# ────────────────────────────────────────────────
-def set_relay_channel(channel: int, on: bool):
-    if channel not in relay_pins:
-        return False
-    relay_pins[channel].value = (not on)  # active-low
-    sensor_data["Relay"][f"ch{channel}"] = bool(on)
-    sensor_data["Relay"]["last_update"] = now_iso()
-    clear_error("Relay")
-    return True
-
-# ────────────────────────────────────────────────
 #   ROUTES (PAGES + STATIC + API + EXERCISES)
 # ────────────────────────────────────────────────
-
-# ===== PAGES FLOW =====
 @app.route("/")
 def welcome_page():
     return send_from_directory(TEMPLATE_DIR, "welcome.html")
@@ -795,7 +828,6 @@ def tools_page():
 def activityfolder_page():
     return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
 
-# Activity pages
 @app.route("/activity1")
 def activity1_page():
     return send_from_directory(TEMPLATE_DIR, "activity1.html")
@@ -816,8 +848,6 @@ def activity4_page():
 def activity5_page():
     return send_from_directory(TEMPLATE_DIR, "activity5.html")
 
-
-# ===== STATIC (optional, but you used them) =====
 @app.route("/static/css/<path:filename>")
 def serve_css(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "css"), filename)
@@ -830,8 +860,6 @@ def serve_js(filename):
 def serve_images(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "images"), filename)
 
-
-# ===== API =====
 @app.route("/api/sensors")
 def get_sensors():
     resp = sensor_state.copy()
@@ -846,37 +874,12 @@ def toggle_sensor():
     if sensor not in sensor_state:
         return jsonify({"ok": False, "error": "Unknown sensor"}), 400
 
-    # Tool cards are controlled by their own endpoints
     if sensor in ("LED_TOOL", "BUZZER", "LCD_TOOL"):
         return jsonify({"ok": True, "sensor": sensor, "active": True})
 
-    # flip state
     sensor_state[sensor] = not sensor_state[sensor]
     active = sensor_state[sensor]
 
-    # Relay: toggle all channels
-    if sensor == "Relay":
-        if active and not ensure_sensor_init("Relay"):
-            sensor_state[sensor] = False
-            return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data["Relay"]["error"]}), 500
-        for ch in (1, 2, 3, 4):
-            set_relay_channel(ch, active)
-        return jsonify({"ok": True, "sensor": sensor, "active": active})
-
-    # Servo: on -> 90deg, off -> 0 then stop PWM
-    if sensor == "servomotor":
-        if active:
-            if not ensure_sensor_init("servomotor"):
-                sensor_state[sensor] = False
-                return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data["servomotor"]["error"]}), 500
-            set_servo_angle(90)
-        else:
-            set_servo_angle(0)
-            time.sleep(0.5)
-            stop_servo_pwm()
-        return jsonify({"ok": True, "sensor": sensor, "active": active})
-
-    # Normal sensors: init + start/stop thread
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
@@ -891,15 +894,11 @@ def toggle_sensor():
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
-
-# ────────────────────────────────────────────────
-#   TOOL ENDPOINTS
-# ────────────────────────────────────────────────
 @app.route("/api/led", methods=["POST"])
 def api_led():
     data = request.json or {}
     color = (data.get("color") or "").lower()
-    action = data.get("action")  # on/off/toggle
+    action = data.get("action")
 
     if color not in ("red", "orange", "green") or action not in ("on", "off", "toggle"):
         return jsonify({"ok": False, "error": "Invalid"}), 400
@@ -912,11 +911,10 @@ def api_led():
 
     return jsonify({"ok": True, "all": sensor_data["LED_TOOL"]})
 
-
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
     data = request.json or {}
-    mode = data.get("mode")  # on/off/toggle/beep
+    mode = data.get("mode")
     if mode not in ("on", "off", "toggle", "beep"):
         return jsonify({"ok": False, "error": "Invalid"}), 400
 
@@ -936,7 +934,6 @@ def api_buzzer():
 
     return jsonify({"ok": True, "on": target, "active_low": BUZZER_ACTIVE_LOW})
 
-
 @app.route("/api/lcd", methods=["POST"])
 def api_lcd():
     data = request.json or {}
@@ -954,16 +951,83 @@ def api_lcd():
 
     return jsonify({"ok": True, "line1": line1, "line2": line2})
 
+# ────────────────────────────────────────────────
+#   EXERCISE RUNNER (FIXED)
+# ────────────────────────────────────────────────
+def _append_log(stdout_line=None, stderr_line=None):
+    with exercise_log_lock:
+        if stdout_line is not None:
+            exercise_stdout.append(stdout_line.rstrip("\n"))
+        if stderr_line is not None:
+            exercise_stderr.append(stderr_line.rstrip("\n"))
 
-# ────────────────────────────────────────────────
-#   EXERCISE RUNNER ENDPOINTS
-# ────────────────────────────────────────────────
+def _exercise_reader(proc: subprocess.Popen):
+    global exercise_proc
+    # Read both streams line-by-line to avoid blocking
+    try:
+        while proc.poll() is None:
+            line = proc.stdout.readline() if proc.stdout else ""
+            if line:
+                _append_log(stdout_line=line)
+
+            eline = proc.stderr.readline() if proc.stderr else ""
+            if eline:
+                _append_log(stderr_line=eline)
+
+            time.sleep(0.01)
+
+        # Drain remaining after exit
+        try:
+            if proc.stdout:
+                for line in proc.stdout.readlines():
+                    _append_log(stdout_line=line)
+            if proc.stderr:
+                for line in proc.stderr.readlines():
+                    _append_log(stderr_line=line)
+        except Exception:
+            pass
+
+    finally:
+        with exercise_lock:
+            exit_code = proc.poll()
+            exercise_status["running"] = False
+            exercise_status["ended"] = True
+            exercise_status["exit_code"] = exit_code
+            exercise_status["ended_at"] = now_iso()
+
+            # If stop was requested, don’t label it error
+            if exercise_stop_requested:
+                exercise_status["end_reason"] = "stopped"
+            else:
+                exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
+
+            exercise_proc = None
+
+def stop_current_exercise():
+    global exercise_proc, exercise_stop_requested
+    with exercise_lock:
+        if exercise_proc is None:
+            return True
+        try:
+            exercise_stop_requested = True
+            # SIGTERM first
+            exercise_proc.terminate()
+            try:
+                exercise_proc.wait(timeout=2)
+            except Exception:
+                # SIGKILL fallback
+                exercise_proc.kill()
+            return True
+        except Exception:
+            return False
+
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
     """
     Body: { "exercise_id": "a1-ex1" }
     """
-    global exercise_proc
+    global exercise_proc, exercise_reader_thread, exercise_stop_requested
+
     data = request.json or {}
     ex_id = data.get("exercise_id")
 
@@ -975,58 +1039,75 @@ def api_exercise_run():
         return jsonify({"ok": False, "error": f"File not found: {script_path}"}), 404
 
     with exercise_lock:
-        # Stop previous if running
+        # Stop previous exercise
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
+
+        # IMPORTANT FIX:
+        # Release GPIO/I2C resources from Tools/Sensors so the exercise script can use them
+        release_all_sensor_gpio()
+
+        # reset logs/status
+        with exercise_log_lock:
+            exercise_stdout.clear()
+            exercise_stderr.clear()
+
+        exercise_stop_requested = False
+        exercise_status.update({
+            "exercise_id": ex_id,
+            "running": True,
+            "ended": False,
+            "end_reason": "",
+            "exit_code": None,
+            "started_at": now_iso(),
+            "ended_at": None,
+        })
 
         try:
             exercise_proc = subprocess.Popen(
                 [_python_cmd(), script_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
             )
+
+            exercise_reader_thread = threading.Thread(
+                target=_exercise_reader, args=(exercise_proc,), daemon=True
+            )
+            exercise_reader_thread.start()
+
             return jsonify({"ok": True, "exercise_id": ex_id, "started": True, "path": script_path})
         except Exception as e:
             exercise_proc = None
+            exercise_status.update({
+                "running": False,
+                "ended": True,
+                "end_reason": "error",
+                "exit_code": -1,
+                "ended_at": now_iso(),
+            })
             return jsonify({"ok": False, "error": str(e)}), 500
-
 
 @app.route("/api/exercise_stop", methods=["POST"])
 def api_exercise_stop():
     ok = stop_current_exercise()
     return jsonify({"ok": bool(ok), "stopped": bool(ok)})
 
-
 @app.route("/api/exercise_status")
 def api_exercise_status():
     with exercise_lock:
-        running = (exercise_proc is not None and exercise_proc.poll() is None)
-        return jsonify({"ok": True, "running": bool(running)})
-
+        return jsonify({"ok": True, **exercise_status})
 
 @app.route("/api/exercise_logs")
 def api_exercise_logs():
-    """
-    Returns stdout/stderr when process ends.
-    """
-    global exercise_proc
-    with exercise_lock:
-        if exercise_proc is None:
-            return jsonify({"ok": True, "running": False, "stdout": "", "stderr": ""})
-
-        running = (exercise_proc.poll() is None)
-        out = ""
-        err = ""
-
-        if not running:
-            try:
-                out, err = exercise_proc.communicate(timeout=1)
-            except Exception:
-                pass
-            exercise_proc = None
-
-        return jsonify({"ok": True, "running": bool(running), "stdout": out, "stderr": err})
+    with exercise_log_lock:
+        return jsonify({
+            "ok": True,
+            "stdout": "\n".join(exercise_stdout),
+            "stderr": "\n".join(exercise_stderr),
+        })
 
 # ────────────────────────────────────────────────
 #   START
