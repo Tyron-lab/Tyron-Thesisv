@@ -1,10 +1,10 @@
 # Exercise 7 (Activity 1): Sound Detection Indicator using INMP441 I2S (Google VoiceHAT SoundCard)
 # Measures sound level and shows 3 levels using LEDs:
-#   RED    (board.D5)  = LOUD (high noise)
-#   ORANGE (board.D13) = MID  (medium noise)
-#   GREEN  (board.D6)  = QUIET (low/no noise)
+#   RED    (board.D5)  = LOUD (high noise)  -> solid RED
+#   ORANGE (board.D13) = MID  (medium noise)-> running lights (traffic light cycle)
+#   GREEN  (board.D6)  = QUIET (low/no noise)-> solid GREEN
 #
-# Uses supported sample rate (48k) + explicit INPUT_DEVICE like Exercise 6.
+# MID mode running pattern: GREEN -> ORANGE -> RED -> ORANGE -> repeat
 
 import time
 import signal
@@ -18,8 +18,8 @@ import sounddevice as sd
 
 # ---------------- LED PINS ----------------
 LED_RED_PIN    = board.D5     # RED  = HIGH noise
-LED_GREEN_PIN  = board.D6     # GREEN= NO noise / quiet
-LED_ORANGE_PIN = board.D13    # ORANGE = MID noise
+LED_GREEN_PIN  = board.D6     # GREEN= QUIET
+LED_ORANGE_PIN = board.D13    # ORANGE = MID
 
 red = digitalio.DigitalInOut(LED_RED_PIN)
 green = digitalio.DigitalInOut(LED_GREEN_PIN)
@@ -29,22 +29,19 @@ red.direction = digitalio.Direction.OUTPUT
 green.direction = digitalio.Direction.OUTPUT
 orange.direction = digitalio.Direction.OUTPUT
 
-red.value = False
-green.value = True   # start as quiet
-orange.value = False
+def all_off():
+    red.value = False
+    orange.value = False
+    green.value = False
 
-def set_level(level: str):
+def set_solid(level: str):
     """
-    level: 'quiet' | 'mid' | 'loud'
+    level: 'quiet' | 'loud'
     """
     if level == "quiet":
         red.value = False
         orange.value = False
         green.value = True
-    elif level == "mid":
-        red.value = False
-        orange.value = True
-        green.value = False
     else:  # loud
         red.value = True
         orange.value = False
@@ -64,25 +61,23 @@ SAMPLE_RATE = 48000
 BLOCK_MS = 20
 CHANNELS = 1
 BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
-
-# ✅ same as Exercise 6
-INPUT_DEVICE = 1
+INPUT_DEVICE = 1  # same as Exercise 6
 
 # ---------------- Detection tuning ----------------
-# We use PEAK amplitude as sound level indicator.
-
 USE_AUTO_THRESHOLD = True
+AUTO_MULTIPLIER = 4.5
+AUTO_FLOOR = 0.06
 
-# Auto threshold for "MID". LOUD will be a multiplier above MID.
-AUTO_MULTIPLIER = 4.5      # sensitivity baseline (mid threshold)
-AUTO_FLOOR = 0.06          # minimum threshold
+FIXED_MID_THRESHOLD = 0.12
+LOUD_MULTIPLIER = 1.8
 
-FIXED_MID_THRESHOLD = 0.12 # used if USE_AUTO_THRESHOLD = False
-LOUD_MULTIPLIER = 1.8      # loud_threshold = mid_threshold * LOUD_MULTIPLIER
-
-# Keep indicator stable (avoid flicker)
-HOLD_MS = 140
+# Prevent level bouncing too fast
+HOLD_MS = 200
 HOLD_S = HOLD_MS / 1000.0
+
+# Running lights speed (MID mode)
+RUN_STEP_MS = 180
+RUN_STEP_S = RUN_STEP_MS / 1000.0
 
 _latest_peak = 0.0
 
@@ -105,10 +100,7 @@ def get_mid_threshold():
 
 def safe_exit(code=0):
     try:
-        # turn all off on exit
-        red.value = False
-        orange.value = False
-        green.value = False
+        all_off()
         red.deinit()
         orange.deinit()
         green.deinit()
@@ -117,18 +109,34 @@ def safe_exit(code=0):
     print("Exercise 7 exited cleanly.")
     sys.exit(code)
 
-print("Exercise 7: INMP441 Sound Detection Indicator (3 levels) running")
-print("RED=board.D5 (LOUD), ORANGE=board.D13 (MID), GREEN=board.D6 (QUIET)")
+print("Exercise 7: Sound Detection Indicator (3 levels + MID running lights)")
+print("RED=board.D5 (LOUD solid), ORANGE=board.D13 (MID running), GREEN=board.D6 (QUIET solid)")
 print("Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
 print("Stop: Stop button or Ctrl+C")
-print("Tuning tips:")
-print(" - Too sensitive? raise AUTO_MULTIPLIER or FIXED_MID_THRESHOLD")
-print(" - Not detecting? lower AUTO_MULTIPLIER or FIXED_MID_THRESHOLD")
-print(" - LOUD too easy/hard? adjust LOUD_MULTIPLIER")
 
-last_state_change_t = 0.0
+# Start state
 current_level = "quiet"
-set_level(current_level)
+set_solid("quiet")
+last_level_change_t = 0.0
+
+# MID running pattern: G -> O -> R -> O -> repeat
+run_pattern = ["G", "O", "R", "O"]
+run_idx = 0
+next_run_step_t = 0.0
+
+def show_run_step(step: str):
+    if step == "G":
+        red.value = False
+        orange.value = False
+        green.value = True
+    elif step == "O":
+        red.value = False
+        orange.value = True
+        green.value = False
+    else:  # "R"
+        red.value = True
+        orange.value = False
+        green.value = False
 
 try:
     with sd.InputStream(
@@ -153,7 +161,7 @@ try:
             mid_thr = get_mid_threshold()
             loud_thr = mid_thr * LOUD_MULTIPLIER
 
-            # Decide target level
+            # Decide target level based on current peak
             if _latest_peak >= loud_thr:
                 target = "loud"
             elif _latest_peak >= mid_thr:
@@ -161,12 +169,26 @@ try:
             else:
                 target = "quiet"
 
-            # Hold to prevent flicker: only switch if enough time passed
-            if target != current_level:
-                if (now_t - last_state_change_t) >= HOLD_S:
-                    current_level = target
-                    set_level(current_level)
-                    last_state_change_t = now_t
+            # Switch levels with HOLD to avoid rapid bouncing
+            if target != current_level and (now_t - last_level_change_t) >= HOLD_S:
+                current_level = target
+                last_level_change_t = now_t
+
+                if current_level == "quiet":
+                    set_solid("quiet")
+                elif current_level == "loud":
+                    set_solid("loud")
+                else:
+                    # entering MID: reset running pattern timer
+                    run_idx = 0
+                    next_run_step_t = 0.0
+
+            # MID running lights loop
+            if current_level == "mid":
+                if now_t >= next_run_step_t:
+                    show_run_step(run_pattern[run_idx])
+                    run_idx = (run_idx + 1) % len(run_pattern)
+                    next_run_step_t = now_t + RUN_STEP_S
 
             if now_t - last_print > 1.0:
                 print(
