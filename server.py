@@ -568,14 +568,14 @@ def init_pir():
     if pir_pin is not None:
         return True
     try:
-        pir_pin = digitalio.DigitalInOut(board.D18)
+        pir_pin = digitalio.DigitalInOut(board.D22)
         pir_pin.direction = digitalio.Direction.INPUT
         try:
             pir_pin.pull = digitalio.Pull.DOWN
         except Exception:
             pass
         clear_error("PIR")
-        print("[PIR] OK D18")
+        print("[PIR] OK D22")
         return True
     except Exception as e:
         pir_pin = None

@@ -81,7 +81,7 @@ G = make_out(board.D6, False)    # GREEN
 O = make_out(board.D13, False)   # ORANGE
 
 # PIR input
-pir = make_in_pir(board.D18)
+pir = make_in_pir(board.D22)
 
 def all_off():
     R.value = False

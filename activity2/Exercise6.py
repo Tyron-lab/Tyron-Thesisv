@@ -1,164 +1,189 @@
-# Activity2/Exercise6.py
-# Exercise 6: Normal vs Abnormal Data
-# Input: Sensor readings
-# What happens: System checks if values are normal
-# Output: GREEN stays ON (normal) or ORANGE blinks (abnormal), RED on error
+# Exercise 6 (Activity 2): Clap Switch using INMP441 I2S MEMS Microphone
+# Wiring (Raspberry Pi I2S fixed pins):
+#   INMP441 SCK/BCLK -> GPIO18 (Pin 12)
+#   INMP441 WS/LRCLK -> GPIO19 (Pin 35)
+#   INMP441 SD/DOUT  -> GPIO20 (Pin 38)
+#   INMP441 VDD      -> 3.3V  (Pin 1 or 17)
+#   INMP441 GND      -> GND   (Pin 6/9/14/20/25/30/34/39)
+#   INMP441 L/R      -> GND (Left) or 3.3V (Right)
 #
-# Uses LCD via TCA9548A (I2C extender) like your Exercise1.py
+# Output:
+#   1 clap  -> GREEN LED ON
+#   2 claps -> GREEN LED OFF
+#
+# Stop-safe: supports SIGTERM (Stop button) + Ctrl+C
 
 import time
-import random
+import signal
+import sys
+
 import board
 import digitalio
 
-# ---- LCD via TCA9548A ----
-from smbus2 import SMBus
-from RPLCD.i2c import CharLCD
+import numpy as np
+import sounddevice as sd
 
-# ========== EDIT THESE IF NEEDED ==========
-I2C_BUS  = 1
-MUX_ADDR = 0x70      # TCA9548A default
-LCD_CH   = 0         # channel where LCD is plugged
-LCD_ADDR = 0x27      # LCD backpack addr (0x27 or 0x3F)
+# =========================
+# LED PIN (TrainerKit)
+# =========================
+LED_GREEN_PIN = board.D6
 
-LCD_COLS = 16
-LCD_ROWS = 2
+# =========================
+# AUDIO SETTINGS
+# =========================
+SAMPLE_RATE = 16000        # Hz
+BLOCK_MS = 30              # block duration
+CHANNELS = 1               # read mono
+BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
 
-# Sensor "normal range" (demo values)
-NORMAL_MIN = 10
-NORMAL_MAX = 90
+# If the mic isn't the default input device, set INPUT_DEVICE:
+# - None = default
+# - int (device index) or str (name substring)
+INPUT_DEVICE = None  # e.g. 2 or "I2S"
 
-# Blink behavior when abnormal
-BLINK_ON  = 0.25
-BLINK_OFF = 0.25
-# =========================================
+# =========================
+# CLAP DETECTION TUNING
+# =========================
+CLAP_PEAK_THRESHOLD = 0.35    # raise if too sensitive, lower if not detecting
+MIN_CLAP_GAP = 0.15           # seconds: debounce
+DOUBLE_CLAP_WINDOW = 0.70     # seconds: second clap within this -> OFF
 
-def mux_select(channel: int):
-    with SMBus(I2C_BUS) as bus:
-        bus.write_byte(MUX_ADDR, 1 << channel)
+# Optional: adaptive threshold (starts learning background noise)
+USE_AUTO_THRESHOLD = True
+AUTO_MULTIPLIER = 6.0         # higher = less sensitive
+AUTO_FLOOR = 0.20             # minimum threshold
 
-def lcd_init():
-    mux_select(LCD_CH)
-    lcd = CharLCD('PCF8574', address=LCD_ADDR, port=I2C_BUS,
-                  cols=LCD_COLS, rows=LCD_ROWS, charmap='A00')
-    lcd.clear()
-    return lcd
+# =========================
+# STOP HANDLING
+# =========================
+_should_exit = False
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
 
-def lcd_write(lcd, line1: str, line2: str = ""):
-    mux_select(LCD_CH)
-    lcd.clear()
-    lcd.write_string((line1 or "")[:LCD_COLS])
-    lcd.cursor_pos = (1, 0)
-    lcd.write_string((line2 or "")[:LCD_COLS])
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)
 
-def make_out(pin, initial=False):
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.OUTPUT
-    io.value = initial
-    return io
+# =========================
+# GPIO LED SETUP
+# =========================
+green = digitalio.DigitalInOut(LED_GREEN_PIN)
+green.direction = digitalio.Direction.OUTPUT
+green.value = False
 
-def all_off(R, G, O):
-    R.value = False
-    G.value = False
-    O.value = False
+def set_green(on: bool):
+    green.value = bool(on)
 
-# Status LEDs (same as your Exercise1)
-R = make_out(board.D17, False)   # RED = error
-G = make_out(board.D27, False)   # GREEN = normal/ok
-O = make_out(board.D22, False)   # ORANGE = abnormal/blink
+# =========================
+# AUDIO FEATURE (peak)
+# =========================
+_latest_peak = 0.0
 
-# ---- Replace this with your real sensor read later ----
-def read_sensor_value():
-    # Demo: random 0..100
-    return random.randint(0, 100)
+def audio_callback(indata, frames, time_info, status):
+    global _latest_peak
+    # indata shape: (frames, channels)
+    x = indata[:, 0].astype(np.float32)
+    _latest_peak = float(np.max(np.abs(x)))
 
-print("Exercise 6: Normal vs Abnormal Data")
-all_off(R, G, O)
+# =========================
+# CLAP STATE MACHINE
+# =========================
+led_on = False
+last_clap_t = 0.0
+pending_single = False
+pending_start_t = 0.0
 
-# Init LCD (if it fails, continue without LCD)
-lcd = None
+# For auto threshold
+noise_peaks = []
+NOISE_WINDOW = 60  # keep last N peaks
+
+def get_threshold():
+    if not USE_AUTO_THRESHOLD:
+        return CLAP_PEAK_THRESHOLD
+    if len(noise_peaks) < 10:
+        return max(CLAP_PEAK_THRESHOLD, AUTO_FLOOR)
+
+    base = float(np.median(noise_peaks))
+    thr = max(AUTO_FLOOR, base * AUTO_MULTIPLIER)
+    return max(thr, CLAP_PEAK_THRESHOLD)
+
+def register_clap(now_t: float):
+    global pending_single, pending_start_t, led_on
+
+    # Double clap detected -> OFF
+    if pending_single and (now_t - pending_start_t) <= DOUBLE_CLAP_WINDOW:
+        led_on = False
+        set_green(False)
+        pending_single = False
+        print("👏👏 Double clap -> OFF")
+        return
+
+    # Start waiting for a possible double clap
+    pending_single = True
+    pending_start_t = now_t
+    print("👏 Clap detected (waiting for 2nd clap...)")
+
+def finalize_single_if_due(now_t: float):
+    global pending_single, led_on
+    if pending_single and (now_t - pending_start_t) > DOUBLE_CLAP_WINDOW:
+        led_on = True
+        set_green(True)
+        pending_single = False
+        print("✅ Single clap -> ON")
+
+def safe_exit():
+    try:
+        set_green(False)
+        green.deinit()
+    except Exception:
+        pass
+    print("Exercise 6 exited cleanly.")
+    sys.exit(0)
+
+print("Exercise 6: INMP441 Clap Switch running...")
+print("Wiring: BCLK=GPIO18(pin12), LRCLK=GPIO19(pin35), DATA=GPIO20(pin38)")
+print("Stop: click Stop button or Ctrl+C")
+print("Tip: If it triggers too easily, increase CLAP_PEAK_THRESHOLD or AUTO_MULTIPLIER.")
+
 try:
-    lcd = lcd_init()
-except Exception as e:
-    print(f"[LCD] init failed, continuing without LCD: {e}")
-    lcd = None
+    with sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=CHANNELS,
+        blocksize=BLOCK_SIZE,
+        device=INPUT_DEVICE,
+        dtype="float32",
+        callback=audio_callback,
+    ):
+        last_print = 0.0
 
-# Show startup on LCD
-if lcd:
-    lcd_write(lcd, "Exercise 6", "Checking...")
+        while not _should_exit:
+            now_t = time.time()
 
-last_state = None  # "NORMAL" or "ABNORMAL"
+            # Maintain noise profile for auto threshold
+            # Only add when not peaking hard (avoid learning claps)
+            if _latest_peak < 0.25:
+                noise_peaks.append(_latest_peak)
+                if len(noise_peaks) > NOISE_WINDOW:
+                    noise_peaks.pop(0)
 
-try:
-    while True:
-        value = read_sensor_value()
-        normal = (NORMAL_MIN <= value <= NORMAL_MAX)
-        state = "NORMAL" if normal else "ABNORMAL"
+            thr = get_threshold()
 
-        # Only update outputs when state changes (prevents LCD flicker)
-        if state != last_state:
-            if normal:
-                # Normal: GREEN ON solid
-                R.value = False
-                O.value = False
-                G.value = True
-                print(f"✅ NORMAL ({value}) -> GREEN ON")
+            # Debug once per second
+            if now_t - last_print > 1.0:
+                print(f"peak={_latest_peak:.3f}  thr={thr:.3f}  LED={'ON' if led_on else 'OFF'}")
+                last_print = now_t
 
-                if lcd:
-                    lcd_write(lcd, "NORMAL", f"Val: {value}")
+            # Clap detection (peak spike)
+            if _latest_peak >= thr:
+                if (now_t - last_clap_t) >= MIN_CLAP_GAP:
+                    last_clap_t = now_t
+                    register_clap(now_t)
 
-            else:
-                # Abnormal: GREEN OFF, ORANGE BLINK
-                R.value = False
-                G.value = False
-                print(f"⚠️ ABNORMAL ({value}) -> ORANGE BLINK")
+                # reset to avoid multiple counts for one clap burst
+                _latest_peak = 0.0
 
-                if lcd:
-                    lcd_write(lcd, "ABNORMAL!", f"Val: {value}")
-
-            last_state = state
-
-        # Maintain behavior
-        if not normal:
-            # Blink ORANGE while abnormal
-            O.value = True
-            time.sleep(BLINK_ON)
-            O.value = False
-            time.sleep(BLINK_OFF)
-        else:
-            # Normal steady (just poll)
-            time.sleep(0.5)
-
-except KeyboardInterrupt:
-    print("\nStopped by user.")
-    if lcd:
-        try:
-            lcd_write(lcd, "Stopped", "")
-            time.sleep(0.8)
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
-
-except Exception as e:
-    print(f"\n❌ ERROR: {e}")
-    all_off(R, G, O)
-    R.value = True
-    if lcd:
-        try:
-            lcd_write(lcd, "ERROR", str(e)[:16])
-        except Exception:
-            pass
-    time.sleep(5)
+            finalize_single_if_due(now_t)
+            time.sleep(0.01)
 
 finally:
-    all_off(R, G, O)
-    R.deinit()
-    G.deinit()
-    O.deinit()
-    if lcd:
-        try:
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
+    safe_exit()
