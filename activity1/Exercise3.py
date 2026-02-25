@@ -1,7 +1,10 @@
 # Exercise 3: Temperature & Humidity (DHT11) + LCD via TCA9548A
 # Output: LCD shows temperature and humidity (no LEDs)
+# FIX: Handles SIGTERM + always releases DHT so you can run again without "already running"
 
 import time
+import signal
+import sys
 
 # ---- LCD via TCA9548A (same style as Exercise 1) ----
 from smbus2 import SMBus
@@ -16,6 +19,15 @@ LCD_ADDR = 0x27      # LCD backpack address (often 0x27 or 0x3F)
 LCD_COLS = 16
 LCD_ROWS = 2
 
+_should_exit = False
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+# Stop button usually sends SIGTERM
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)  # Ctrl+C
+
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
@@ -23,12 +35,12 @@ def mux_select(channel: int):
 def lcd_init():
     mux_select(LCD_CH)
     lcd = CharLCD(
-        'PCF8574',
+        "PCF8574",
         address=LCD_ADDR,
         port=I2C_BUS,
         cols=LCD_COLS,
         rows=LCD_ROWS,
-        charmap='A00'
+        charmap="A00"
     )
     lcd.clear()
     return lcd
@@ -47,19 +59,19 @@ dht = None
 sensor = None
 
 # Pick your DHT data pin here (change if your wiring is different)
-# Common choices: board.D4, board.D17, board.D18, etc.
 DHT_PIN = None
 
 try:
     import board
     import adafruit_dht
+
     DHT_PIN = board.D4  # <-- CHANGE THIS PIN if needed
     dht = adafruit_dht.DHT11(DHT_PIN)
     sensor = "adafruit_dht"
+
 except Exception as e1:
     try:
         import Adafruit_DHT
-        # For Adafruit_DHT you use BCM GPIO number:
         DHT_BCM = 4  # <-- CHANGE THIS GPIO if needed (BCM numbering)
         dht = (Adafruit_DHT, Adafruit_DHT.DHT11, DHT_BCM)
         sensor = "Adafruit_DHT"
@@ -67,7 +79,7 @@ except Exception as e1:
         sensor = None
         dht = None
 
-print("DHT11 Temperature & Humidity running... Ctrl+C to stop.")
+print("DHT11 Temperature & Humidity running... (Stop button / Ctrl+C to stop)")
 
 # Init LCD (if it fails, keep running without LCD)
 lcd = None
@@ -80,13 +92,22 @@ except Exception as e:
 def show_error(msg: str):
     print("ERROR:", msg)
     if lcd:
-        lcd_write(lcd, "DHT11 ERROR", msg[:16])
+        lcd_write(lcd, "DHT11 ERROR", (msg or "")[:16])
 
 if dht is None or sensor is None:
     show_error("No DHT lib")
-    # Keep showing error message
-    while True:
-        time.sleep(2)
+    while not _should_exit:
+        time.sleep(0.5)
+    # exit cleanly
+    if lcd:
+        try:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.6)
+            mux_select(LCD_CH)
+            lcd.clear()
+        except Exception:
+            pass
+    sys.exit(0)
 
 last_display = None
 
@@ -94,7 +115,7 @@ try:
     if lcd:
         lcd_write(lcd, "DHT11 Ready", "Reading...")
 
-    while True:
+    while not _should_exit:
         temp_c = None
         hum = None
 
@@ -108,14 +129,15 @@ try:
                 Adafruit_DHT, DHTTYPE, BCM = dht
                 hum, temp_c = Adafruit_DHT.read_retry(DHTTYPE, BCM)
 
-        except RuntimeError as e:
+        except RuntimeError:
             # common with adafruit_dht
             temp_c = None
             hum = None
 
         except Exception as e:
+            # If you see "DHT11 is running" here, it means previous instance wasn't released
             show_error(str(e))
-            time.sleep(2)
+            time.sleep(1.0)
             continue
 
         # Format lines for LCD
@@ -126,36 +148,35 @@ try:
             line1 = f"Temp: {temp_c:>4.1f} C"
             line2 = f"Hum : {hum:>4.0f} %"
 
-        # Only update LCD if the text changed (less flicker)
         display = (line1, line2)
         if lcd and display != last_display:
             lcd_write(lcd, line1, line2)
             last_display = display
 
-        time.sleep(2)
-
-except KeyboardInterrupt:
-    print("\nStopped by user.")
-    if lcd:
-        try:
-            lcd_write(lcd, "Stopped", "")
-            time.sleep(0.8)
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
+        # small sleep, but still responsive to stop
+        for _ in range(20):
+            if _should_exit:
+                break
+            time.sleep(0.1)
 
 finally:
-    # Cleanup
+    # ✅ CRITICAL: release DHT so next run works
     if sensor == "adafruit_dht" and dht:
         try:
+            if lcd:
+                lcd_write(lcd, "Stopping...", "Releasing DHT")
             dht.exit()
         except Exception:
             pass
 
     if lcd:
         try:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.6)
             mux_select(LCD_CH)
             lcd.clear()
         except Exception:
             pass
+
+    print("Exercise 3 exited cleanly.")
+    sys.exit(0)
