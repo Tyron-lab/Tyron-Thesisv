@@ -27,7 +27,7 @@ TRIG_PIN = board.D23
 ECHO_PIN = board.D24
 
 # ---- Buzzer pin ----
-BUZZER_PIN = board.D16
+BUZZER_PIN = board.D21
 
 # ✅ If you want COMPLETELY SILENT even when near, set this True.
 MUTE = False
