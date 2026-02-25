@@ -57,7 +57,7 @@ buzzer.direction = digitalio.Direction.OUTPUT
 
 # If your buzzer module is active-low (beeps when pin is LOW), set this True.
 # If it beeps when pin is HIGH, set this False.
-BUZZER_ACTIVE_LOW = True
+BUZZER_ACTIVE_LOW = False
 
 def buzzer_on():
     buzzer.value = (not BUZZER_ACTIVE_LOW)
