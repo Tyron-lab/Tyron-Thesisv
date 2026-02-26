@@ -6,24 +6,27 @@ import board
 import digitalio
 import pwmio
 
+# Pins
 PIR_PIN = board.D22
 SERVO_PIN = board.D12
 
+# Servo PWM
 FREQUENCY = 50
-MIN_PULSE_US = 500
-MAX_PULSE_US = 2500
 
-ANGLE_IDLE = 0
-ANGLE_ACTIVE = 90
+# Continuous-rotation servo pulse widths (microseconds)
+# Typical:
+#   STOP      ~ 1500us
+#   FAST FWD  ~ 2000us
+#   FAST REV  ~ 1000us
+STOP_US = 1500
+FAST_FWD_US = 2000   # change to 1000 if your direction is reversed
 
-
-def angle_to_duty_u16(angle: int) -> int:
-    angle = max(0, min(180, int(angle)))
-    pulse_us = MIN_PULSE_US + (MAX_PULSE_US - MIN_PULSE_US) * (angle / 180.0)
-    return max(0, min(65535, int((pulse_us / 20000.0) * 65535.0)))
-
+def us_to_duty_u16(pulse_us: int) -> int:
+    pulse_us = max(500, min(2500, int(pulse_us)))
+    return int((pulse_us / 20000.0) * 65535.0)  # 20ms period @ 50Hz
 
 def main():
+    # PIR input
     pir = digitalio.DigitalInOut(PIR_PIN)
     pir.direction = digitalio.Direction.INPUT
     try:
@@ -31,22 +34,21 @@ def main():
     except Exception:
         pass
 
+    # Servo output
     servo = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
-    def set_servo(angle: int):
-        servo.duty_cycle = angle_to_duty_u16(angle)
+    def servo_write_us(pulse_us: int):
+        servo.duty_cycle = us_to_duty_u16(pulse_us)
 
-    def servo_off():
-        servo.duty_cycle = 0
+    def servo_stop():
+        servo_write_us(STOP_US)
 
     def cleanup(*_):
         try:
-            # immediate 0°
             try:
-                set_servo(ANGLE_IDLE)
+                servo_stop()
             except Exception:
                 pass
-            servo_off()
         finally:
             try:
                 pir.deinit()
@@ -61,12 +63,11 @@ def main():
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("Exercise 16: PIR Motion-Activated Servo running...")
-    print("Motion -> 90° hold | No motion -> 0° immediately then OFF | Ctrl+C to stop")
+    print("Exercise 16: PIR -> Continuous Rotation Servo")
+    print("Motion: spin FAST | No motion: STOP | Ctrl+C to stop")
 
-    # Start at 0° and OFF
-    set_servo(ANGLE_IDLE)
-    servo_off()
+    # Start stopped
+    servo_stop()
 
     last_state = None
 
@@ -75,17 +76,15 @@ def main():
 
         if motion != last_state:
             if motion:
-                print("Motion detected -> Servo 90°")
-                set_servo(ANGLE_ACTIVE)   # keep PWM on to hold 90°
+                print("Motion detected -> SPIN FAST")
+                servo_write_us(FAST_FWD_US)
             else:
-                print("No motion -> Servo 0° (immediate) then OFF")
-                set_servo(ANGLE_IDLE)
-                servo_off()
+                print("No motion -> STOP")
+                servo_stop()
 
             last_state = motion
 
         time.sleep(0.02)
-
 
 if __name__ == "__main__":
     main()
