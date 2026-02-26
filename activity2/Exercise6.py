@@ -1,8 +1,6 @@
 # Exercise 6 (Activity 2): Clap Switch using INMP441 I2S (Google VoiceHAT SoundCard)
 # 1 clap  -> GREEN LED ON
 # 2 claps -> GREEN LED OFF
-#
-# Fix: Use supported sample rate (48k) + explicit INPUT_DEVICE.
 
 import time
 import signal
@@ -33,23 +31,21 @@ signal.signal(signal.SIGTERM, _handle_term)
 signal.signal(signal.SIGINT, _handle_term)
 
 # ---------------- Audio settings ----------------
-# Google VoiceHAT soundcard commonly supports 48000Hz.
 SAMPLE_RATE = 48000
 BLOCK_MS = 20
 CHANNELS = 1
 BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
-
-# ✅ Your device list shows the mic card at index 1
 INPUT_DEVICE = 1
 
-# ---------------- Clap detection tuning ----------------
-CLAP_PEAK_THRESHOLD = 0.25  # 48k often reads lower/higher; adjust if needed
-MIN_CLAP_GAP = 0.15
-DOUBLE_CLAP_WINDOW = 0.70
+# ---------------- Clap detection tuning (MORE SENSITIVE) ----------------
+CLAP_PEAK_THRESHOLD = 0.12   # was 0.25
+
+MIN_CLAP_GAP = 0.12          # slightly smaller so fast claps still register
+DOUBLE_CLAP_WINDOW = 0.80    # allow more time for 2nd clap
 
 USE_AUTO_THRESHOLD = True
-AUTO_MULTIPLIER = 6.0
-AUTO_FLOOR = 0.12
+AUTO_MULTIPLIER = 3.5        # was 6.0
+AUTO_FLOOR = 0.06            # was 0.12
 
 _latest_peak = 0.0
 
@@ -65,7 +61,7 @@ pending_single = False
 pending_start_t = 0.0
 
 noise_peaks = []
-NOISE_WINDOW = 80
+NOISE_WINDOW = 150           # was 80
 
 def get_threshold():
     if not USE_AUTO_THRESHOLD:
@@ -108,7 +104,7 @@ def safe_exit(code=0):
 print("Exercise 6: INMP441 Clap Switch running (Google VoiceHAT card)")
 print("Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
 print("Stop: Stop button or Ctrl+C")
-print("Tip: if too sensitive, raise AUTO_MULTIPLIER or CLAP_PEAK_THRESHOLD.")
+print("Tip: If it triggers too easily, raise AUTO_MULTIPLIER back up slowly (4.0, 4.5, 5.0).")
 
 try:
     with sd.InputStream(
@@ -124,8 +120,8 @@ try:
         while not _should_exit:
             now_t = time.time()
 
-            # build noise model from quiet blocks
-            if _latest_peak < 0.20:
+            # build noise model from "not too loud" blocks
+            if _latest_peak < 0.35:   # was 0.20
                 noise_peaks.append(_latest_peak)
                 if len(noise_peaks) > NOISE_WINDOW:
                     noise_peaks.pop(0)
