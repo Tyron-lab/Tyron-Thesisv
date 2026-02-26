@@ -178,6 +178,12 @@ def start_a5_mqtt():
         print("[A5 MQTT] start failed:", e)
         mqtt_client = None
 
+def a5_send_cmd(payload: dict):
+    """Send JSON command to ESP32 via MQTT."""
+    if mqtt_client is None:
+        raise RuntimeError("MQTT not started")
+    mqtt_client.publish(A5_TOPIC_CMD, json.dumps(payload))
+
 # ────────────────────────────────────────────────
 #   EXERCISE MAP (RUN PY FILES FROM FOLDERS)
 # ────────────────────────────────────────────────
@@ -206,6 +212,7 @@ EXERCISE_MAP = {
     "a4-ex19": os.path.join(BASE_DIR, "activity4", "Exercise19.py"),
     "a4-ex20": os.path.join(BASE_DIR, "activity4", "Exercise20.py"),
 
+    # Activity 5: EX21 is ESP32 stream control (NO local script)
     "a5-ex22": os.path.join(BASE_DIR, "activity5", "Exercise22.py"),
     "a5-ex23": os.path.join(BASE_DIR, "activity5", "Exercise23.py"),
     "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
@@ -402,7 +409,6 @@ def release_tools_outputs():
     _safe_deinit(led_green); led_green = None
     _safe_deinit(buzzer); buzzer = None
 
-# ✅ FIXED: retry if GPIO busy
 def init_tools_outputs():
     global led_red, led_orange, led_green, buzzer
     if not SENSORS_AVAILABLE.get("board"):
@@ -412,7 +418,6 @@ def init_tools_outputs():
 
     def _do_init():
         global led_red, led_orange, led_green, buzzer
-
         if led_red is None and LED_RED_PIN is not None:
             led_red = make_out(LED_RED_PIN, False)
         if led_orange is None and LED_ORANGE_PIN is not None:
@@ -428,7 +433,6 @@ def init_tools_outputs():
         _do_init()
         return True
     except Exception as e:
-        # likely "GPIO busy" or left open by previous script
         release_tools_outputs()
         time.sleep(0.05)
         try:
@@ -550,7 +554,7 @@ def release_all_sensor_gpio():
         sensor_state[s] = False
 
 # ────────────────────────────────────────────────
-# ✅ GLOBAL CLEANUP (fix GPIO busy forever)
+# ✅ GLOBAL CLEANUP
 # ────────────────────────────────────────────────
 def stop_current_exercise():
     global exercise_proc, exercise_stop_requested
@@ -597,7 +601,7 @@ except Exception:
     pass
 
 # ────────────────────────────────────────────────
-#   SENSOR INIT FUNCTIONS (unchanged from yours)
+#   SENSOR INIT FUNCTIONS (your originals)
 # ────────────────────────────────────────────────
 def init_dht():
     global dht_device
@@ -1060,7 +1064,7 @@ def api_lcd():
 
     return jsonify({"ok": True, "line1": line1, "line2": line2})
 
-# ✅ NEW: Activity 5 API (ESP32 telemetry + commands)
+# ✅ Activity 5 API (ESP32 telemetry + commands)
 @app.route("/api/a5/latest")
 def api_a5_latest():
     with latest_a5_lock:
@@ -1078,7 +1082,7 @@ def api_a5_command():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ────────────────────────────────────────────────
-#   EXERCISE RUNNER (same as yours)
+#   EXERCISE RUNNER
 # ────────────────────────────────────────────────
 def _append_log(stdout_line=None, stderr_line=None):
     with exercise_log_lock:
@@ -1133,7 +1137,37 @@ def api_exercise_run():
     data = request.json or {}
     ex_id = data.get("exercise_id")
 
-    if not ex_id or ex_id not in EXERCISE_MAP:
+    if not ex_id:
+        return jsonify({"ok": False, "error": "Missing exercise_id"}), 400
+
+    # ✅ SPECIAL CASE: A5 EX21 = ESP32 streaming control (no local Python)
+    if ex_id == "a5-ex21":
+        try:
+            a5_send_cmd({"stream": "on"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        with exercise_lock:
+            exercise_status.update({
+                "exercise_id": ex_id,
+                "running": True,
+                "ended": False,
+                "end_reason": "",
+                "exit_code": None,
+                "started_at": now_iso(),
+                "ended_at": None,
+            })
+
+        return jsonify({
+            "ok": True,
+            "exercise_id": ex_id,
+            "started": True,
+            "mode": "mqtt",
+            "sent": {"stream": "on"}
+        })
+
+    # ✅ Normal exercises (run local scripts)
+    if ex_id not in EXERCISE_MAP:
         return jsonify({"ok": False, "error": "Unknown exercise_id"}), 400
 
     script_path = EXERCISE_MAP[ex_id]
@@ -1191,6 +1225,33 @@ def api_exercise_run():
 
 @app.route("/api/exercise_stop", methods=["POST"])
 def api_exercise_stop():
+    # ✅ If current running is a5-ex21, stop ESP32 stream via MQTT
+    with exercise_lock:
+        current = exercise_status.get("exercise_id")
+        running = bool(exercise_status.get("running"))
+
+    if running and current == "a5-ex21":
+        try:
+            a5_send_cmd({"stream": "off"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        with exercise_lock:
+            exercise_status.update({
+                "running": False,
+                "ended": True,
+                "end_reason": "stopped",
+                "exit_code": 0,
+                "ended_at": now_iso(),
+            })
+
+        return jsonify({
+            "ok": True,
+            "stopped": True,
+            "mode": "mqtt",
+            "sent": {"stream": "off"}
+        })
+
     ok = stop_current_exercise()
     return jsonify({"ok": bool(ok), "stopped": bool(ok)})
 
