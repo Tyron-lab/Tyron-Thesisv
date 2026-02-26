@@ -9,6 +9,11 @@ import sys
 import signal
 from collections import deque
 
+# ✅ NEW
+import json
+import atexit
+import paho.mqtt.client as mqtt
+
 # ────────────────────────────────────────────────
 #   Conditional imports – only load what we can
 # ────────────────────────────────────────────────
@@ -76,6 +81,42 @@ i2c_lock = threading.Lock()
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
+# ────────────────────────────────────────────────
+#   SENSOR DATA/STATE (must exist before set_error)
+# ────────────────────────────────────────────────
+sensor_state = {
+    "MPU6050":    False,
+    "BMP280":     False,
+    "DHT11":      False,
+    "MHMQ":       False,
+    "PIR":        False,
+    "ULTRASONIC": False,
+    "Relay":      False,
+    "servomotor": False,
+
+    "LED_TOOL":   True,
+    "BUZZER":     True,
+    "LCD_TOOL":   True,
+}
+
+sensor_data = {
+    "DHT11":      {"temperature": None, "humidity": None, "last_update": None, "error": ""},
+    "MPU6050":    {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None, "error": ""},
+    "BMP280":     {"temperature": None, "pressure": None, "altitude": None, "last_update": None, "error": ""},
+
+    "PIR":        {"motion": False, "count": 0, "last_update": None, "error": ""},
+    "ULTRASONIC": {"distance_cm": None, "last_update": None, "error": ""},
+
+    "MHMQ":       {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
+
+    "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
+    "servomotor": {"angle": 0, "last_update": None, "error": ""},
+
+    "LED_TOOL":   {"red": False, "orange": False, "green": False, "last_update": None, "error": ""},
+    "BUZZER":     {"on": False, "last_update": None, "error": ""},
+    "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
+}
+
 def set_error(key: str, msg):
     if key in sensor_data:
         sensor_data[key]["error"] = str(msg)
@@ -84,6 +125,58 @@ def set_error(key: str, msg):
 def clear_error(key: str):
     if key in sensor_data:
         sensor_data[key]["error"] = ""
+
+# ────────────────────────────────────────────────
+# ✅ ACTIVITY 5 MQTT BRIDGE (ESP32)
+# ────────────────────────────────────────────────
+MQTT_HOST = "192.168.4.1"
+MQTT_PORT = 1883
+
+A5_TOPIC_TELE = "trainerkit/a5/telemetry"
+A5_TOPIC_CMD  = "trainerkit/a5/command"
+A5_TOPIC_STAT = "trainerkit/a5/status"
+
+latest_a5 = {"connected": False, "last_update": None, "payload": None, "raw": None}
+latest_a5_lock = threading.Lock()
+mqtt_client = None
+
+def _a5_on_connect(client, userdata, flags, rc):
+    print("[A5 MQTT] connected rc=", rc)
+    with latest_a5_lock:
+        latest_a5["connected"] = (rc == 0)
+    if rc == 0:
+        client.subscribe(A5_TOPIC_TELE)
+        client.subscribe(A5_TOPIC_STAT)
+
+def _a5_on_message(client, userdata, msg):
+    try:
+        raw = msg.payload.decode("utf-8", errors="replace")
+        payload = None
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            payload = None
+
+        with latest_a5_lock:
+            latest_a5["last_update"] = now_iso()
+            latest_a5["raw"] = raw
+            latest_a5["payload"] = payload
+    except Exception as e:
+        print("[A5 MQTT] message error:", e)
+
+def start_a5_mqtt():
+    global mqtt_client
+    try:
+        c = mqtt.Client()
+        c.on_connect = _a5_on_connect
+        c.on_message = _a5_on_message
+        c.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+        c.loop_start()
+        mqtt_client = c
+        print("[A5 MQTT] loop started")
+    except Exception as e:
+        print("[A5 MQTT] start failed:", e)
+        mqtt_client = None
 
 # ────────────────────────────────────────────────
 #   EXERCISE MAP (RUN PY FILES FROM FOLDERS)
@@ -123,12 +216,11 @@ EXERCISE_MAP = {
 exercise_proc = None
 exercise_lock = threading.Lock()
 
-# Keep last logs/status (so UI won’t say error when it was just stopped)
 exercise_status = {
     "exercise_id": None,
     "running": False,
     "ended": False,
-    "end_reason": "",      # "stopped" | "finished" | "error"
+    "end_reason": "",
     "exit_code": None,
     "started_at": None,
     "ended_at": None,
@@ -140,7 +232,6 @@ exercise_reader_thread = None
 exercise_stop_requested = False
 
 def _python_cmd():
-    # Uses current interpreter (venv python if you started server inside venv)
     return sys.executable
 
 def _safe_deinit(io):
@@ -305,13 +396,24 @@ def make_out(pin, initial=False):
     io.value = bool(initial)
     return io
 
+def release_tools_outputs():
+    global led_red, led_orange, led_green, buzzer
+    _safe_deinit(led_red); led_red = None
+    _safe_deinit(led_orange); led_orange = None
+    _safe_deinit(led_green); led_green = None
+    _safe_deinit(buzzer); buzzer = None
+
+# ✅ FIXED: retry if GPIO busy
 def init_tools_outputs():
     global led_red, led_orange, led_green, buzzer
     if not SENSORS_AVAILABLE.get("board"):
         set_error("LED_TOOL", "board not available")
         set_error("BUZZER", "board not available")
         return False
-    try:
+
+    def _do_init():
+        global led_red, led_orange, led_green, buzzer
+
         if led_red is None and LED_RED_PIN is not None:
             led_red = make_out(LED_RED_PIN, False)
         if led_orange is None and LED_ORANGE_PIN is not None:
@@ -323,19 +425,22 @@ def init_tools_outputs():
             off_value = True if BUZZER_ACTIVE_LOW else False
             buzzer = make_out(BUZZER_PIN, off_value)
 
+    try:
+        _do_init()
         return True
     except Exception as e:
-        set_error("LED_TOOL", f"init failed: {e}")
-        set_error("BUZZER", f"init failed: {e}")
-        return False
-
-def release_tools_outputs():
-    """Release LED + buzzer GPIO so exercise scripts can use same pins."""
-    global led_red, led_orange, led_green, buzzer
-    _safe_deinit(led_red); led_red = None
-    _safe_deinit(led_orange); led_orange = None
-    _safe_deinit(led_green); led_green = None
-    _safe_deinit(buzzer); buzzer = None
+        # likely "GPIO busy" or left open by previous script
+        release_tools_outputs()
+        time.sleep(0.05)
+        try:
+            _do_init()
+            clear_error("LED_TOOL")
+            clear_error("BUZZER")
+            return True
+        except Exception as e2:
+            set_error("LED_TOOL", f"init failed: {e2}")
+            set_error("BUZZER", f"init failed: {e2}")
+            return False
 
 def set_led(color: str, on: bool):
     if not init_tools_outputs():
@@ -389,45 +494,11 @@ def beep(count=2, on_ms=120, off_ms=120):
         return False
 
 # ────────────────────────────────────────────────
-#   SENSOR GLOBALS
+#   SENSOR THREADS / GPIO
 # ────────────────────────────────────────────────
-sensor_state = {
-    "MPU6050":    False,
-    "BMP280":     False,
-    "DHT11":      False,
-    "MHMQ":       False,
-    "PIR":        False,
-    "ULTRASONIC": False,
-    "Relay":      False,
-    "servomotor": False,
-
-    "LED_TOOL":   True,
-    "BUZZER":     True,
-    "LCD_TOOL":   True,
-}
-
-sensor_data = {
-    "DHT11":      {"temperature": None, "humidity": None, "last_update": None, "error": ""},
-    "MPU6050":    {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None, "error": ""},
-    "BMP280":     {"temperature": None, "pressure": None, "altitude": None, "last_update": None, "error": ""},
-
-    "PIR":        {"motion": False, "count": 0, "last_update": None, "error": ""},
-    "ULTRASONIC": {"distance_cm": None, "last_update": None, "error": ""},
-
-    "MHMQ":       {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
-
-    "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
-    "servomotor": {"angle": 0, "last_update": None, "error": ""},
-
-    "LED_TOOL":   {"red": False, "orange": False, "green": False, "last_update": None, "error": ""},
-    "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
-}
-
 threads = {}
 running_flags = {}
 
-# --- Sensor instances / pins ---
 dht_device = None
 mpu = None
 bmp = None
@@ -448,29 +519,23 @@ MAX_PULSE = 2500
 FREQUENCY = 50
 
 def release_all_sensor_gpio():
-    """Stop threads + deinit pins so exercise scripts can reuse them safely."""
     global pir_pin, ultra_trig, ultra_echo, mq_pin, relay_pins, servo_pwm
 
-    # stop reader loops
     for k in list(running_flags.keys()):
         running_flags[k] = False
 
-    # give threads a short moment to exit
     time.sleep(0.15)
 
-    # deinit GPIO pins
     _safe_deinit(pir_pin); pir_pin = None
     _safe_deinit(ultra_trig); ultra_trig = None
     _safe_deinit(ultra_echo); ultra_echo = None
     _safe_deinit(mq_pin); mq_pin = None
 
-    # relay pins
     if relay_pins:
         for ch, io in list(relay_pins.items()):
             _safe_deinit(io)
         relay_pins = {}
 
-    # servo pwm
     try:
         if servo_pwm is not None:
             servo_pwm.duty_cycle = 0
@@ -479,14 +544,62 @@ def release_all_sensor_gpio():
         pass
     servo_pwm = None
 
-    # release tool outputs + lcd
     release_tools_outputs()
     lcd_release()
 
-    # mark states off (tools remain logically available)
     for s in ("MPU6050", "BMP280", "DHT11", "MHMQ", "PIR", "ULTRASONIC", "Relay", "servomotor"):
         sensor_state[s] = False
 
+# ────────────────────────────────────────────────
+# ✅ GLOBAL CLEANUP (fix GPIO busy forever)
+# ────────────────────────────────────────────────
+def stop_current_exercise():
+    global exercise_proc, exercise_stop_requested
+    with exercise_lock:
+        if exercise_proc is None:
+            return True
+        try:
+            exercise_stop_requested = True
+            exercise_proc.terminate()
+            try:
+                exercise_proc.wait(timeout=2)
+            except Exception:
+                exercise_proc.kill()
+            return True
+        except Exception:
+            return False
+
+def cleanup_everything():
+    try:
+        stop_current_exercise()
+    except Exception:
+        pass
+    try:
+        release_all_sensor_gpio()
+    except Exception:
+        pass
+    try:
+        if mqtt_client is not None:
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+    except Exception:
+        pass
+
+atexit.register(cleanup_everything)
+
+def _handle_sig(*_):
+    cleanup_everything()
+    raise SystemExit(0)
+
+try:
+    signal.signal(signal.SIGINT, _handle_sig)
+    signal.signal(signal.SIGTERM, _handle_sig)
+except Exception:
+    pass
+
+# ────────────────────────────────────────────────
+#   SENSOR INIT FUNCTIONS (unchanged from yours)
+# ────────────────────────────────────────────────
 def init_dht():
     global dht_device
     if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
@@ -732,9 +845,6 @@ def ensure_sensor_init(sensor: str) -> bool:
         return init_servomotor()
     return True
 
-# ────────────────────────────────────────────────
-#   BACKGROUND SENSOR READER
-# ────────────────────────────────────────────────
 def sensor_reader(sensor_name):
     global motion_count
     last_pir_state = False
@@ -951,8 +1061,25 @@ def api_lcd():
 
     return jsonify({"ok": True, "line1": line1, "line2": line2})
 
+# ✅ NEW: Activity 5 API (ESP32 telemetry + commands)
+@app.route("/api/a5/latest")
+def api_a5_latest():
+    with latest_a5_lock:
+        return jsonify({"ok": True, **latest_a5})
+
+@app.route("/api/a5/command", methods=["POST"])
+def api_a5_command():
+    data = request.json or {}
+    if mqtt_client is None:
+        return jsonify({"ok": False, "error": "MQTT not started"}), 500
+    try:
+        mqtt_client.publish(A5_TOPIC_CMD, json.dumps(data))
+        return jsonify({"ok": True, "topic": A5_TOPIC_CMD, "sent": data})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # ────────────────────────────────────────────────
-#   EXERCISE RUNNER (FIXED)
+#   EXERCISE RUNNER (same as yours)
 # ────────────────────────────────────────────────
 def _append_log(stdout_line=None, stderr_line=None):
     with exercise_log_lock:
@@ -963,7 +1090,6 @@ def _append_log(stdout_line=None, stderr_line=None):
 
 def _exercise_reader(proc: subprocess.Popen):
     global exercise_proc
-    # Read both streams line-by-line to avoid blocking
     try:
         while proc.poll() is None:
             line = proc.stdout.readline() if proc.stdout else ""
@@ -976,7 +1102,6 @@ def _exercise_reader(proc: subprocess.Popen):
 
             time.sleep(0.01)
 
-        # Drain remaining after exit
         try:
             if proc.stdout:
                 for line in proc.stdout.readlines():
@@ -995,7 +1120,6 @@ def _exercise_reader(proc: subprocess.Popen):
             exercise_status["exit_code"] = exit_code
             exercise_status["ended_at"] = now_iso()
 
-            # If stop was requested, don’t label it error
             if exercise_stop_requested:
                 exercise_status["end_reason"] = "stopped"
             else:
@@ -1003,29 +1127,8 @@ def _exercise_reader(proc: subprocess.Popen):
 
             exercise_proc = None
 
-def stop_current_exercise():
-    global exercise_proc, exercise_stop_requested
-    with exercise_lock:
-        if exercise_proc is None:
-            return True
-        try:
-            exercise_stop_requested = True
-            # SIGTERM first
-            exercise_proc.terminate()
-            try:
-                exercise_proc.wait(timeout=2)
-            except Exception:
-                # SIGKILL fallback
-                exercise_proc.kill()
-            return True
-        except Exception:
-            return False
-
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
-    """
-    Body: { "exercise_id": "a1-ex1" }
-    """
     global exercise_proc, exercise_reader_thread, exercise_stop_requested
 
     data = request.json or {}
@@ -1039,15 +1142,12 @@ def api_exercise_run():
         return jsonify({"ok": False, "error": f"File not found: {script_path}"}), 404
 
     with exercise_lock:
-        # Stop previous exercise
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
 
-        # IMPORTANT FIX:
-        # Release GPIO/I2C resources from Tools/Sensors so the exercise script can use them
+        # release GPIO so scripts can reuse
         release_all_sensor_gpio()
 
-        # reset logs/status
         with exercise_log_lock:
             exercise_stdout.clear()
             exercise_stderr.clear()
@@ -1115,10 +1215,14 @@ def api_exercise_logs():
 if __name__ == "__main__":
     print("=" * 80)
     print("TrainerKit Tools Dashboard")
-    print("Open: http://localhost:5000")
+    print("Open: http://192.168.4.1:5000")
     print("Template Dir:", TEMPLATE_DIR)
     print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
     print("LCD MUX CH:", LCD_MUX_CH, "MPU CH:", MPU_MUX_CH, "BMP CH:", BMP_MUX_CH)
     print("BUZZER_ACTIVE_LOW:", BUZZER_ACTIVE_LOW)
     print("=" * 80)
+
+    # ✅ Start MQTT bridge so Flask can read ESP32 data
+    start_a5_mqtt()
+
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)

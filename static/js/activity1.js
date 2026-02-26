@@ -10,6 +10,9 @@
    - POST /api/exercise_stop   {}
    - GET  /api/exercise_status {}
    - GET  /api/exercise_logs   {}
+
+   Activity 5 Telemetry (server.py):
+   - GET /api/a5/latest   -> latest MQTT message
 */
 
 (() => {
@@ -17,6 +20,9 @@
   const API_STOP = "/api/exercise_stop";
   const API_STATUS = "/api/exercise_status";
   const API_LOGS = "/api/exercise_logs";
+
+  // ✅ Activity 5 telemetry endpoint already exists in your server.py:contentReference[oaicite:5]{index=5}
+  const API_A5_LATEST = "/api/a5/latest";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -35,7 +41,7 @@
   }
 
   async function getJSON(url) {
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -78,7 +84,85 @@
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
 
+  // ✅ A5 EX21 live panel nodes (optional; only if present in HTML)
+  const a5LivePanel = qs("#a5LivePanel");
+  const a5Dot = qs("#a5Dot");
+  const a5ConnText = qs("#a5ConnText");
+  const a5Temp = qs("#a5Temp");
+  const a5Motion = qs("#a5Motion");
+  const a5Noise = qs("#a5Noise");
+  const a5Updated = qs("#a5Updated");
+  const a5Raw = qs("#a5Raw");
+
   let modalExerciseId = null;
+
+  // ----- A5 EX21 telemetry polling -----
+  let a5Timer = null;
+
+  function setA5Conn(state, text) {
+    if (!a5Dot || !a5ConnText) return;
+    a5Dot.classList.remove("ok", "bad");
+    if (state === "ok") a5Dot.classList.add("ok");
+    else if (state === "bad") a5Dot.classList.add("bad");
+    a5ConnText.textContent = text || "";
+  }
+
+  function safeVal(v) {
+    if (v === null || v === undefined) return "—";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+
+  async function pollA5Once() {
+    const r = await getJSON(API_A5_LATEST);
+    if (!r.ok || !r.data || !r.data.ok) {
+      setA5Conn("bad", "Offline");
+      if (a5Updated) a5Updated.textContent = "Last update: —";
+      if (a5Temp) a5Temp.textContent = "—";
+      if (a5Motion) a5Motion.textContent = "—";
+      if (a5Noise) a5Noise.textContent = "—";
+      if (a5Raw) a5Raw.textContent = "raw: —";
+      return;
+    }
+
+    // server returns: { ok: true, connected, last_update, payload, raw }:contentReference[oaicite:6]{index=6}
+    const connected = !!r.data.connected;
+    setA5Conn(connected ? "ok" : "bad", connected ? "Connected" : "Disconnected");
+
+    const payload = r.data.payload || null;
+    const raw = r.data.raw || "";
+
+    // Try to map common keys: temperature, motion, noise
+    let t = payload && (payload.temperature ?? payload.temp ?? payload.Temperature);
+    let m = payload && (payload.motion ?? payload.pir ?? payload.Motion);
+    let n = payload && (payload.noise ?? payload.sound ?? payload.Noise);
+
+    // Fallback: if sender uses different structure, show raw only
+    if (a5Temp) a5Temp.textContent = safeVal(t);
+    if (a5Motion) a5Motion.textContent = safeVal(m);
+    if (a5Noise) a5Noise.textContent = safeVal(n);
+
+    if (a5Updated) a5Updated.textContent = "Last update: " + (r.data.last_update || "—");
+    if (a5Raw) a5Raw.textContent = "raw: " + (raw ? raw : "—");
+  }
+
+  function startA5Telemetry() {
+    if (!a5LivePanel) return;
+    a5LivePanel.hidden = false;
+    setA5Conn("warn", "Connecting…");
+    // poll quickly for “live feel”
+    if (a5Timer) clearInterval(a5Timer);
+    pollA5Once().catch(() => {});
+    a5Timer = setInterval(() => {
+      pollA5Once().catch(() => {});
+    }, 300);
+  }
+
+  function stopA5Telemetry() {
+    if (a5Timer) clearInterval(a5Timer);
+    a5Timer = null;
+    if (a5LivePanel) a5LivePanel.hidden = true;
+  }
 
   function openModalFromCard(card) {
     if (!modal) return;
@@ -130,6 +214,10 @@
       speak(`${sayTitle}. ${sayText}`);
     };
 
+    // ✅ Only show/poll telemetry in popup when Exercise 21 is opened
+    if (exId === "a5-ex21") startA5Telemetry();
+    else stopA5Telemetry();
+
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
@@ -141,6 +229,9 @@
     modal.setAttribute("aria-hidden", "true");
     document.body.classList.remove("modal-open");
     modalExerciseId = null;
+
+    // ✅ stop polling when modal closes
+    stopA5Telemetry();
   }
 
   if (modalClose) modalClose.addEventListener("click", closeModal);
@@ -185,12 +276,10 @@
   async function stopExercise(requestedExId = null) {
     // If user presses stop for a specific card, only stop if it matches the running one
     if (requestedExId && currentRunningEx && requestedExId !== currentRunningEx) {
-      // Nothing to stop for that card; keep UI clear & simple
       setStatus(requestedExId, "Ready");
       return;
     }
 
-    // If nothing running, just normalize UI
     if (!currentRunningEx) {
       if (requestedExId) setStatus(requestedExId, "Ready");
       return;

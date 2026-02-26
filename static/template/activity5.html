@@ -167,10 +167,39 @@
           </div>
         </article>
 
+        <!-- ✅ A5 EX21 (NEW): Send Sensor Data -->
+        <article class="exercise-card"
+          data-exercise="a5-ex21"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 21: Send Sensor Data"
+          data-say-text="Send sensor readings to the dashboard. This popup will show live MQTT telemetry from your ESP32.">
+          <div class="ex-card-head">
+            <h3>Exercise 21: Send Sensor Data</h3>
+            <span class="pill">IoT • MQTT</span>
+          </div>
+
+          <p class="ex-desc">Live: Temperature, Motion, Noise ➜ appears in the popup dashboard.</p>
+
+          <div class="ex-meta">
+            <span><b>Input:</b> Sensor reading</span>
+            <span><b>Output:</b> Live dashboard update</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex21">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex21">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex21">Speak</button>
+            <span class="status" data-status-for="a5-ex21">Ready</span>
+          </div>
+        </article>
+
       </div>
     </section>
   </div>
 
+  <!-- Modal -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
@@ -187,6 +216,37 @@
           <h2 id="modalTitle">Exercise</h2>
           <p id="modalDesc" class="modal-desc"></p>
           <div class="modal-meta" id="modalMeta"></div>
+
+          <!-- ✅ Live panel (only visible for a5-ex21) -->
+          <div class="live-panel" id="a5LivePanel" hidden>
+            <div class="live-head">
+              <b>📡 Live Telemetry</b>
+              <span class="live-pill">
+                <span class="dot" id="a5Dot"></span>
+                <span id="a5ConnText">Connecting…</span>
+              </span>
+            </div>
+
+            <div class="live-grid">
+              <div class="live-item">
+                <div class="live-k">Temperature</div>
+                <div class="live-v" id="a5Temp">—</div>
+              </div>
+              <div class="live-item">
+                <div class="live-k">Motion</div>
+                <div class="live-v" id="a5Motion">—</div>
+              </div>
+              <div class="live-item">
+                <div class="live-k">Noise</div>
+                <div class="live-v" id="a5Noise">—</div>
+              </div>
+            </div>
+
+            <div class="live-foot">
+              <small id="a5Updated">Last update: —</small>
+              <small class="live-raw" id="a5Raw">raw: —</small>
+            </div>
+          </div>
 
           <div class="modal-actions">
             <button class="run-btn" type="button" id="modalRunBtn">Run</button>
