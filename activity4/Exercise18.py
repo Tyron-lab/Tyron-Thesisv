@@ -1,234 +1,217 @@
-# Exercise18.py (board / digitalio) - Unsafe Alert using RELAY + LED + LCD countdown
-# LCD is behind TCA9548A I2C mux (channel 0)
-
 import time
+import signal
+import sys
+import queue
+import threading
 
-# ===== GPIO (board/digitalio) =====
-try:
-    import board
-    import digitalio
-    GPIO_OK = True
-except Exception as e:
-    board = None
-    digitalio = None
-    GPIO_OK = False
-    _import_err = e
+import numpy as np
+import sounddevice as sd
 
-# ===== I2C MUX (TCA9548A) =====
-try:
-    from smbus2 import SMBus
-    SMBUS_OK = True
-except Exception as e:
-    SMBus = None
-    SMBUS_OK = False
-    _smbus_err = e
+import board
+import digitalio
 
-# ===== OPTIONAL LCD (RPLCD) =====
-LCD_OK = False
-_lcd = None
-try:
-    from RPLCD.i2c import CharLCD  # pip install RPLCD
-    LCD_OK = True
-except Exception:
-    CharLCD = None
-    LCD_OK = False
+# ----------------------------
+# RELAY PINS (same as your server)
+# CH1=D27, CH2=D10, CH3=D26, CH4=D25  (active-low)
+# ----------------------------
+RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]
+RELAY_ACTIVE_LOW = True
 
-# ===== EDIT PINS =====
-RELAY_PIN = board.D27       # relay channel you want to "click"
-ALERT_LED_PIN = board.D13   # alert LED (red/orange)
+# ----------------------------
+# CLAP DETECTION
+# ----------------------------
+CLAP_PEAK_THRESHOLD = 0.35   # raise if too sensitive, lower if not detecting
+MIN_CLAP_GAP_SEC = 0.35      # debounce for one clap
+TOGGLE_COOLDOWN_SEC = 0.60   # prevents double toggles
 
-RELAY_ACTIVE_HIGH = True    # True=HIGH turns relay ON; False=LOW turns relay ON
-LED_ACTIVE_HIGH = True
+# ----------------------------
+# PATTERN SETTINGS
+# ----------------------------
+STEP_ON_SEC = 0.25           # how long each relay stays ON
+STEP_OFF_SEC = 0.08          # gap between relays
+PATTERN_LOOP_DELAY = 0.05
 
-# ===== I2C SETTINGS =====
-I2C_BUS = 1
-MUX_ADDR = 0x70             # TCA9548A default address
-LCD_CH = 0                  # <<< YOU SAID CHANNEL 0
-LCD_ADDR = 0x27             # LCD I2C address (0x27 or 0x3F commonly)
-LCD_COLS = 16
-LCD_ROWS = 2
+# Audio chunking
+BLOCK_MS = 30
 
-# Countdown config
-COUNTDOWN_SEC = 10.0
-
-# Speed curve: start slow -> end fast
-OFF_START = 0.35   # seconds between clicks at start
-OFF_END   = 0.06   # seconds between clicks near the end
-ON_PULSE  = 0.03   # relay ON time per tick/click
-# =====================
-
-_relay = None
-_led = None
+_should_exit = False
 
 
-def make_out(pin, initial=False):
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.OUTPUT
-    io.value = initial
-    return io
+def relay_write(io: digitalio.DigitalInOut, on: bool):
+    # Active-low relay: ON=False, OFF=True
+    if RELAY_ACTIVE_LOW:
+        io.value = (not on)
+    else:
+        io.value = bool(on)
 
 
-def set_out(dev, on: bool, active_high: bool = True):
-    dev.value = (on if active_high else (not on))
+def all_relays(relays, on: bool):
+    for r in relays:
+        relay_write(r, on)
 
 
-def mux_select(ch: int):
-    """Select TCA9548A channel 0..7."""
-    if not SMBUS_OK:
-        return
-    if ch is None:
-        return
-    if not (0 <= int(ch) <= 7):
-        raise ValueError("MUX channel must be 0..7")
-    with SMBus(I2C_BUS) as bus:
-        bus.write_byte(MUX_ADDR, 1 << int(ch))
-
-
-def lcd_init():
-    """Init LCD if available. Uses mux channel selection."""
-    global _lcd
-    if not LCD_OK or _lcd is not None:
-        return _lcd
-
+def try_open_input_stream(device, samplerate, blocksize, callback):
     try:
-        mux_select(LCD_CH)
-        _lcd = CharLCD("PCF8574", LCD_ADDR, port=I2C_BUS, cols=LCD_COLS, rows=LCD_ROWS)
-        _lcd.clear()
+        stream = sd.InputStream(
+            device=device,
+            channels=1,
+            samplerate=samplerate,
+            blocksize=blocksize,
+            dtype="float32",
+            callback=callback,
+        )
+        stream.start()
+        return stream
     except Exception:
-        _lcd = None
-    return _lcd
+        return None
 
 
-def lcd_write(line1: str, line2: str = ""):
-    """Write to LCD if available; otherwise print. Always selects mux channel first."""
-    line1 = (line1 or "")[:16].ljust(16)
-    line2 = (line2 or "")[:16].ljust(16)
+def main():
+    global _should_exit
 
-    lcd = lcd_init()
-    if lcd:
+    # --- Relay GPIO init ---
+    relays = []
+    for pin in RELAY_PINS:
+        io = digitalio.DigitalInOut(pin)
+        io.direction = digitalio.Direction.OUTPUT
+        relays.append(io)
+
+    # Start safe OFF
+    all_relays(relays, False)
+
+    # --- Pattern control ---
+    pattern_running = False
+    pattern_flag = {"run": False}
+    pattern_lock = threading.Lock()
+
+    def pattern_worker():
+        idx = 0
+        while not _should_exit:
+            with pattern_lock:
+                running = pattern_flag["run"]
+            if not running:
+                time.sleep(PATTERN_LOOP_DELAY)
+                continue
+
+            # turn all OFF first (clean step)
+            all_relays(relays, False)
+
+            # turn one ON
+            relay_write(relays[idx], True)
+            time.sleep(STEP_ON_SEC)
+
+            # turn it OFF
+            relay_write(relays[idx], False)
+            time.sleep(STEP_OFF_SEC)
+
+            idx = (idx + 1) % len(relays)
+
+    t = threading.Thread(target=pattern_worker, daemon=True)
+    t.start()
+
+    def set_pattern(on: bool):
+        nonlocal pattern_running
+        with pattern_lock:
+            pattern_flag["run"] = bool(on)
+        pattern_running = bool(on)
+        if not on:
+            all_relays(relays, False)
+
+    # --- Cleanup ---
+    def cleanup(*_):
+        global _should_exit
+        _should_exit = True
         try:
-            mux_select(LCD_CH)
-            lcd.clear()
-            lcd.cursor_pos = (0, 0)
-            lcd.write_string(line1)
-            lcd.cursor_pos = (1, 0)
-            lcd.write_string(line2)
-            return
+            set_pattern(False)
         except Exception:
             pass
+        try:
+            all_relays(relays, False)
+        except Exception:
+            pass
+        for r in relays:
+            try:
+                r.deinit()
+            except Exception:
+                pass
+        sys.exit(0)
 
-    # fallback
-    print(f"[LCD]\n{line1}\n{line2}")
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
 
+    print("Exercise 18: Clap / Loud Sound Relay Pattern (ALL channels)")
+    print("Clap once  -> START pattern (CH1->CH2->CH3->CH4->repeat)")
+    print("Clap again -> STOP pattern + ALL OFF")
+    print("Ctrl+C to stop.\n")
+    print("Relay pins:", ["D27(CH1)", "D10(CH2)", "D26(CH3)", "D25(CH4)"])
+    print("Threshold:", CLAP_PEAK_THRESHOLD)
+    print("Pattern speed:", f"ON {STEP_ON_SEC}s, OFF {STEP_OFF_SEC}s\n")
 
-def relay_click(off_sec: float):
-    """One 'click': relay pulse + LED flash."""
-    set_out(_relay, True, RELAY_ACTIVE_HIGH)
-    set_out(_led, True, LED_ACTIVE_HIGH)
-    time.sleep(max(0.01, float(ON_PULSE)))
+    # --- Audio setup ---
+    audio_q = queue.Queue()
 
-    set_out(_relay, False, RELAY_ACTIVE_HIGH)
-    set_out(_led, False, LED_ACTIVE_HIGH)
-    time.sleep(max(0.01, float(off_sec)))
+    def audio_callback(indata, frames, time_info, status):
+        if status:
+            pass
+        audio_q.put(indata[:, 0].copy())
 
+    dev = sd.default.device[0]
+    candidate_rates = [48000, 44100, 32000, 24000, 16000, 8000]
+    stream = None
+    chosen_rate = None
 
-def run(unsafe: bool = True):
-    """
-    Exercise 18: Unsafe Alert (RELAY countdown + LED + LCD)
-    Input: unsafe condition (bool)
-    Output: relay click pattern gets faster for 10 seconds + LED flash + LCD countdown
-    """
-    global _relay, _led
-
-    if not GPIO_OK:
-        print("[EX18] board/digitalio not available. Simulating.")
-        print(f"[EX18] import error: {_import_err}")
-        return {"ok": True, "simulated": True, "unsafe": unsafe}
-
-    # init outputs (start OFF)
-    if _relay is None:
-        _relay = make_out(RELAY_PIN, (not RELAY_ACTIVE_HIGH))
-    if _led is None:
-        _led = make_out(ALERT_LED_PIN, (not LED_ACTIVE_HIGH))
-
-    if not unsafe:
-        lcd_write("SAFE", "No alert")
-        set_out(_relay, False, RELAY_ACTIVE_HIGH)
-        set_out(_led, False, LED_ACTIVE_HIGH)
-        return {"ok": True, "unsafe": False, "message": "Safe: relay/LED OFF"}
-
-    # UNSAFE countdown
-    t_end = time.time() + float(COUNTDOWN_SEC)
-    lcd_write("UNSAFE ALERT!", "T-minus: 10s")
-
-    last_shown = None
-
-    while True:
-        now = time.time()
-        remain = t_end - now
-        if remain <= 0:
+    for r in candidate_rates:
+        blocksize = int(r * (BLOCK_MS / 1000.0))
+        stream = try_open_input_stream(dev, r, blocksize, audio_callback)
+        if stream is not None:
+            chosen_rate = r
             break
 
-        prog = 1.0 - (remain / float(COUNTDOWN_SEC))
-        off_sec = OFF_START + (OFF_END - OFF_START) * prog
+    if stream is None:
+        print("❌ Could not open microphone. Run:")
+        print('python -c "import sounddevice as sd; print(sd.query_devices())"')
+        cleanup()
 
-        remain_int = int(remain + 0.999)
-        if remain_int != last_shown:
-            lcd_write("UNSAFE ALERT!", f"T-minus: {remain_int:02d}s")
-            last_shown = remain_int
+    print(f"✅ Mic opened at {chosen_rate} Hz\n")
 
-        relay_click(off_sec)
-
-    # end signal: 3 fast clicks
-    lcd_write("STATUS", "ALERT DONE")
-    for _ in range(3):
-        relay_click(0.05)
-
-    set_out(_relay, False, RELAY_ACTIVE_HIGH)
-    set_out(_led, False, LED_ACTIVE_HIGH)
-    return {"ok": True, "unsafe": True, "message": "Unsafe countdown relay pattern completed"}
-
-
-def stop():
-    """Force OFF and cleanup."""
-    global _relay, _led, _lcd
+    last_clap_time = 0.0
+    last_toggle_time = 0.0
 
     try:
-        if _relay:
-            set_out(_relay, False, RELAY_ACTIVE_HIGH)
-    except Exception:
-        pass
-    try:
-        if _led:
-            set_out(_led, False, LED_ACTIVE_HIGH)
-    except Exception:
-        pass
+        while not _should_exit:
+            try:
+                chunk = audio_q.get(timeout=0.25)
+            except queue.Empty:
+                continue
 
-    try:
-        if _relay:
-            _relay.deinit()
-            _relay = None
-    except Exception:
-        pass
-    try:
-        if _led:
-            _led.deinit()
-            _led = None
-    except Exception:
-        pass
-    try:
-        if _lcd:
-            mux_select(LCD_CH)
-            _lcd.clear()
-            _lcd.close(clear=True)
-            _lcd = None
-    except Exception:
-        pass
+            peak = float(np.max(np.abs(chunk))) if len(chunk) else 0.0
+            now = time.time()
 
-    return {"ok": True, "stopped": True}
+            if peak >= CLAP_PEAK_THRESHOLD:
+                # debounce for single clap
+                if (now - last_clap_time) < MIN_CLAP_GAP_SEC:
+                    continue
+                last_clap_time = now
+
+                # cooldown to avoid double toggles
+                if (now - last_toggle_time) < TOGGLE_COOLDOWN_SEC:
+                    continue
+                last_toggle_time = now
+
+                # toggle pattern
+                pattern_running = not pattern_running
+                set_pattern(pattern_running)
+
+                print(f"👏 CLAP! peak={peak:.2f} -> Pattern {'START' if pattern_running else 'STOP (ALL OFF)'}")
+
+    finally:
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+        cleanup()
 
 
 if __name__ == "__main__":
-    run(True)
-    time.sleep(1)
-    stop()
+    main()
