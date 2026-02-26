@@ -20,7 +20,7 @@ PIR_PIN     = board.D22
 RED_LED_PIN = board.D5
 BUZZER_PIN  = board.D16
 
-BUZZER_ACTIVE_LOW = False
+BUZZER_ACTIVE_LOW = True
 
 # ─────────────────────────────
 # LCD + MUX SETTINGS
