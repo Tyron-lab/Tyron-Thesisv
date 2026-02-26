@@ -13,9 +13,11 @@ import board
 import digitalio
 
 # ----------------------------
-# LED PIN (TrainerKit mapping)
+# LED PINS (TrainerKit mapping)
 # ----------------------------
-RED_LED_PIN = board.D5  # change if your red LED is on a different pin
+RED_LED_PIN    = board.D5
+ORANGE_LED_PIN = board.D6
+GREEN_LED_PIN  = board.D13
 
 # ----------------------------
 # VOSK MODEL
@@ -25,28 +27,23 @@ MODEL_PATH = os.path.join(
     "..", "models", "vosk-model-small-en-us-0.15"
 )
 
-# Vosk wants 16000 Hz
 VOSK_RATE = 16000
-GRAMMAR = '["open", "close"]'
-COMMAND_COOLDOWN_SEC = 0.8
+
+# Expanded grammar for better accuracy
+GRAMMAR = '["open", "close", "red", "orange", "green"]'
+COMMAND_COOLDOWN_SEC = 0.6
 
 _should_exit = False
 
 
 def downsample_to_16k(x_float32: np.ndarray, src_rate: int) -> np.ndarray:
-    """
-    Very simple resampler: decimate by integer factor if possible,
-    else linear interpolation. Good enough for command words.
-    """
     if src_rate == VOSK_RATE:
         return x_float32
 
-    # If divisible, do integer decimation (fast + stable)
     if src_rate % VOSK_RATE == 0:
         step = src_rate // VOSK_RATE
         return x_float32[::step]
 
-    # Otherwise, linear resample
     n_src = len(x_float32)
     n_dst = int(round(n_src * (VOSK_RATE / src_rate)))
     if n_dst <= 0:
@@ -60,7 +57,6 @@ def downsample_to_16k(x_float32: np.ndarray, src_rate: int) -> np.ndarray:
 
 
 def try_open_input_stream(device, samplerate, blocksize, callback):
-    """Try to open an InputStream; return stream if OK else None."""
     try:
         stream = sd.InputStream(
             device=device,
@@ -80,29 +76,38 @@ def main():
     global _should_exit
 
     # --- LED setup ---
-    led = digitalio.DigitalInOut(RED_LED_PIN)
-    led.direction = digitalio.Direction.OUTPUT
-    led.value = False
+    led_red = digitalio.DigitalInOut(RED_LED_PIN)
+    led_orange = digitalio.DigitalInOut(ORANGE_LED_PIN)
+    led_green = digitalio.DigitalInOut(GREEN_LED_PIN)
 
-    def led_on():
-        led.value = True
-        print("✅ OPEN -> Red LED ON")
-
-    def led_off():
+    for led in (led_red, led_orange, led_green):
+        led.direction = digitalio.Direction.OUTPUT
         led.value = False
-        print("✅ CLOSE -> Red LED OFF")
+
+    def set_led(color: str, on: bool):
+        color = (color or "").lower()
+        led = {"red": led_red, "orange": led_orange, "green": led_green}.get(color)
+        if led is None:
+            return
+        led.value = bool(on)
+        state = "ON" if on else "OFF"
+        print(f"✅ {color.upper()} -> {state}")
 
     def cleanup(*_):
         global _should_exit
         _should_exit = True
         try:
-            led.value = False
-        except Exception:
-            pass
-        try:
-            led.deinit()
-        except Exception:
-            pass
+            for led in (led_red, led_orange, led_green):
+                try:
+                    led.value = False
+                except Exception:
+                    pass
+        finally:
+            for led in (led_red, led_orange, led_green):
+                try:
+                    led.deinit()
+                except Exception:
+                    pass
         sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
@@ -116,8 +121,11 @@ def main():
         cleanup()
 
     print("Exercise 17: Voice Command LED Control running...")
-    print("Say: OPEN  -> Red LED ON")
-    print("Say: CLOSE -> Red LED OFF")
+    print("Commands:")
+    print("  OPEN / CLOSE            -> RED on/off")
+    print("  RED OPEN / RED CLOSE    -> RED on/off")
+    print("  ORANGE OPEN/CLOSE       -> ORANGE on/off")
+    print("  GREEN OPEN/CLOSE        -> GREEN on/off")
     print("Ctrl+C to stop.\n")
 
     # --- Vosk init ---
@@ -125,31 +133,24 @@ def main():
     rec = KaldiRecognizer(model, VOSK_RATE, GRAMMAR)
     rec.SetWords(False)
 
-    # --- Audio queue ---
     audio_q = queue.Queue()
     last_cmd_time = 0.0
-
-    # We'll fill these after opening stream
     chosen_rate = None
 
     def audio_callback(indata, frames, time_info, status):
-        # Push raw float32 samples
         if status:
-            # ignore minor status warnings
             pass
         audio_q.put(indata[:, 0].copy())
 
-    # --- Pick input device ---
-    dev = sd.default.device[0]  # default input device id (may be None)
+    # Default input device
+    dev = sd.default.device[0]
     print("Default input device:", dev)
 
-    # --- Try sample rates until one works ---
-    # Most mics support 48000 or 44100; some support 16000; few support 8000.
+    # Try sample rates
     candidate_rates = [48000, 44100, 32000, 24000, 16000, 8000]
     stream = None
-
     for r in candidate_rates:
-        blocksize = int(r * 0.05)  # 50ms
+        blocksize = int(r * 0.05)
         stream = try_open_input_stream(dev, r, blocksize, audio_callback)
         if stream is not None:
             chosen_rate = r
@@ -157,11 +158,42 @@ def main():
 
     if stream is None:
         print("\n❌ Could not open microphone at any common sample rate.")
-        print("Next step: run device list and pick a device index manually.")
-        print('Command: python -c "import sounddevice as sd; print(sd.query_devices())"')
+        print('Run: python -c "import sounddevice as sd; print(sd.query_devices())"')
         cleanup()
 
     print(f"✅ Mic stream opened at {chosen_rate} Hz")
+
+    def parse_command(text: str):
+        """
+        Returns (color, action) where:
+          color in {"red","orange","green"} or None
+          action in {"open","close"} or None
+        """
+        t = (text or "").strip().lower()
+        if not t:
+            return (None, None)
+
+        words = t.split()
+
+        action = None
+        if "open" in words:
+            action = "open"
+        elif "close" in words:
+            action = "close"
+
+        color = None
+        if "red" in words:
+            color = "red"
+        elif "orange" in words:
+            color = "orange"
+        elif "green" in words:
+            color = "green"
+
+        # Backward compatible: plain OPEN/CLOSE controls RED
+        if action and color is None:
+            color = "red"
+
+        return (color, action)
 
     try:
         while not _should_exit:
@@ -170,7 +202,6 @@ def main():
             except queue.Empty:
                 continue
 
-            # Resample to 16k for Vosk
             chunk16 = downsample_to_16k(chunk, chosen_rate)
             if len(chunk16) == 0:
                 continue
@@ -183,15 +214,19 @@ def main():
                 if not text:
                     continue
 
+                color, action = parse_command(text)
+                if not action or not color:
+                    continue
+
                 now = time.time()
                 if now - last_cmd_time < COMMAND_COOLDOWN_SEC:
                     continue
 
-                if "open" in text:
-                    led_on()
+                if action == "open":
+                    set_led(color, True)
                     last_cmd_time = now
-                elif "close" in text:
-                    led_off()
+                elif action == "close":
+                    set_led(color, False)
                     last_cmd_time = now
 
     finally:
@@ -200,14 +235,7 @@ def main():
             stream.close()
         except Exception:
             pass
-        try:
-            led.value = False
-        except Exception:
-            pass
-        try:
-            led.deinit()
-        except Exception:
-            pass
+        cleanup()
 
 
 if __name__ == "__main__":
