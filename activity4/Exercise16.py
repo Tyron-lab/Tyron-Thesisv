@@ -16,8 +16,11 @@ MAX_PULSE_US = 2500
 ANGLE_IDLE = 0
 ANGLE_ACTIVE = 90
 
-# ✅ LOWER = faster response (too low may not reach the angle)
-SPEED_T = 0.15   # try 0.12, 0.15, 0.18, 0.20
+# Motion move speed (time we keep pulses on after changing angle)
+MOVE_T = 0.15
+
+# ✅ Make return-to-0 “fast”
+FAST_RETURN_T = 0.06   # try 0.04–0.10
 
 
 def angle_to_duty_u16(angle: int) -> int:
@@ -37,9 +40,9 @@ def main():
 
     servo = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
-    def servo_on(angle: int):
+    def set_angle(angle: int, hold_s: float):
         servo.duty_cycle = angle_to_duty_u16(angle)
-        time.sleep(SPEED_T)   # ✅ faster move/response
+        time.sleep(max(0.0, hold_s))
 
     def servo_off():
         servo.duty_cycle = 0
@@ -47,7 +50,7 @@ def main():
     def cleanup(*_):
         try:
             try:
-                servo_on(ANGLE_IDLE)
+                set_angle(ANGLE_IDLE, FAST_RETURN_T)
             except Exception:
                 pass
             servo_off()
@@ -65,11 +68,12 @@ def main():
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
 
-    print("Exercise 16: PIR Motion-Activated Servo running...")
-    print("No motion -> 0° then OFF | Motion -> 90° holding | Ctrl+C to stop")
-    print("SPEED_T =", SPEED_T)
+    print("Exercise 16 running...")
+    print("Motion -> 90° hold | No motion -> 0° fast then OFF")
+    print("MOVE_T =", MOVE_T, "FAST_RETURN_T =", FAST_RETURN_T)
 
-    servo_on(ANGLE_IDLE)
+    # start at 0 then off
+    set_angle(ANGLE_IDLE, FAST_RETURN_T)
     servo_off()
 
     last_state = None
@@ -79,17 +83,17 @@ def main():
 
         if motion != last_state:
             if motion:
-                print("Motion detected -> Servo 90° (ON)")
-                servo_on(ANGLE_ACTIVE)
+                print("Motion detected -> 90°")
+                set_angle(ANGLE_ACTIVE, MOVE_T)
                 # keep PWM on to hold at 90°
             else:
-                print("No motion -> Servo 0° then OFF")
-                servo_on(ANGLE_IDLE)
+                print("Motion ended -> 0° FAST then OFF")
+                set_angle(ANGLE_IDLE, FAST_RETURN_T)
                 servo_off()
 
             last_state = motion
 
-        time.sleep(0.02)  # ✅ tighter loop responsiveness
+        time.sleep(0.02)
 
 
 if __name__ == "__main__":
