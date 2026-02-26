@@ -2,12 +2,22 @@
 # Exercise 22: Receive Command (MQTT Subscribe -> Control outputs)
 #
 # Subscribes to: trainerkit/a5/command
-# Expected JSON payload examples:
+#
+# Supported payload examples:
 #   {"device":"relay","ch":1,"state":"on"}
 #   {"device":"relay","ch":2,"state":"off"}
-#   {"device":"servo","angle":90}
+#   {"device":"relay_seq","mode":"chase","repeat":2,"delay_ms":250}
+#
 #   {"device":"led","color":"red","state":"on"}
+#   {"device":"led_seq","mode":"traffic","repeat":2,"delay_ms":220}
+#
+#   {"device":"servo","action":"open"}                 # uses SERVO_MODE
+#   {"device":"servo","action":"close"}                # uses SERVO_MODE
+#   {"device":"servo","action":"stop"}                 # continuous stop
+#   {"device":"servo","angle":90}                      # positional only
+#
 #   {"device":"beep","count":2}
+#   {"device":"all_off"}
 #
 # Stop: Ctrl+C or your dashboard Stop button (terminates process)
 
@@ -15,6 +25,7 @@ import json
 import time
 import signal
 import sys
+import threading
 
 import paho.mqtt.client as mqtt
 
@@ -41,7 +52,6 @@ except Exception:
 MQTT_HOST = "192.168.4.1"
 MQTT_PORT = 1883
 TOPIC_CMD = "trainerkit/a5/command"
-
 CLIENT_ID = "trainerkit_pi_ex22"
 
 
@@ -49,6 +59,7 @@ CLIENT_ID = "trainerkit_pi_ex22"
 # OUTPUT PINS (edit if needed)
 # ==========================
 # Relay channels (active-low like your server.py init_relay)
+# Add more channels if you really have them wired, like 5: board.Dxx, etc.
 RELAY_PINS = {
     1: getattr(board, "D27", None),
     2: getattr(board, "D10", None),
@@ -56,20 +67,35 @@ RELAY_PINS = {
     4: getattr(board, "D25", None),
 }
 
-# LED pins (same style as your server.py)
+# LED pins
 LED_PINS = {
     "red":    getattr(board, "D5", None),
     "orange": getattr(board, "D6", None),
     "green":  getattr(board, "D13", None),
 }
 
-# Servo pin (same as your server.py)
+# Servo pin
 SERVO_PIN = getattr(board, "D12", None)
 SERVO_FREQ = 50
+
+# IMPORTANT: choose servo type
+# - "positional" = normal 0..180 servo (angle control)
+# - "continuous" = 360/continuous rotation servo (speed + stop control)
+SERVO_MODE = "continuous"  # <-- change to "positional" if you have normal servo
+
+# PWM pulse calibration (these matter a LOT for continuous servos)
+# Positional typical: 500..2500us
+# Continuous typical: stop ~1500us, forward <1500, reverse >1500 (or vice versa)
 MIN_PULSE_US = 500
 MAX_PULSE_US = 2500
 
-# Optional buzzer (same as your server.py)
+# Continuous servo tuning:
+SERVO_STOP_US = 1500     # neutral/stop pulse
+SERVO_OPEN_US = 1300     # one direction (tune!)
+SERVO_CLOSE_US = 1700    # opposite direction (tune!)
+SERVO_RUN_SECONDS = 1.2  # how long to rotate for open/close before stopping
+
+# Optional buzzer
 BUZZER_PIN = getattr(board, "D16", None)
 BUZZER_ACTIVE_LOW = False  # set True if your buzzer is active-low
 
@@ -83,6 +109,9 @@ relay_ios = {}
 led_ios = {}
 servo_pwm = None
 buzzer_io = None
+
+# lock so sequences don't overlap and fight outputs
+seq_lock = threading.Lock()
 
 
 def log(*args):
@@ -129,6 +158,16 @@ def set_relay(ch: int, on: bool):
     return True
 
 
+def all_relays_off():
+    if not init_relays():
+        return
+    for ch in sorted(relay_ios.keys()):
+        try:
+            relay_ios[ch].value = True
+        except Exception:
+            pass
+
+
 def init_leds():
     if not gpio_ready():
         return False
@@ -157,6 +196,16 @@ def set_led(color: str, on: bool):
     return True
 
 
+def all_leds_off():
+    if not init_leds():
+        return
+    for c in led_ios:
+        try:
+            led_ios[c].value = False
+        except Exception:
+            pass
+
+
 def init_servo():
     global servo_pwm
     if not (SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("pwmio")):
@@ -168,14 +217,68 @@ def init_servo():
     return True
 
 
+def _pulse_to_duty(pulse_us: int) -> int:
+    # 20ms period at 50Hz -> 20000us
+    return int((pulse_us / 20000.0) * 65535.0)
+
+
+def servo_write_us(pulse_us: int):
+    if not init_servo():
+        log("PWM/servo not available -> servo ignored")
+        return False
+    pulse_us = int(max(400, min(2600, pulse_us)))
+    servo_pwm.duty_cycle = _pulse_to_duty(pulse_us)
+    return True
+
+
+def servo_stop():
+    if SERVO_MODE != "continuous":
+        # for positional, neutral can just be 0 duty or keep last angle
+        # we'll set duty 0 to relax
+        if init_servo():
+            servo_pwm.duty_cycle = 0
+        log("Servo stop (positional relax)")
+        return True
+
+    ok = servo_write_us(SERVO_STOP_US)
+    log("Servo STOP (continuous)")
+    return ok
+
+
+def servo_open():
+    if SERVO_MODE == "positional":
+        # Example: open at 90 degrees (edit if you want)
+        return set_servo_angle(90)
+
+    # continuous rotation: run a bit then stop
+    log(f"Servo OPEN (continuous) run {SERVO_RUN_SECONDS}s")
+    servo_write_us(SERVO_OPEN_US)
+    time.sleep(max(0.1, float(SERVO_RUN_SECONDS)))
+    return servo_stop()
+
+
+def servo_close():
+    if SERVO_MODE == "positional":
+        return set_servo_angle(0)
+
+    log(f"Servo CLOSE (continuous) run {SERVO_RUN_SECONDS}s")
+    servo_write_us(SERVO_CLOSE_US)
+    time.sleep(max(0.1, float(SERVO_RUN_SECONDS)))
+    return servo_stop()
+
+
 def set_servo_angle(angle: int):
+    # positional servo 0..180
+    if SERVO_MODE != "positional":
+        log("Servo angle ignored (SERVO_MODE is continuous)")
+        return False
+
     if not init_servo():
         log("PWM/servo not available -> servo ignored")
         return False
     angle = max(0, min(180, int(angle)))
     pulse_us = MIN_PULSE_US + (MAX_PULSE_US - MIN_PULSE_US) * (angle / 180.0)
-    duty = int((pulse_us / 20000.0) * 65535.0)  # 20ms period at 50Hz
-    servo_pwm.duty_cycle = duty
+    servo_pwm.duty_cycle = _pulse_to_duty(int(pulse_us))
     log(f"Servo angle -> {angle}°")
     return True
 
@@ -189,7 +292,6 @@ def init_buzzer():
     if buzzer_io is None:
         buzzer_io = digitalio.DigitalInOut(BUZZER_PIN)
         buzzer_io.direction = digitalio.Direction.OUTPUT
-        # set OFF initially
         buzzer_io.value = True if BUZZER_ACTIVE_LOW else False
     return True
 
@@ -218,25 +320,99 @@ def beep(count=2, on_ms=120, off_ms=120):
         time.sleep(max(0.01, off_ms / 1000.0))
 
 
+# ==========================
+# SEQUENCES
+# ==========================
+def led_sequence(mode="traffic", repeat=2, delay_ms=220):
+    """
+    traffic: red -> orange -> green (blink)
+    chase:   red->orange->green then off
+    """
+    if not init_leds():
+        log("LED seq ignored (no GPIO)")
+        return
+
+    repeat = int(max(1, repeat))
+    delay = max(0.03, int(delay_ms) / 1000.0)
+    mode = (mode or "traffic").lower()
+
+    with seq_lock:
+        all_leds_off()
+        for _ in range(repeat):
+            if mode == "traffic":
+                for c in ("red", "orange", "green"):
+                    all_leds_off()
+                    set_led(c, True)
+                    time.sleep(delay)
+                    set_led(c, False)
+                    time.sleep(delay * 0.6)
+            else:  # chase
+                for c in ("red", "orange", "green"):
+                    set_led(c, True)
+                    time.sleep(delay)
+                all_leds_off()
+                time.sleep(delay)
+
+        all_leds_off()
+    log(f"LED sequence done: {mode} x{repeat}")
+
+
+def relay_sequence(mode="chase", repeat=2, delay_ms=250):
+    """
+    chase: relays 1..N ON one-by-one then OFF
+    all_on_off: all ON then all OFF
+    """
+    if not init_relays():
+        log("Relay seq ignored (no GPIO)")
+        return
+
+    repeat = int(max(1, repeat))
+    delay = max(0.03, int(delay_ms) / 1000.0)
+    mode = (mode or "chase").lower()
+
+    chs = [ch for ch in sorted(RELAY_PINS.keys()) if RELAY_PINS[ch] is not None]
+    if not chs:
+        log("Relay seq: no channels configured")
+        return
+
+    with seq_lock:
+        all_relays_off()
+        for _ in range(repeat):
+            if mode == "all_on_off":
+                for ch in chs:
+                    set_relay(ch, True)
+                time.sleep(delay)
+                for ch in chs:
+                    set_relay(ch, False)
+                time.sleep(delay)
+            else:  # chase
+                for ch in chs:
+                    all_relays_off()
+                    set_relay(ch, True)
+                    time.sleep(delay)
+                all_relays_off()
+                time.sleep(delay * 0.7)
+
+        all_relays_off()
+    log(f"Relay sequence done: {mode} x{repeat}")
+
+
+def all_off():
+    with seq_lock:
+        all_relays_off()
+        all_leds_off()
+        set_buzzer(False)
+        servo_stop()
+    log("ALL OFF executed")
+
+
+# ==========================
+# CLEANUP
+# ==========================
 def cleanup():
     global servo_pwm
     try:
-        # turn things off safely
-        for ch in list(relay_ios.keys()):
-            try:
-                relay_ios[ch].value = True  # OFF (active-low)
-            except Exception:
-                pass
-        for c in list(led_ios.keys()):
-            try:
-                led_ios[c].value = False
-            except Exception:
-                pass
-        try:
-            if buzzer_io is not None:
-                buzzer_io.value = True if BUZZER_ACTIVE_LOW else False
-        except Exception:
-            pass
+        all_off()
         try:
             if servo_pwm is not None:
                 servo_pwm.duty_cycle = 0
@@ -295,23 +471,49 @@ def on_message(client, userdata, msg):
         log("Invalid JSON payload; ignored")
         return
 
-    # --- Device routing ---
     device = (data.get("device") or "").lower()
 
+    # ---------- relay ----------
     if device == "relay":
         ch = int(data.get("ch", 1))
         state = parse_bool(data.get("state", "off"))
         set_relay(ch, state)
 
-    elif device == "servo":
-        angle = int(data.get("angle", 90))
-        set_servo_angle(angle)
+    elif device == "relay_seq":
+        mode = data.get("mode", "chase")
+        repeat = data.get("repeat", 2)
+        delay_ms = data.get("delay_ms", 250)
+        relay_sequence(mode=mode, repeat=repeat, delay_ms=delay_ms)
 
+    # ---------- led ----------
     elif device == "led":
         color = (data.get("color") or "red").lower()
         state = parse_bool(data.get("state", "off"))
         set_led(color, state)
 
+    elif device == "led_seq":
+        mode = data.get("mode", "traffic")
+        repeat = data.get("repeat", 2)
+        delay_ms = data.get("delay_ms", 220)
+        led_sequence(mode=mode, repeat=repeat, delay_ms=delay_ms)
+
+    # ---------- servo ----------
+    elif device == "servo":
+        # prefer action for continuous
+        action = (data.get("action") or "").lower().strip()
+
+        if action == "open":
+            servo_open()
+        elif action == "close":
+            servo_close()
+        elif action == "stop":
+            servo_stop()
+        elif "angle" in data:
+            set_servo_angle(int(data.get("angle", 90)))
+        else:
+            log("Servo: missing action/angle")
+
+    # ---------- buzzer ----------
     elif device == "beep":
         beep(
             count=data.get("count", 2),
@@ -319,22 +521,11 @@ def on_message(client, userdata, msg):
             off_ms=data.get("off_ms", 120),
         )
 
+    elif device == "all_off":
+        all_off()
+
     else:
-        # allow shorthand commands too
-        # e.g. {"relay1":"on"} or {"light":"on"}
-        if "relay1" in data:
-            set_relay(1, parse_bool(data["relay1"]))
-        elif "relay2" in data:
-            set_relay(2, parse_bool(data["relay2"]))
-        elif "gate" in data:
-            # gate=open/close -> servo angles
-            v = str(data["gate"]).lower()
-            if v in ("open", "on", "1", "true"):
-                set_servo_angle(90)
-            else:
-                set_servo_angle(0)
-        else:
-            log("Unknown device/command; ignored")
+        log("Unknown device/command; ignored")
 
 
 def main():
@@ -343,6 +534,7 @@ def main():
     log("Exercise 22: Receive Command (MQTT)")
     log(f"Broker: {MQTT_HOST}:{MQTT_PORT}")
     log(f"Topic : {TOPIC_CMD}")
+    log(f"Servo : mode={SERVO_MODE}")
     log("Stop  : Ctrl+C or dashboard Stop")
 
     signal.signal(signal.SIGINT, handle_exit)
@@ -352,7 +544,6 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
 
-    # connect + loop in background
     try:
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
     except Exception as e:
