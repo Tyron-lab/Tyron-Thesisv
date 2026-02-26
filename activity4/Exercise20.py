@@ -1,202 +1,205 @@
-# Exercise20.py (board / digitalio)
-# Exercise 20: Status Feedback
-# • Input: System state change
-# • What happens: Pattern updated
-# • Output: LED blinking pattern changes (AND relay sequence follows same pattern)
-
 import time
-import threading
+import signal
+import sys
 
-try:
-    import board
-    import digitalio
-    GPIO_OK = True
-except Exception as e:
-    board = None
-    digitalio = None
-    GPIO_OK = False
-    _import_err = e
+import board
+import digitalio
+import pwmio
 
-# ===== EDIT PINS =====
-LED_PINS   = [board.D5, board.D6, board.D13]           # 3 LEDs (change to your pins)
-RELAY_PINS = [board.D27, board.D10, board.D25, board.D24]  # 4 relays (change to your pins)
+# ----------------------------
+# PINS (TrainerKit)
+# ----------------------------
+TRIG_PIN = board.D23
+ECHO_PIN = board.D24
 
-LED_ACTIVE_HIGH   = True
-RELAY_ACTIVE_HIGH = True
-# =====================
+SERVO_PIN = board.D12
+ORANGE_LED_PIN = board.D6
 
-_leds = []
-_relays = []
-_stop_event = threading.Event()
-_thread = None
-_current_state = "off"
+# Your working buzzer wiring (from your ultrasonic exercise)
+BUZZER_PIN = board.D21
+BUZZER_ACTIVE_LOW = True
 
+# ----------------------------
+# SETTINGS
+# ----------------------------
+DIST_THRESHOLD_CM = 20.0   # object near if <= this distance
+READ_INTERVAL_SEC = 0.12
 
-def _ensure_outputs():
-    global _leds, _relays
-    if not GPIO_OK:
-        return
+# Servo PWM
+FREQUENCY = 50
+MIN_PULSE_US = 500
+MAX_PULSE_US = 2500
+ANGLE_FAR = 0
+ANGLE_NEAR = 90
 
-    if not _leds:
-        for p in LED_PINS:
-            d = digitalio.DigitalInOut(p)
-            d.direction = digitalio.Direction.OUTPUT
-            d.value = (not LED_ACTIVE_HIGH)
-            _leds.append(d)
+# Buzzer beep pattern (when object is near)
+BEEP_ON_SEC = 0.10
+BEEP_OFF_SEC = 0.10
 
-    if not _relays:
-        for p in RELAY_PINS:
-            r = digitalio.DigitalInOut(p)
-            r.direction = digitalio.Direction.OUTPUT
-            r.value = (not RELAY_ACTIVE_HIGH)
-            _relays.append(r)
+_should_exit = False
 
 
-def _set_out(device, on: bool, active_high: bool):
-    if on:
-        device.value = True if active_high else False
-    else:
-        device.value = False if active_high else True
+def buzzer_gpio_value(on: bool) -> bool:
+    return (not bool(on)) if BUZZER_ACTIVE_LOW else bool(on)
 
 
-def _all_off():
-    for d in _leds:
-        _set_out(d, False, LED_ACTIVE_HIGH)
-    for r in _relays:
-        _set_out(r, False, RELAY_ACTIVE_HIGH)
+def angle_to_duty_u16(angle: int) -> int:
+    angle = max(0, min(180, int(angle)))
+    pulse_us = MIN_PULSE_US + (MAX_PULSE_US - MIN_PULSE_US) * (angle / 180.0)
+    return max(0, min(65535, int((pulse_us / 20000.0) * 65535.0)))  # 20ms period @ 50Hz
 
 
-def _apply_step(step_index: int, led_mode: str = "hold_last"):
+def measure_distance_cm(trig: digitalio.DigitalInOut, echo: digitalio.DigitalInOut) -> float | None:
     """
-    step_index: 0..3 for relays
-    led_mode:
-      - 'hold_last' : step 4 uses LED3 ON
-      - 'all_off'   : step 4 turns all LEDs OFF
-      - 'mirror'    : step 4 turns all LEDs OFF (same as all_off)
+    HC-SR04 timing with DigitalInOut (Blinka).
+    Returns distance in cm or None on timeout.
     """
-    # turn everything off first
-    _all_off()
+    # Trigger pulse
+    trig.value = False
+    time.sleep(0.0002)
+    trig.value = True
+    time.sleep(0.00001)
+    trig.value = False
 
-    # relay ON for this step
-    _set_out(_relays[step_index], True, RELAY_ACTIVE_HIGH)
+    timeout = time.time() + 0.08
 
-    # LED mapping:
-    # step 0 -> LED0
-    # step 1 -> LED1
-    # step 2 -> LED2
-    # step 3 -> no LED3 (because only 3 LEDs)
-    if step_index < len(_leds):
-        _set_out(_leds[step_index], True, LED_ACTIVE_HIGH)
-    else:
-        if led_mode == "hold_last" and len(_leds) > 0:
-            _set_out(_leds[-1], True, LED_ACTIVE_HIGH)
-        # else all LEDs remain OFF
+    # Wait for echo to go HIGH
+    start = time.time()
+    while not echo.value:
+        start = time.time()
+        if start > timeout:
+            return None
 
+    # Wait for echo to go LOW
+    end = time.time()
+    while echo.value:
+        end = time.time()
+        if end > timeout:
+            return None
 
-def _runner(step_sec: float, loops: int, led_mode: str):
-    """
-    Runs the synchronized LED+relay sequence.
-    loops=0 => infinite until stop()
-    """
-    n = len(_relays)
-    count = 0
+    duration = end - start
+    if duration <= 0:
+        return None
 
-    while not _stop_event.is_set():
-        for i in range(n):
-            if _stop_event.is_set():
-                break
-            _apply_step(i, led_mode=led_mode)
-            time.sleep(max(0.05, float(step_sec)))
-
-        count += 1
-        if loops > 0 and count >= loops:
-            break
-
-    _all_off()
+    # Speed of sound: distance = duration * 17150 (cm)
+    return round(duration * 17150.0, 1)
 
 
-def run(state: str = "normal", step_sec: float = 0.6, loops: int = 0, led_mode: str = "hold_last"):
-    """
-    States (suggested):
-      - 'normal'  : slow sequence
-      - 'warning' : faster sequence
-      - 'unsafe'  : very fast sequence
-      - 'off'     : stop and all off
+def main():
+    global _should_exit
 
-    step_sec: base speed if you call run('normal', step_sec=0.6)
-    loops: 0=infinite
-    led_mode: 'hold_last' (recommended) or 'all_off' for step 4 LED behavior
-    """
-    global _thread, _current_state
+    # Ultrasonic
+    trig = digitalio.DigitalInOut(TRIG_PIN)
+    echo = digitalio.DigitalInOut(ECHO_PIN)
+    trig.direction = digitalio.Direction.OUTPUT
+    echo.direction = digitalio.Direction.INPUT
+    trig.value = False
 
-    if not GPIO_OK:
-        print("[EX20] board/digitalio not available. Simulating.")
-        print(f"[EX20] import error: {_import_err}")
-        print(f"[EX20] state={state} step_sec={step_sec} loops={loops}")
-        return {"ok": True, "simulated": True, "state": state}
+    # Orange LED
+    led = digitalio.DigitalInOut(ORANGE_LED_PIN)
+    led.direction = digitalio.Direction.OUTPUT
+    led.value = False
 
-    _ensure_outputs()
-    stop(sequence_only=True)
+    # Buzzer
+    buz = digitalio.DigitalInOut(BUZZER_PIN)
+    buz.direction = digitalio.Direction.OUTPUT
+    buz.value = buzzer_gpio_value(False)  # OFF
 
-    st = (state or "").strip().lower()
-    _current_state = st
+    # Servo
+    servo = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
-    if st == "off":
-        _all_off()
-        return {"ok": True, "state": "off", "message": "All OFF"}
+    def set_servo(angle: int):
+        servo.duty_cycle = angle_to_duty_u16(angle)
 
-    # map state to speed
-    if st == "normal":
-        speed = step_sec
-    elif st == "warning":
-        speed = max(0.05, step_sec * 0.5)
-    elif st == "unsafe":
-        speed = max(0.05, step_sec * 0.25)
-    else:
-        # default behavior
-        speed = step_sec
-        st = "normal"
-        _current_state = "normal"
+    def servo_off():
+        # stop pulses (optional); keeps it “relaxed”
+        servo.duty_cycle = 0
 
-    _stop_event.clear()
-    _thread = threading.Thread(target=_runner, args=(speed, loops, led_mode), daemon=True)
-    _thread.start()
+    def all_off():
+        try:
+            led.value = False
+        except Exception:
+            pass
+        try:
+            buz.value = buzzer_gpio_value(False)
+        except Exception:
+            pass
+        try:
+            set_servo(ANGLE_FAR)
+            time.sleep(0.12)
+            servo_off()
+        except Exception:
+            pass
 
-    msg = f"Synchronized LED+Relay sequence running ({_current_state}, step={speed}s)"
-    print(f"[EX20] {msg}")
-    return {"ok": True, "state": _current_state, "step_sec": speed, "loops": loops, "message": msg}
+    def cleanup(*_):
+        global _should_exit
+        _should_exit = True
+        all_off()
+        for io in (trig, echo, led, buz):
+            try:
+                io.deinit()
+            except Exception:
+                pass
+        try:
+            servo.deinit()
+        except Exception:
+            pass
+        sys.exit(0)
 
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
 
-def stop(sequence_only: bool = False):
-    """
-    Stops sequence. If sequence_only=False, also deinit outputs.
-    """
-    global _thread, _leds, _relays
+    print("Exercise 20: Smart Object Detection Response running...")
+    print(f"Near threshold: <= {DIST_THRESHOLD_CM} cm")
+    print("Near -> Servo 90°, Orange ON, Buzzer beep")
+    print("Far  -> Servo 0° (off), Orange OFF, Buzzer OFF")
+    print("Ctrl+C to stop.\n")
 
-    _stop_event.set()
-    if _thread and _thread.is_alive():
-        _thread.join(timeout=1.0)
-    _thread = None
+    # Start safe
+    all_off()
 
-    if GPIO_OK and (_leds or _relays):
-        _all_off()
-        if not sequence_only:
-            for d in _leds:
-                d.deinit()
-            for r in _relays:
-                r.deinit()
-            _leds = []
-            _relays = []
+    near_state = False
+    last_beep_toggle = time.time()
+    beep_on = False
 
-    return {"ok": True, "stopped": True}
+    while not _should_exit:
+        dist = measure_distance_cm(trig, echo)
+        is_near = (dist is not None and dist <= DIST_THRESHOLD_CM)
+
+        if is_near != near_state:
+            near_state = is_near
+
+            if near_state:
+                print(f"Object NEAR ({dist} cm) -> ACTIVE")
+                led.value = True
+                set_servo(ANGLE_NEAR)   # hold position by keeping PWM on
+                # start beep cycle
+                beep_on = False
+                last_beep_toggle = time.time()
+            else:
+                print(f"Object FAR ({dist} cm) -> IDLE")
+                led.value = False
+                buz.value = buzzer_gpio_value(False)
+                set_servo(ANGLE_FAR)
+                time.sleep(0.12)
+                servo_off()
+
+        # Beep while near
+        if near_state:
+            now = time.time()
+            if beep_on:
+                if (now - last_beep_toggle) >= BEEP_ON_SEC:
+                    buz.value = buzzer_gpio_value(False)
+                    beep_on = False
+                    last_beep_toggle = now
+            else:
+                if (now - last_beep_toggle) >= BEEP_OFF_SEC:
+                    buz.value = buzzer_gpio_value(True)
+                    beep_on = True
+                    last_beep_toggle = now
+
+        time.sleep(READ_INTERVAL_SEC)
 
 
 if __name__ == "__main__":
-    # demo
-    run("normal", step_sec=0.6, loops=2, led_mode="hold_last")
-    time.sleep(6)
-    run("warning", step_sec=0.6, loops=2, led_mode="hold_last")
-    time.sleep(4)
-    run("unsafe", step_sec=0.6, loops=2, led_mode="hold_last")
-    time.sleep(3)
-    stop()
+    main()
