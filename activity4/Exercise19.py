@@ -5,7 +5,7 @@ import sys
 import board
 import digitalio
 
-# Optional LCD (matches your project stack: TCA9548A + RPLCD)
+# Optional LCD (TCA9548A + RPLCD)
 try:
     from smbus2 import SMBus
     from RPLCD.i2c import CharLCD
@@ -14,19 +14,18 @@ except Exception:
     LCD_AVAILABLE = False
 
 # ─────────────────────────────
-# PINS (match your TrainerKit)
+# PINS (TrainerKit)
 # ─────────────────────────────
 PIR_PIN     = board.D22
 RED_LED_PIN = board.D5
 BUZZER_PIN  = board.D16
 
-# Buzzer type (set True if your buzzer is active-low)
 BUZZER_ACTIVE_LOW = False
 
 # ─────────────────────────────
-# LCD + MUX SETTINGS (same as server)
+# LCD + MUX SETTINGS
 # ─────────────────────────────
-USE_MUX = True            # set False if LCD is wired direct I2C (no TCA9548A)
+USE_MUX = True
 MUX_ADDR = 0x70
 LCD_MUX_CH = 0
 
@@ -72,7 +71,6 @@ def lcd_get():
         return None
     if _lcd is not None:
         return _lcd
-
     if not mux_select_for_lcd():
         return None
 
@@ -109,19 +107,6 @@ def lcd_write(line1="", line2=""):
         return False
 
 
-def lcd_clear():
-    lcd = lcd_get()
-    if lcd is None:
-        return False
-    if not mux_select_for_lcd():
-        return False
-    try:
-        lcd.clear()
-        return True
-    except Exception:
-        return False
-
-
 def lcd_release():
     global _lcd
     try:
@@ -133,10 +118,23 @@ def lcd_release():
         _lcd = None
 
 
+def try_claim_output(pin):
+    """
+    Try to claim a DigitalInOut output pin.
+    Returns (io, error_message_or_None)
+    """
+    try:
+        io = digitalio.DigitalInOut(pin)
+        io.direction = digitalio.Direction.OUTPUT
+        return io, None
+    except Exception as e:
+        return None, str(e)
+
+
 def main():
     global _should_exit
 
-    # PIR
+    # PIR input
     pir = digitalio.DigitalInOut(PIR_PIN)
     pir.direction = digitalio.Direction.INPUT
     try:
@@ -144,18 +142,27 @@ def main():
     except Exception:
         pass
 
-    # LED
+    # Red LED
     red = digitalio.DigitalInOut(RED_LED_PIN)
     red.direction = digitalio.Direction.OUTPUT
     red.value = False
 
-    # Buzzer
-    buz = digitalio.DigitalInOut(BUZZER_PIN)
-    buz.direction = digitalio.Direction.OUTPUT
-    buz.value = buzzer_gpio_value(False)
+    # Buzzer (may be busy)
+    buz, buz_err = try_claim_output(BUZZER_PIN)
+    buzzer_ok = buz is not None
+    if buzzer_ok:
+        buz.value = buzzer_gpio_value(False)
+    else:
+        print(f"⚠️ BUZZER GPIO busy/unavailable ({BUZZER_PIN}). Running without buzzer.")
+        print("   Reason:", buz_err)
 
-    # Initial LCD
-    lcd_write("SECURITY MODE", "SECURE")  # ok if LCD not present (it will just fail silently)
+    # LCD initial
+    lcd_write("SECURITY MODE", "SECURE")
+
+    def buzzer_set(on: bool):
+        if not buzzer_ok:
+            return
+        buz.value = buzzer_gpio_value(on)
 
     def all_safe_off():
         try:
@@ -163,13 +170,10 @@ def main():
         except Exception:
             pass
         try:
-            buz.value = buzzer_gpio_value(False)
+            buzzer_set(False)
         except Exception:
             pass
-        try:
-            lcd_write("SECURITY MODE", "SECURE")
-        except Exception:
-            pass
+        lcd_write("SECURITY MODE", "SECURE")
 
     def cleanup(*_):
         global _should_exit
@@ -185,15 +189,15 @@ def main():
     signal.signal(signal.SIGTERM, cleanup)
 
     print("Exercise 19: Intrusion Alert System running...")
-    print("PIR motion -> RED ON + BUZZER + LCD INTRUDER ALERT")
+    print("PIR motion -> RED ON + BUZZER (if available) + LCD INTRUDER ALERT")
     print("No motion  -> all OFF / SECURE")
     print("Ctrl+C to stop.\n")
 
     alarm_on = False
-    last_beep = 0.0
-    beep_state = False
+    last_toggle = time.time()
+    beep_on = False
 
-    # Beep pattern settings
+    # beep pattern
     BEEP_ON_SEC = 0.15
     BEEP_OFF_SEC = 0.12
 
@@ -204,31 +208,29 @@ def main():
             alarm_on = True
             red.value = True
             lcd_write("INTRUDER ALERT", "MOTION DETECTED")
-            # start beep immediately
-            last_beep = 0.0
-            beep_state = False
+            # start beep cycle
+            beep_on = False
+            last_toggle = time.time()
 
         if (not motion) and alarm_on:
             alarm_on = False
             red.value = False
-            buz.value = buzzer_gpio_value(False)
+            buzzer_set(False)
             lcd_write("SECURITY MODE", "SECURE")
 
-        # Alarm beep loop while alarm_on
-        if alarm_on:
+        # beep while alarm_on
+        if alarm_on and buzzer_ok:
             now = time.time()
-            if not beep_state:
-                # currently OFF -> turn ON if enough time passed
-                if (now - last_beep) >= BEEP_OFF_SEC:
-                    buz.value = buzzer_gpio_value(True)
-                    beep_state = True
-                    last_beep = now
+            if beep_on:
+                if (now - last_toggle) >= BEEP_ON_SEC:
+                    buzzer_set(False)
+                    beep_on = False
+                    last_toggle = now
             else:
-                # currently ON -> turn OFF if enough time passed
-                if (now - last_beep) >= BEEP_ON_SEC:
-                    buz.value = buzzer_gpio_value(False)
-                    beep_state = False
-                    last_beep = now
+                if (now - last_toggle) >= BEEP_OFF_SEC:
+                    buzzer_set(True)
+                    beep_on = True
+                    last_toggle = now
 
         time.sleep(0.02)
 
