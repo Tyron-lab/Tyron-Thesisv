@@ -13,7 +13,7 @@ TRIG_PIN = board.D23
 ECHO_PIN = board.D24
 
 SERVO_PIN = board.D12
-ORANGE_LED_PIN = board.D6
+ORANGE_LED_PIN = board.D5
 
 # Your working buzzer wiring (from your ultrasonic exercise)
 BUZZER_PIN = board.D21
