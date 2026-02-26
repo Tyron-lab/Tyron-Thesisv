@@ -1,20 +1,11 @@
 /* activity1.js
-   Frontend expects:
-   - Cards: .exercise-card (tabindex=0, role=button)
-   - Run buttons:   button.run-btn[data-run="<exercise_id>"]
-   - Stop buttons:  button.stop-btn[data-stop="<exercise_id>"]
-   - Speak buttons: button.speak-btn[data-speak="<exercise_id>"]
-   - Status: span.status[data-status-for="<exercise_id>"]
-   Backend (server.py):
-   - POST /api/exercise        { exercise_id: "<exercise_id>" }
-   - POST /api/exercise_stop   {}
-   - GET  /api/exercise_status {}
-   - GET  /api/exercise_logs   {}
-
-   Activity 5 Telemetry (server.py):
-   - GET /api/a5/latest   -> latest MQTT message
-   Activity 5 Commands (server.py):
-   - POST /api/a5/command -> publish MQTT command JSON
+   Updated for Activity 5 Exercise 23: Local Data Storage panel
+   Adds:
+   - Storage panel (#a5StorePanel) shown only for a5-ex23
+   - Polls /api/exercise_logs while a5-ex23 is running to extract:
+       - last saved event line (from stdout)
+       - count (how many [EX23] lines)
+   No backend changes required.
 */
 
 (() => {
@@ -110,6 +101,16 @@
   const cmdGateClose= qs("#cmdGateClose");
   const cmdLedGreen = qs("#cmdLedGreen");
   const cmdAllOff   = qs("#cmdAllOff");
+
+  // ✅ A5 EX23 storage panel nodes (NEW)
+  const a5StorePanel   = qs("#a5StorePanel");
+  const a5StoreDot     = qs("#a5StoreDot");
+  const a5StoreText    = qs("#a5StoreText");
+  const a5StorePath    = qs("#a5StorePath");
+  const a5StoreLast    = qs("#a5StoreLast");
+  const a5StoreCount   = qs("#a5StoreCount");
+  const a5StoreUpdated = qs("#a5StoreUpdated");
+  const a5StoreRaw     = qs("#a5StoreRaw");
 
   let modalExerciseId = null;
 
@@ -217,7 +218,6 @@
   }
 
   function bindCmdButtons() {
-    // bind once
     if (cmdLightOn) {
       cmdLightOn.onclick = async () => {
         try { await sendA5Command({ device: "relay", ch: 1, state: "on" }); }
@@ -266,9 +266,97 @@
     }
   }
 
-  // bind command buttons immediately
   bindCmdButtons();
 
+  // ✅ A5 EX23 storage panel (NEW)
+  let a5StoreTimer = null;
+  let a5StoreCountNum = 0;
+  let a5StoreLastLine = "";
+
+  function setStoreState(state, text) {
+    if (!a5StoreDot || !a5StoreText) return;
+    a5StoreDot.classList.remove("ok", "bad");
+    if (state === "ok") a5StoreDot.classList.add("ok");
+    else if (state === "bad") a5StoreDot.classList.add("bad");
+    a5StoreText.textContent = text || "";
+  }
+
+  function startA5StoragePanel() {
+    if (!a5StorePanel) return;
+    a5StorePanel.hidden = false;
+    setStoreState("ok", "Running / Waiting for data…");
+    a5StoreCountNum = 0;
+    a5StoreLastLine = "";
+
+    if (a5StorePath) a5StorePath.textContent = "activity5/logs/ex23_events.csv + ex23_events.jsonl";
+    if (a5StoreLast) a5StoreLast.textContent = "—";
+    if (a5StoreCount) a5StoreCount.textContent = "0";
+    if (a5StoreUpdated) a5StoreUpdated.textContent = "Last update: —";
+    if (a5StoreRaw) a5StoreRaw.textContent = "raw: —";
+
+    if (a5StoreTimer) clearInterval(a5StoreTimer);
+
+    // Poll logs to extract [EX23] lines
+    a5StoreTimer = setInterval(async () => {
+      try {
+        // Only poll when Ex23 is active in modal OR currently running
+        const logs = await getJSON(API_LOGS);
+        const out = logs?.data?.stdout || "";
+        const err = logs?.data?.stderr || "";
+
+        if (err) {
+          setStoreState("bad", "Error");
+          if (a5StoreRaw) a5StoreRaw.textContent = "raw: " + err.slice(-180);
+          return;
+        }
+
+        // Count lines that start with [EX23]
+        const lines = out.split(/\r?\n/).filter(Boolean);
+        const ex23Lines = lines.filter(l => l.includes("[EX23]"));
+
+        a5StoreCountNum = ex23Lines.length;
+        const last = ex23Lines.length ? ex23Lines[ex23Lines.length - 1] : "";
+
+        if (a5StoreCount) a5StoreCount.textContent = String(a5StoreCountNum);
+
+        if (last && last !== a5StoreLastLine) {
+          a5StoreLastLine = last;
+          // Show friendly last line
+          if (a5StoreLast) a5StoreLast.textContent = last.replace("[EX23]", "").trim() || last;
+          if (a5StoreUpdated) a5StoreUpdated.textContent = "Last update: " + new Date().toLocaleTimeString();
+          if (a5StoreRaw) a5StoreRaw.textContent = "raw: " + last;
+          setStoreState("ok", "Saving ✅");
+        } else {
+          // No new lines -> still running
+          setStoreState("ok", "Running / Waiting for data…");
+        }
+      } catch (e) {
+        setStoreState("bad", "Offline");
+      }
+    }, 800);
+
+    // Run once immediately
+    (async () => {
+      try {
+        const logs = await getJSON(API_LOGS);
+        const out = logs?.data?.stdout || "";
+        const lines = out.split(/\r?\n/).filter(Boolean);
+        const ex23Lines = lines.filter(l => l.includes("[EX23]"));
+        if (a5StoreCount) a5StoreCount.textContent = String(ex23Lines.length);
+        if (ex23Lines.length && a5StoreLast) {
+          a5StoreLast.textContent = ex23Lines[ex23Lines.length - 1].replace("[EX23]", "").trim();
+        }
+      } catch {}
+    })();
+  }
+
+  function stopA5StoragePanel() {
+    if (a5StoreTimer) clearInterval(a5StoreTimer);
+    a5StoreTimer = null;
+    if (a5StorePanel) a5StorePanel.hidden = true;
+  }
+
+  // ---------- modal open/close ----------
   function openModalFromCard(card) {
     if (!modal) return;
     const exId = card.dataset.exercise || "";
@@ -319,13 +407,16 @@
       speak(`${sayTitle}. ${sayText}`);
     };
 
-    // ✅ Only show/poll telemetry in popup when Exercise 21 is opened
+    // Panels per exercise
     if (exId === "a5-ex21") startA5Telemetry();
     else stopA5Telemetry();
 
-    // ✅ Only show command panel when Exercise 22 is opened
     if (exId === "a5-ex22") startA5Commands();
     else stopA5Commands();
+
+    // ✅ NEW: Storage panel for ex23
+    if (exId === "a5-ex23") startA5StoragePanel();
+    else stopA5StoragePanel();
 
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
@@ -341,6 +432,7 @@
 
     stopA5Telemetry();
     stopA5Commands();
+    stopA5StoragePanel();
   }
 
   if (modalClose) modalClose.addEventListener("click", closeModal);
@@ -359,7 +451,6 @@
   async function runExercise(exId) {
     if (!exId) return;
 
-    // stop any previous exercise first (backend runs one at a time)
     if (currentRunningEx && currentRunningEx !== exId) {
       await postJSON(API_STOP, {});
       setStatus(currentRunningEx, "Stopped");
@@ -368,7 +459,6 @@
 
     setStatus(exId, "Running...", "state-running");
 
-    // server expects { exercise_id: ... }
     const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
 
     if (!ok) {
@@ -380,10 +470,14 @@
 
     currentRunningEx = exId;
     setStatus(exId, "Running...", "state-running");
+
+    // If Ex23 is running and modal is open on it, ensure storage polling is on
+    if (exId === "a5-ex23" && modalExerciseId === "a5-ex23") {
+      startA5StoragePanel();
+    }
   }
 
   async function stopExercise(requestedExId = null) {
-    // If user presses stop for a specific card, only stop if it matches the running one
     if (requestedExId && currentRunningEx && requestedExId !== currentRunningEx) {
       setStatus(requestedExId, "Ready");
       return;
@@ -407,16 +501,18 @@
 
     setStatus(stoppingId, "Stopped");
     currentRunningEx = null;
+
+    // Stop storage polling after stop (if modal isn't on ex23, it's already hidden)
+    if (modalExerciseId !== "a5-ex23") stopA5StoragePanel();
   }
 
   async function refreshStatus() {
     const r = await getJSON(API_STATUS);
     if (!r.ok) return;
 
-    const running = !!(r.data && r.data.running);
+    const isRunning = !!(r.data && r.data.running);
 
-    // if nothing is running but we had one, show logs once
-    if (!running && currentRunningEx) {
+    if (!isRunning && currentRunningEx) {
       const finishedId = currentRunningEx;
 
       const logs = await getJSON(API_LOGS);
@@ -433,8 +529,7 @@
       return;
     }
 
-    // show running state
-    if (running && currentRunningEx) {
+    if (isRunning && currentRunningEx) {
       setStatus(currentRunningEx, "Running...", "state-running");
     }
   }
@@ -488,7 +583,6 @@
     setStatus(exId, "Ready");
   });
 
-  // poll status every 1s
   setInterval(() => {
     refreshStatus().catch(() => {});
   }, 1000);
