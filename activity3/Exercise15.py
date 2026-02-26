@@ -30,8 +30,8 @@ LCD_ADDR = 0x27      # change to 0x3F if yours is 0x3F
 LCD_COLS = 16
 LCD_ROWS = 2
 
-RED_PIN   = board.D17
-GREEN_PIN = board.D27
+RED_PIN   = board.D6
+GREEN_PIN = board.D7
 
 CHECK_EVERY_S = 1.0
 # =========================

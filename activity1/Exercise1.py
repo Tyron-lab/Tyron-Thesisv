@@ -78,7 +78,7 @@ def make_in_pir(pin):
 # Status LEDs
 R = make_out(board.D5, False)    # RED
 G = make_out(board.D6, False)    # GREEN
-       # ORANGE
+O = make_out(board.D13, False) 
 
 # PIR input
 pir = make_in_pir(board.D22)
