@@ -1,171 +1,106 @@
-# Activity 4 - Exercise 16: Power Indicator (LOADING SEQUENCE + GAME-STYLE BEEP)
-# Input: System turned ON (script starts)
-# Output: LED boot blink + relay loading sequence + buzzer beeps, then steady ON
+# Exercise 16: Motion-Activated Servo Movement (PIR -> Servo)
+# Pins (CircuitPython style -> BCM):
+#   PIR   = board.D22 -> GPIO22 (physical pin 15)
+#   SERVO = board.D12 -> GPIO12 (physical pin 32) PWM-capable
+#
+# Behavior:
+#   - No motion  -> servo at 0°
+#   - Motion     -> servo at 90° while motion detected
+#   - Motion end -> servo returns to 0°
+#
+# Notes:
+# - PIR OUT must be safe 3.3V logic to Pi GPIO.
+# - Servo should use external 5V power; share GND with Pi.
 
 import time
-import board
-import digitalio
+import signal
+import sys
+import RPi.GPIO as GPIO
 
-# ===== EDIT PINS =====
-POWER_LED_PIN = board.D5  # GREEN LED
-RELAY_PINS = [board.D27, board.D10, board.D25, board.D24]  # 4 relays
-BUZZER_PIN = board.D6     # <-- SET YOUR BUZZER PIN (ACTIVE BUZZER)
+# =========================
+# PIN CONFIG (UPDATED)
+# =========================
+PIR_PIN = 22        # board.D22
+SERVO_PIN = 12      # board.D12 (PWM)
 
-LED_ACTIVE_HIGH = True
-RELAY_ACTIVE_HIGH = True   # set False if your relay board is active-low
-BUZZER_ACTIVE_HIGH = True  # most active buzzers: True = ON
+# =========================
+# SERVO CONFIG
+# =========================
+PWM_FREQ = 50       # servo frequency
 
-BOOT_STEP_SEC = 0.25       # speed of loading steps
-BOOT_LOOPS = 2             # how many times to repeat the loading animation
-# =====================
-
-
-def make_out(pin, initial=False):
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.OUTPUT
-    io.value = initial
-    return io
+# Typical duty cycles (tweak if needed)
+DUTY_0 = 2.5
+DUTY_90 = 7.5
 
 
-def set_out(dev, on: bool, active_high: bool = True):
-    dev.value = (on if active_high else (not on))
+def set_servo(pwm, duty):
+    pwm.ChangeDutyCycle(duty)
+    time.sleep(0.35)      # let servo reach position
+    pwm.ChangeDutyCycle(0)  # reduce jitter (optional)
 
 
-def all_relays(relays, on: bool):
-    for r in relays:
-        set_out(r, on, RELAY_ACTIVE_HIGH)
-
-
-def relay_loading(relays, step_sec=0.25, loops=1):
-    """
-    Loading sequence:
-      - relay chase 1->2->3->4
-      - then brief fill
-    """
-    for _ in range(max(1, int(loops))):
-        for i in range(len(relays)):
-            all_relays(relays, False)
-            set_out(relays[i], True, RELAY_ACTIVE_HIGH)
-            time.sleep(step_sec)
-
-        all_relays(relays, True)
-        time.sleep(step_sec * 2)
-
-        all_relays(relays, False)
-        time.sleep(step_sec)
-
-
-def beep(buzzer, on_sec=0.06, off_sec=0.12):
-    """Single beep pulse (active buzzer: just ON/OFF)."""
-    set_out(buzzer, True, BUZZER_ACTIVE_HIGH)
-    time.sleep(max(0.01, float(on_sec)))
-    set_out(buzzer, False, BUZZER_ACTIVE_HIGH)
-    time.sleep(max(0.01, float(off_sec)))
-
-
-def csgo_style_countdown_beeps(buzzer, total_sec=3.0):
-    """
-    Game-style escalating beeps:
-    starts slower, ends faster (like a countdown feel).
-    """
-    t_end = time.time() + max(0.2, float(total_sec))
-
-    # start slow → end fast
-    on_sec = 0.05
-    off_start = 0.22
-    off_end = 0.05
-
-    while time.time() < t_end:
-        # progress 0..1
-        prog = 1.0 - max(0.0, (t_end - time.time()) / total_sec)
-        off_sec = off_start + (off_end - off_start) * prog
-        beep(buzzer, on_sec=on_sec, off_sec=off_sec)
+def cleanup(pwm=None):
+    try:
+        if pwm is not None:
+            try:
+                pwm.ChangeDutyCycle(DUTY_0)
+                time.sleep(0.35)
+                pwm.ChangeDutyCycle(0)
+            except Exception:
+                pass
+            pwm.stop()
+    finally:
+        GPIO.cleanup()
 
 
 def main():
-    power_led = None
-    buzzer = None
-    relays = []
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
 
-    try:
-        power_led = make_out(POWER_LED_PIN, (not LED_ACTIVE_HIGH))  # OFF
-        buzzer = make_out(BUZZER_PIN, (not BUZZER_ACTIVE_HIGH))     # OFF
-        for p in RELAY_PINS:
-            relays.append(make_out(p, (not RELAY_ACTIVE_HIGH)))     # OFF
+    # PIR input
+    GPIO.setup(PIR_PIN, GPIO.IN)
 
-        print("Exercise 16: System starting... (loading + countdown beeps)")
+    # Servo PWM output
+    GPIO.setup(SERVO_PIN, GPIO.OUT)
+    pwm = GPIO.PWM(SERVO_PIN, PWM_FREQ)
+    pwm.start(0)
 
-        # ---- BOOT ANIMATION ----
-        # for each loop: blink LED + relay loading + accelerating beeps
-        for _ in range(max(1, int(BOOT_LOOPS))):
-            set_out(power_led, True, LED_ACTIVE_HIGH)
+    # start at 0°
+    set_servo(pwm, DUTY_0)
 
-            # run relay loading while beeping "countdown style"
-            # (time is matched roughly to one relay_loading cycle)
-            approx_cycle_time = (len(relays) * BOOT_STEP_SEC) + (BOOT_STEP_SEC * 2) + BOOT_STEP_SEC
-            csgo_style_countdown_beeps(buzzer, total_sec=approx_cycle_time)
-            relay_loading(relays, step_sec=BOOT_STEP_SEC, loops=1)
+    # clean exit
+    def handle_exit(sig, frame):
+        cleanup(pwm)
+        sys.exit(0)
 
-            set_out(power_led, False, LED_ACTIVE_HIGH)
-            time.sleep(BOOT_STEP_SEC)
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
 
-        # ---- READY CONFIRMATION ----
-        # long beep = "system ready"
-        set_out(buzzer, True, BUZZER_ACTIVE_HIGH)
-        time.sleep(0.18)
-        set_out(buzzer, False, BUZZER_ACTIVE_HIGH)
+    print("Exercise 16: PIR Motion-Activated Servo running...")
+    print(f"PIR: GPIO{PIR_PIN} (board.D22) | Servo: GPIO{SERVO_PIN} (board.D12)")
+    print("Ctrl+C to stop.\n")
 
-        # ---- RUNNING MODE ----
-        set_out(power_led, True, LED_ACTIVE_HIGH)
-        all_relays(relays, True)
-        print("System ready -> Power LED ON + all relays ON. Ctrl+C to stop.")
+    last_motion = None
 
-        while True:
-            time.sleep(1)
+    while True:
+        motion = GPIO.input(PIR_PIN) == GPIO.HIGH
 
-    except KeyboardInterrupt:
-        print("\nStopping...")
+        # only react on changes
+        if motion != last_motion:
+            if motion:
+                print("Motion detected -> Servo to 90°")
+                set_servo(pwm, DUTY_90)
+            else:
+                print("No motion -> Servo to 0°")
+                set_servo(pwm, DUTY_0)
 
-    finally:
-        # OFF everything + cleanup
-        try:
-            if power_led:
-                set_out(power_led, False, LED_ACTIVE_HIGH)
-        except Exception:
-            pass
+            last_motion = motion
 
-        try:
-            if buzzer:
-                set_out(buzzer, False, BUZZER_ACTIVE_HIGH)
-        except Exception:
-            pass
-
-        for r in relays:
-            try:
-                set_out(r, False, RELAY_ACTIVE_HIGH)
-            except Exception:
-                pass
-
-        try:
-            if power_led:
-                power_led.deinit()
-        except Exception:
-            pass
-
-        try:
-            if buzzer:
-                buzzer.deinit()
-        except Exception:
-            pass
-
-        for r in relays:
-            try:
-                r.deinit()
-            except Exception:
-                pass
-
-        print("Power LED OFF + relays OFF + buzzer OFF. Done.")
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        GPIO.cleanup()
