@@ -16,8 +16,8 @@ import digitalio
 # LED PINS (TrainerKit mapping)
 # ----------------------------
 RED_LED_PIN    = board.D5
-ORANGE_LED_PIN = board.D6
-GREEN_LED_PIN  = board.D13
+ORANGE_LED_PIN = board.D13
+GREEN_LED_PIN  = board.D6
 
 # ----------------------------
 # VOSK MODEL
