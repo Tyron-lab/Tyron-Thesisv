@@ -2,7 +2,10 @@
 # 1 clap  -> GREEN LED ON
 # 2 claps -> GREEN LED OFF
 #
-# Fix: "re-arm" gate so one clap doesn't count multiple times.
+# Fix:
+# - ignore startup transient (WARMUP)
+# - require "spike" above noise baseline (reduces false claps)
+# - re-arm gate to avoid single clap becoming double
 
 import time
 import signal
@@ -10,7 +13,6 @@ import sys
 
 import board
 import digitalio
-
 import numpy as np
 import sounddevice as sd
 
@@ -42,17 +44,24 @@ INPUT_DEVICE = 1
 # ---------------- Clap detection tuning ----------------
 CLAP_PEAK_THRESHOLD = 0.12
 
-# This only controls "minimum time between accepted claps"
-MIN_CLAP_GAP = 0.25          # was too small (0.12/0.15) -> false doubles
+MIN_CLAP_GAP = 0.35           # ⬅️ stronger anti-double
 DOUBLE_CLAP_WINDOW = 0.80
 
 USE_AUTO_THRESHOLD = True
 AUTO_MULTIPLIER = 3.5
 AUTO_FLOOR = 0.06
 
-# ✅ Re-arm settings (NEW)
-REARM_RATIO = 0.40           # re-arm when peak drops below thr*0.40
-REARM_QUIET_MS = 80          # must stay quiet for 80ms before re-arming
+# ✅ Ignore first seconds (startup pop)
+WARMUP_SECONDS = 1.5
+
+# ✅ Spike requirement (NEW)
+# Clap must exceed (noise_median + SPIKE_ABS) AND (noise_median * SPIKE_MULT)
+SPIKE_ABS  = 0.08
+SPIKE_MULT = 3.0
+
+# ✅ Re-arm settings
+REARM_RATIO = 0.35
+REARM_QUIET_MS = 100
 REARM_QUIET_S = REARM_QUIET_MS / 1000.0
 
 _latest_peak = 0.0
@@ -69,20 +78,31 @@ pending_single = False
 pending_start_t = 0.0
 
 noise_peaks = []
-NOISE_WINDOW = 150
+NOISE_WINDOW = 200
 
-# ✅ armed gate state
 armed = True
 quiet_since = None
+
+start_time = time.time()
+
+def noise_median():
+    if len(noise_peaks) < 10:
+        return 0.0
+    return float(np.median(noise_peaks))
 
 def get_threshold():
     if not USE_AUTO_THRESHOLD:
         return CLAP_PEAK_THRESHOLD
     if len(noise_peaks) < 12:
         return max(CLAP_PEAK_THRESHOLD, AUTO_FLOOR)
-    base = float(np.median(noise_peaks))
+    base = noise_median()
     thr = max(AUTO_FLOOR, base * AUTO_MULTIPLIER)
     return max(thr, CLAP_PEAK_THRESHOLD)
+
+def is_valid_clap(peak: float, thr: float) -> bool:
+    base = noise_median()
+    # must be above threshold + above baseline by a noticeable jump
+    return (peak >= thr) and (peak >= base + SPIKE_ABS) and (peak >= base * SPIKE_MULT if base > 0 else peak >= thr)
 
 def register_clap(now_t: float):
     global pending_single, pending_start_t, led_on
@@ -118,7 +138,7 @@ def safe_exit(code=0):
 print("Exercise 6: INMP441 Clap Switch running (Google VoiceHAT card)")
 print("Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
 print("Stop: Stop button or Ctrl+C")
-print("Tip: If it still false-double, increase MIN_CLAP_GAP to 0.30–0.40.")
+print("Warmup:", WARMUP_SECONDS, "seconds (ignoring startup noise)")
 
 try:
     with sd.InputStream(
@@ -134,7 +154,7 @@ try:
         while not _should_exit:
             now_t = time.time()
 
-            # build noise model from "not too loud" blocks
+            # build noise model from not-too-loud blocks
             if _latest_peak < 0.35:
                 noise_peaks.append(_latest_peak)
                 if len(noise_peaks) > NOISE_WINDOW:
@@ -143,7 +163,7 @@ try:
             thr = get_threshold()
             rearm_level = thr * REARM_RATIO
 
-            # ✅ re-arm logic: must go quiet before allowing another clap
+            # re-arm logic
             if not armed:
                 if _latest_peak <= rearm_level:
                     if quiet_since is None:
@@ -154,17 +174,24 @@ try:
                 else:
                     quiet_since = None
 
-            # debug print once/sec
+            # debug print 1/sec
             if now_t - last_print > 1.0:
-                print(f"peak={_latest_peak:.3f} thr={thr:.3f} armed={'Y' if armed else 'n'} LED={'ON' if led_on else 'OFF'}")
+                base = noise_median()
+                print(f"peak={_latest_peak:.3f} thr={thr:.3f} base={base:.3f} armed={'Y' if armed else 'n'} LED={'ON' if led_on else 'OFF'}")
                 last_print = now_t
 
-            # ✅ detect clap only if armed
-            if armed and (_latest_peak >= thr):
+            # ✅ ignore warmup period
+            if (now_t - start_time) < WARMUP_SECONDS:
+                finalize_single_if_due(now_t)
+                time.sleep(0.01)
+                continue
+
+            # detect clap only if armed + valid spike
+            if armed and is_valid_clap(_latest_peak, thr):
                 if (now_t - last_clap_t) >= MIN_CLAP_GAP:
                     last_clap_t = now_t
                     register_clap(now_t)
-                    armed = False          # disarm immediately until quiet again
+                    armed = False
                     quiet_since = None
                 _latest_peak = 0.0
 
@@ -176,9 +203,9 @@ try:
 except Exception as e:
     print("\n❌ Audio stream failed to start:")
     print("   ", repr(e))
-    print("\nAvailable devices:")
     try:
+        print("\nAvailable devices:")
         print(sd.query_devices())
-    except Exception as e2:
-        print("   Could not query devices:", repr(e2))
+    except Exception:
+        pass
     safe_exit(1)
