@@ -83,24 +83,24 @@
           </div>
         </article>
 
-        <!-- A5 EX23 -->
+        <!-- A5 EX23 (UPDATED: Local Data Storage) -->
         <article class="exercise-card"
           data-exercise="a5-ex23"
           data-image="/images/ex_placeholder.jpg"
           data-image2="/images/ex_placeholder_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 23: Publish Test"
-          data-say-text="Publish a test message to a topic to confirm commands can be sent.">
+          data-say-title="Exercise 23: Local Data Storage"
+          data-say-text="Save sensor readings locally for later use. Run this to subscribe to telemetry and store events into CSV/JSONL logs on the Raspberry Pi.">
           <div class="ex-card-head">
-            <h3>Exercise 23: Publish Test</h3>
-            <span class="pill">Publish</span>
+            <h3>Exercise 23: Local Data Storage</h3>
+            <span class="pill">Logs • File</span>
           </div>
 
-          <p class="ex-desc">Send a test payload to a topic like trainerkit/test or trainerkit/esp32/cmd.</p>
+          <p class="ex-desc">Subscribes to sensor telemetry and saves events locally (CSV/JSONL) like Motion detected, Loud noise, Temp=31°C.</p>
 
           <div class="ex-meta">
-            <span><b>Input:</b> Publish command</span>
-            <span><b>Output:</b> Message sent</span>
+            <span><b>Input:</b> Sensor readings</span>
+            <span><b>Output:</b> Stored to file (logs)</span>
           </div>
 
           <div class="ex-actions">
@@ -220,7 +220,7 @@
             </div>
           </div>
 
-          <!-- ✅ NEW: Command panel (only visible for a5-ex22) -->
+          <!-- ✅ Command panel (only visible for a5-ex22) -->
           <div class="live-panel" id="a5CmdPanel" hidden>
             <div class="live-head">
               <b>🕹️ Remote Commands</b>
@@ -244,6 +244,44 @@
             <div class="live-foot">
               <small id="a5CmdLast">Last command: —</small>
               <small class="live-raw" id="a5CmdRaw">payload: —</small>
+            </div>
+          </div>
+
+          <!-- ✅ NEW: Storage panel (only visible for a5-ex23) -->
+          <div class="live-panel" id="a5StorePanel" hidden>
+            <div class="live-head">
+              <b>💾 Local Storage</b>
+              <span class="live-pill">
+                <span class="dot" id="a5StoreDot"></span>
+                <span id="a5StoreText">Ready</span>
+              </span>
+            </div>
+
+            <div class="live-grid" style="grid-template-columns: 1fr;">
+              <div class="live-item">
+                <div class="live-k">Where it saves</div>
+                <div class="live-v" id="a5StorePath">activity5/logs/ex23_events.csv + .jsonl</div>
+              </div>
+
+              <div class="live-item">
+                <div class="live-k">Last saved event</div>
+                <div class="live-v" id="a5StoreLast">—</div>
+              </div>
+
+              <div class="live-item">
+                <div class="live-k">Total records (this run)</div>
+                <div class="live-v" id="a5StoreCount">0</div>
+              </div>
+
+              <div class="live-item">
+                <div class="live-k">Tip</div>
+                <div class="live-v">Click Run and leave it on. Stop anytime. Logs remain saved.</div>
+              </div>
+            </div>
+
+            <div class="live-foot">
+              <small id="a5StoreUpdated">Last update: —</small>
+              <small class="live-raw" id="a5StoreRaw">raw: —</small>
             </div>
           </div>
 
