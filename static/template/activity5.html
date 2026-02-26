@@ -27,147 +27,7 @@
 
       <div class="cards">
 
-        <!-- A5 EX1 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex21"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 1: MQTT Broker Test"
-          data-say-text="Connect to the MQTT broker and confirm the system can publish and receive a test message.">
-          <div class="ex-card-head">
-            <h3>Exercise 1: MQTT Broker Test</h3>
-            <span class="pill">MQTT</span>
-          </div>
-
-          <p class="ex-desc">Connect to broker (ex: Mosquitto) and verify MQTT is working.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> Start MQTT client</span>
-            <span><b>Output:</b> Connected status</span>
-          </div>
-
-          <div class="ex-actions">
-            <button class="run-btn" type="button" data-run="a5-ex1">Run</button>
-            <button class="stop-btn" type="button" data-stop="a5-ex1">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex1">Speak</button>
-            <span class="status" data-status-for="a5-ex1">Ready</span>
-          </div>
-        </article>
-
-        <!-- A5 EX2 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex22"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 2: Subscribe Monitor"
-          data-say-text="Subscribe to ESP32 sensor topics and show the incoming messages in logs.">
-          <div class="ex-card-head">
-            <h3>Exercise 2: Subscribe Monitor</h3>
-            <span class="pill">Subscribe</span>
-          </div>
-
-          <p class="ex-desc">Listen to topics like trainerkit/esp32/sensors/# and monitor updates.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> Topic subscription</span>
-            <span><b>Output:</b> Live messages</span>
-          </div>
-
-          <div class="ex-actions">
-            <button class="run-btn" type="button" data-run="a5-ex2">Run</button>
-            <button class="stop-btn" type="button" data-stop="a5-ex2">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex2">Speak</button>
-            <span class="status" data-status-for="a5-ex2">Ready</span>
-          </div>
-        </article>
-
-        <!-- A5 EX3 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex23"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 3: Publish Test"
-          data-say-text="Publish a test message to a topic to confirm commands can be sent.">
-          <div class="ex-card-head">
-            <h3>Exercise 3: Publish Test</h3>
-            <span class="pill">Publish</span>
-          </div>
-
-          <p class="ex-desc">Send a test payload to a topic like trainerkit/test or trainerkit/esp32/cmd.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> Publish command</span>
-            <span><b>Output:</b> Message sent</span>
-          </div>
-
-          <div class="ex-actions">
-            <button class="run-btn" type="button" data-run="a5-ex3">Run</button>
-            <button class="stop-btn" type="button" data-stop="a5-ex3">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex3">Speak</button>
-            <span class="status" data-status-for="a5-ex3">Ready</span>
-          </div>
-        </article>
-
-        <!-- A5 EX4 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex24"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 4: ESP32 Relay Control"
-          data-say-text="Control ESP32 relay using MQTT topic commands such as ON and OFF.">
-          <div class="ex-card-head">
-            <h3>Exercise 4: ESP32 Relay Control</h3>
-            <span class="pill">Relay • MQTT</span>
-          </div>
-
-          <p class="ex-desc">Publish ON/OFF to topic like trainerkit/esp32/relay1/set.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> MQTT control</span>
-            <span><b>Output:</b> Relay changes</span>
-          </div>
-
-          <div class="ex-actions">
-            <button class="run-btn" type="button" data-run="a5-ex4">Run</button>
-            <button class="stop-btn" type="button" data-stop="a5-ex4">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex4">Speak</button>
-            <span class="status" data-status-for="a5-ex4">Ready</span>
-          </div>
-        </article>
-
-        <!-- A5 EX5 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex25"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 5: ESP32 Sensor Stream"
-          data-say-text="Receive real-time sensor stream from ESP32 over MQTT and display updates.">
-          <div class="ex-card-head">
-            <h3>Exercise 5: ESP32 Sensor Stream</h3>
-            <span class="pill">Sensors • MQTT</span>
-          </div>
-
-          <p class="ex-desc">Subscribe to trainerkit/esp32/sensors/temperature, gas, motion, etc.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> Sensor publish</span>
-            <span><b>Output:</b> Dashboard updates</span>
-          </div>
-
-          <div class="ex-actions">
-            <button class="run-btn" type="button" data-run="a5-ex5">Run</button>
-            <button class="stop-btn" type="button" data-stop="a5-ex5">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex5">Speak</button>
-            <span class="status" data-status-for="a5-ex5">Ready</span>
-          </div>
-        </article>
-
-        <!-- ✅ A5 EX21 (NEW): Send Sensor Data -->
+        <!-- A5 EX21 -->
         <article class="exercise-card"
           data-exercise="a5-ex21"
           data-image="/images/ex_placeholder.jpg"
@@ -192,6 +52,118 @@
             <button class="stop-btn" type="button" data-stop="a5-ex21">Stop</button>
             <button class="speak-btn" type="button" data-speak="a5-ex21">Speak</button>
             <span class="status" data-status-for="a5-ex21">Ready</span>
+          </div>
+        </article>
+
+        <!-- A5 EX22 -->
+        <article class="exercise-card"
+          data-exercise="a5-ex22"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 22: Subscribe Monitor"
+          data-say-text="Subscribe to ESP32 sensor topics and show the incoming messages in logs.">
+          <div class="ex-card-head">
+            <h3>Exercise 22: Subscribe Monitor</h3>
+            <span class="pill">Subscribe</span>
+          </div>
+
+          <p class="ex-desc">Listen to topics like trainerkit/esp32/sensors/# and monitor updates.</p>
+
+          <div class="ex-meta">
+            <span><b>Input:</b> Topic subscription</span>
+            <span><b>Output:</b> Live messages</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex22">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex22">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex22">Speak</button>
+            <span class="status" data-status-for="a5-ex22">Ready</span>
+          </div>
+        </article>
+
+        <!-- A5 EX23 -->
+        <article class="exercise-card"
+          data-exercise="a5-ex23"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 23: Publish Test"
+          data-say-text="Publish a test message to a topic to confirm commands can be sent.">
+          <div class="ex-card-head">
+            <h3>Exercise 23: Publish Test</h3>
+            <span class="pill">Publish</span>
+          </div>
+
+          <p class="ex-desc">Send a test payload to a topic like trainerkit/test or trainerkit/esp32/cmd.</p>
+
+          <div class="ex-meta">
+            <span><b>Input:</b> Publish command</span>
+            <span><b>Output:</b> Message sent</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex23">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex23">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex23">Speak</button>
+            <span class="status" data-status-for="a5-ex23">Ready</span>
+          </div>
+        </article>
+
+        <!-- A5 EX24 -->
+        <article class="exercise-card"
+          data-exercise="a5-ex24"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 24: ESP32 Relay Control"
+          data-say-text="Control ESP32 relay using MQTT topic commands such as ON and OFF.">
+          <div class="ex-card-head">
+            <h3>Exercise 24: ESP32 Relay Control</h3>
+            <span class="pill">Relay • MQTT</span>
+          </div>
+
+          <p class="ex-desc">Publish ON/OFF to topic like trainerkit/esp32/relay1/set.</p>
+
+          <div class="ex-meta">
+            <span><b>Input:</b> MQTT control</span>
+            <span><b>Output:</b> Relay changes</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex24">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex24">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex24">Speak</button>
+            <span class="status" data-status-for="a5-ex24">Ready</span>
+          </div>
+        </article>
+
+        <!-- A5 EX25 -->
+        <article class="exercise-card"
+          data-exercise="a5-ex25"
+          data-image="/images/ex_placeholder.jpg"
+          data-image2="/images/ex_placeholder_2.jpg"
+          tabindex="0" role="button"
+          data-say-title="Exercise 25: ESP32 Sensor Stream"
+          data-say-text="Receive real-time sensor stream from ESP32 over MQTT and display updates.">
+          <div class="ex-card-head">
+            <h3>Exercise 25: ESP32 Sensor Stream</h3>
+            <span class="pill">Sensors • MQTT</span>
+          </div>
+
+          <p class="ex-desc">Subscribe to trainerkit/esp32/sensors/temperature, gas, motion, etc.</p>
+
+          <div class="ex-meta">
+            <span><b>Input:</b> Sensor publish</span>
+            <span><b>Output:</b> Dashboard updates</span>
+          </div>
+
+          <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex25">Run</button>
+            <button class="stop-btn" type="button" data-stop="a5-ex25">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex25">Speak</button>
+            <span class="status" data-status-for="a5-ex25">Ready</span>
           </div>
         </article>
 
