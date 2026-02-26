@@ -1,6 +1,8 @@
 # Exercise 6 (Activity 2): Clap Switch using INMP441 I2S (Google VoiceHAT SoundCard)
 # 1 clap  -> GREEN LED ON
 # 2 claps -> GREEN LED OFF
+#
+# Fix: "re-arm" gate so one clap doesn't count multiple times.
 
 import time
 import signal
@@ -37,18 +39,23 @@ CHANNELS = 1
 BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
 INPUT_DEVICE = 1
 
-# ---------------- Clap detection tuning (MORE SENSITIVE) ----------------
-CLAP_PEAK_THRESHOLD = 0.12   # was 0.25
+# ---------------- Clap detection tuning ----------------
+CLAP_PEAK_THRESHOLD = 0.12
 
-MIN_CLAP_GAP = 0.12          # slightly smaller so fast claps still register
-DOUBLE_CLAP_WINDOW = 0.80    # allow more time for 2nd clap
+# This only controls "minimum time between accepted claps"
+MIN_CLAP_GAP = 0.25          # was too small (0.12/0.15) -> false doubles
+DOUBLE_CLAP_WINDOW = 0.80
 
 USE_AUTO_THRESHOLD = True
-AUTO_MULTIPLIER = 3.5        # was 6.0
-AUTO_FLOOR = 0.06            # was 0.12
+AUTO_MULTIPLIER = 3.5
+AUTO_FLOOR = 0.06
+
+# ✅ Re-arm settings (NEW)
+REARM_RATIO = 0.40           # re-arm when peak drops below thr*0.40
+REARM_QUIET_MS = 80          # must stay quiet for 80ms before re-arming
+REARM_QUIET_S = REARM_QUIET_MS / 1000.0
 
 _latest_peak = 0.0
-
 def audio_callback(indata, frames, time_info, status):
     global _latest_peak
     x = indata[:, 0].astype(np.float32)
@@ -57,11 +64,16 @@ def audio_callback(indata, frames, time_info, status):
 # ---------------- Clap logic ----------------
 led_on = False
 last_clap_t = 0.0
+
 pending_single = False
 pending_start_t = 0.0
 
 noise_peaks = []
-NOISE_WINDOW = 150           # was 80
+NOISE_WINDOW = 150
+
+# ✅ armed gate state
+armed = True
+quiet_since = None
 
 def get_threshold():
     if not USE_AUTO_THRESHOLD:
@@ -74,12 +86,14 @@ def get_threshold():
 
 def register_clap(now_t: float):
     global pending_single, pending_start_t, led_on
+
     if pending_single and (now_t - pending_start_t) <= DOUBLE_CLAP_WINDOW:
         led_on = False
         set_green(False)
         pending_single = False
         print("👏👏 Double clap -> OFF")
         return
+
     pending_single = True
     pending_start_t = now_t
     print("👏 Clap detected (waiting...)")
@@ -104,7 +118,7 @@ def safe_exit(code=0):
 print("Exercise 6: INMP441 Clap Switch running (Google VoiceHAT card)")
 print("Using INPUT_DEVICE=1, SAMPLE_RATE=48000")
 print("Stop: Stop button or Ctrl+C")
-print("Tip: If it triggers too easily, raise AUTO_MULTIPLIER back up slowly (4.0, 4.5, 5.0).")
+print("Tip: If it still false-double, increase MIN_CLAP_GAP to 0.30–0.40.")
 
 try:
     with sd.InputStream(
@@ -121,21 +135,37 @@ try:
             now_t = time.time()
 
             # build noise model from "not too loud" blocks
-            if _latest_peak < 0.35:   # was 0.20
+            if _latest_peak < 0.35:
                 noise_peaks.append(_latest_peak)
                 if len(noise_peaks) > NOISE_WINDOW:
                     noise_peaks.pop(0)
 
             thr = get_threshold()
+            rearm_level = thr * REARM_RATIO
 
+            # ✅ re-arm logic: must go quiet before allowing another clap
+            if not armed:
+                if _latest_peak <= rearm_level:
+                    if quiet_since is None:
+                        quiet_since = now_t
+                    elif (now_t - quiet_since) >= REARM_QUIET_S:
+                        armed = True
+                        quiet_since = None
+                else:
+                    quiet_since = None
+
+            # debug print once/sec
             if now_t - last_print > 1.0:
-                print(f"peak={_latest_peak:.3f} thr={thr:.3f} LED={'ON' if led_on else 'OFF'}")
+                print(f"peak={_latest_peak:.3f} thr={thr:.3f} armed={'Y' if armed else 'n'} LED={'ON' if led_on else 'OFF'}")
                 last_print = now_t
 
-            if _latest_peak >= thr:
+            # ✅ detect clap only if armed
+            if armed and (_latest_peak >= thr):
                 if (now_t - last_clap_t) >= MIN_CLAP_GAP:
                     last_clap_t = now_t
                     register_clap(now_t)
+                    armed = False          # disarm immediately until quiet again
+                    quiet_since = None
                 _latest_peak = 0.0
 
             finalize_single_if_due(now_t)
