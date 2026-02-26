@@ -16,6 +16,9 @@ MAX_PULSE_US = 2500
 ANGLE_IDLE = 0
 ANGLE_ACTIVE = 90
 
+# ✅ LOWER = faster response (too low may not reach the angle)
+SPEED_T = 0.15   # try 0.12, 0.15, 0.18, 0.20
+
 
 def angle_to_duty_u16(angle: int) -> int:
     angle = max(0, min(180, int(angle)))
@@ -35,17 +38,14 @@ def main():
     servo = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
     def servo_on(angle: int):
-        # send pulses long enough to reach the target
         servo.duty_cycle = angle_to_duty_u16(angle)
-        time.sleep(0.35)
+        time.sleep(SPEED_T)   # ✅ faster move/response
 
     def servo_off():
-        # stop sending pulses (servo relaxes / “turns off”)
         servo.duty_cycle = 0
 
     def cleanup(*_):
         try:
-            # Go safe idle then OFF
             try:
                 servo_on(ANGLE_IDLE)
             except Exception:
@@ -67,8 +67,8 @@ def main():
 
     print("Exercise 16: PIR Motion-Activated Servo running...")
     print("No motion -> 0° then OFF | Motion -> 90° holding | Ctrl+C to stop")
+    print("SPEED_T =", SPEED_T)
 
-    # Start at idle and OFF
     servo_on(ANGLE_IDLE)
     servo_off()
 
@@ -80,8 +80,8 @@ def main():
         if motion != last_state:
             if motion:
                 print("Motion detected -> Servo 90° (ON)")
-                servo_on(ANGLE_ACTIVE)   # keep ON while motion continues (hold 90°)
-                # NOTE: we do NOT turn OFF here because we want it to HOLD at 90°
+                servo_on(ANGLE_ACTIVE)
+                # keep PWM on to hold at 90°
             else:
                 print("No motion -> Servo 0° then OFF")
                 servo_on(ANGLE_IDLE)
@@ -89,9 +89,7 @@ def main():
 
             last_state = motion
 
-        # While motion is true, keep holding 90° by keeping PWM running.
-        # No extra writes needed; duty stays set.
-        time.sleep(0.05)
+        time.sleep(0.02)  # ✅ tighter loop responsiveness
 
 
 if __name__ == "__main__":
