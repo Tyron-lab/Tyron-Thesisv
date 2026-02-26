@@ -61,18 +61,18 @@
           data-image="/images/ex_placeholder.jpg"
           data-image2="/images/ex_placeholder_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 22: Subscribe Monitor"
-          data-say-text="Subscribe to ESP32 sensor topics and show the incoming messages in logs.">
+          data-say-title="Exercise 22: Receive Command"
+          data-say-text="Run the MQTT subscriber on the Raspberry Pi. Use the buttons in this popup to send commands like Turn Light ON and Open Gate.">
           <div class="ex-card-head">
-            <h3>Exercise 22: Subscribe Monitor</h3>
-            <span class="pill">Subscribe</span>
+            <h3>Exercise 22: Receive Command</h3>
+            <span class="pill">Subscribe • Control</span>
           </div>
 
-          <p class="ex-desc">Listen to topics like trainerkit/esp32/sensors/# and monitor updates.</p>
+          <p class="ex-desc">Click Run, then use command buttons in the popup to control relay/servo/LED via MQTT.</p>
 
           <div class="ex-meta">
-            <span><b>Input:</b> Topic subscription</span>
-            <span><b>Output:</b> Live messages</span>
+            <span><b>Input:</b> Dashboard command</span>
+            <span><b>Output:</b> LED / Relay / Servo responds</span>
           </div>
 
           <div class="ex-actions">
@@ -217,6 +217,33 @@
             <div class="live-foot">
               <small id="a5Updated">Last update: —</small>
               <small class="live-raw" id="a5Raw">raw: —</small>
+            </div>
+          </div>
+
+          <!-- ✅ NEW: Command panel (only visible for a5-ex22) -->
+          <div class="live-panel" id="a5CmdPanel" hidden>
+            <div class="live-head">
+              <b>🕹️ Remote Commands</b>
+              <span class="live-pill">
+                <span class="dot" id="a5CmdDot"></span>
+                <span id="a5CmdText">Ready</span>
+              </span>
+            </div>
+
+            <div class="live-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+              <button class="run-btn" type="button" id="cmdLightOn">Turn Light ON</button>
+              <button class="stop-btn" type="button" id="cmdLightOff">Turn Light OFF</button>
+
+              <button class="run-btn" type="button" id="cmdGateOpen">Open Gate</button>
+              <button class="stop-btn" type="button" id="cmdGateClose">Close Gate</button>
+
+              <button class="run-btn" type="button" id="cmdLedGreen">LED Green</button>
+              <button class="stop-btn" type="button" id="cmdAllOff">ALL OFF</button>
+            </div>
+
+            <div class="live-foot">
+              <small id="a5CmdLast">Last command: —</small>
+              <small class="live-raw" id="a5CmdRaw">payload: —</small>
             </div>
           </div>
 

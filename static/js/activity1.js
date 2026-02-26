@@ -13,6 +13,8 @@
 
    Activity 5 Telemetry (server.py):
    - GET /api/a5/latest   -> latest MQTT message
+   Activity 5 Commands (server.py):
+   - POST /api/a5/command -> publish MQTT command JSON
 */
 
 (() => {
@@ -21,8 +23,9 @@
   const API_STATUS = "/api/exercise_status";
   const API_LOGS = "/api/exercise_logs";
 
-  // ✅ Activity 5 telemetry endpoint already exists in your server.py:contentReference[oaicite:5]{index=5}
+  // Activity 5
   const API_A5_LATEST = "/api/a5/latest";
+  const API_A5_COMMAND = "/api/a5/command";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -84,7 +87,7 @@
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
 
-  // ✅ A5 EX21 live panel nodes (optional; only if present in HTML)
+  // A5 EX21 live panel nodes
   const a5LivePanel = qs("#a5LivePanel");
   const a5Dot = qs("#a5Dot");
   const a5ConnText = qs("#a5ConnText");
@@ -93,6 +96,20 @@
   const a5Noise = qs("#a5Noise");
   const a5Updated = qs("#a5Updated");
   const a5Raw = qs("#a5Raw");
+
+  // A5 EX22 command panel nodes
+  const a5CmdPanel = qs("#a5CmdPanel");
+  const a5CmdDot = qs("#a5CmdDot");
+  const a5CmdText = qs("#a5CmdText");
+  const a5CmdLast = qs("#a5CmdLast");
+  const a5CmdRaw = qs("#a5CmdRaw");
+
+  const cmdLightOn  = qs("#cmdLightOn");
+  const cmdLightOff = qs("#cmdLightOff");
+  const cmdGateOpen = qs("#cmdGateOpen");
+  const cmdGateClose= qs("#cmdGateClose");
+  const cmdLedGreen = qs("#cmdLedGreen");
+  const cmdAllOff   = qs("#cmdAllOff");
 
   let modalExerciseId = null;
 
@@ -125,19 +142,16 @@
       return;
     }
 
-    // server returns: { ok: true, connected, last_update, payload, raw }:contentReference[oaicite:6]{index=6}
     const connected = !!r.data.connected;
     setA5Conn(connected ? "ok" : "bad", connected ? "Connected" : "Disconnected");
 
     const payload = r.data.payload || null;
     const raw = r.data.raw || "";
 
-    // Try to map common keys: temperature, motion, noise
     let t = payload && (payload.temperature ?? payload.temp ?? payload.Temperature);
     let m = payload && (payload.motion ?? payload.pir ?? payload.Motion);
     let n = payload && (payload.noise ?? payload.sound ?? payload.Noise);
 
-    // Fallback: if sender uses different structure, show raw only
     if (a5Temp) a5Temp.textContent = safeVal(t);
     if (a5Motion) a5Motion.textContent = safeVal(m);
     if (a5Noise) a5Noise.textContent = safeVal(n);
@@ -150,7 +164,6 @@
     if (!a5LivePanel) return;
     a5LivePanel.hidden = false;
     setA5Conn("warn", "Connecting…");
-    // poll quickly for “live feel”
     if (a5Timer) clearInterval(a5Timer);
     pollA5Once().catch(() => {});
     a5Timer = setInterval(() => {
@@ -163,6 +176,98 @@
     a5Timer = null;
     if (a5LivePanel) a5LivePanel.hidden = true;
   }
+
+  // ----- A5 EX22 command panel -----
+  function setCmdState(state, text) {
+    if (!a5CmdDot || !a5CmdText) return;
+    a5CmdDot.classList.remove("ok", "bad");
+    if (state === "ok") a5CmdDot.classList.add("ok");
+    else if (state === "bad") a5CmdDot.classList.add("bad");
+    a5CmdText.textContent = text || "";
+  }
+
+  async function sendA5Command(payload) {
+    setCmdState("ok", "Sending…");
+    if (a5CmdRaw) a5CmdRaw.textContent = "payload: " + JSON.stringify(payload);
+
+    const { ok, data, text } = await postJSON(API_A5_COMMAND, payload);
+
+    if (!ok || !data || data.ok !== true) {
+      setCmdState("bad", "Failed");
+      const msg = (data && (data.message || data.error)) ? (data.message || data.error) : (text || "Command failed");
+      if (a5CmdLast) a5CmdLast.textContent = "Last command: ERROR";
+      throw new Error(msg);
+    }
+
+    setCmdState("ok", "Sent ✅");
+    if (a5CmdLast) a5CmdLast.textContent = "Last command: " + (payload.device || "cmd");
+    return data;
+  }
+
+  function startA5Commands() {
+    if (!a5CmdPanel) return;
+    a5CmdPanel.hidden = false;
+    setCmdState("ok", "Ready");
+    if (a5CmdLast) a5CmdLast.textContent = "Last command: —";
+    if (a5CmdRaw) a5CmdRaw.textContent = "payload: —";
+  }
+
+  function stopA5Commands() {
+    if (a5CmdPanel) a5CmdPanel.hidden = true;
+  }
+
+  function bindCmdButtons() {
+    // bind once
+    if (cmdLightOn) {
+      cmdLightOn.onclick = async () => {
+        try { await sendA5Command({ device: "relay", ch: 1, state: "on" }); }
+        catch (e) { alert(e.message); }
+      };
+    }
+    if (cmdLightOff) {
+      cmdLightOff.onclick = async () => {
+        try { await sendA5Command({ device: "relay", ch: 1, state: "off" }); }
+        catch (e) { alert(e.message); }
+      };
+    }
+    if (cmdGateOpen) {
+      cmdGateOpen.onclick = async () => {
+        try { await sendA5Command({ device: "servo", angle: 90 }); }
+        catch (e) { alert(e.message); }
+      };
+    }
+    if (cmdGateClose) {
+      cmdGateClose.onclick = async () => {
+        try { await sendA5Command({ device: "servo", angle: 0 }); }
+        catch (e) { alert(e.message); }
+      };
+    }
+    if (cmdLedGreen) {
+      cmdLedGreen.onclick = async () => {
+        try { await sendA5Command({ device: "led", color: "green", state: "on" }); }
+        catch (e) { alert(e.message); }
+      };
+    }
+    if (cmdAllOff) {
+      cmdAllOff.onclick = async () => {
+        try {
+          await sendA5Command({ device: "relay", ch: 1, state: "off" });
+          await sendA5Command({ device: "relay", ch: 2, state: "off" });
+          await sendA5Command({ device: "relay", ch: 3, state: "off" });
+          await sendA5Command({ device: "relay", ch: 4, state: "off" });
+          await sendA5Command({ device: "led", color: "red", state: "off" });
+          await sendA5Command({ device: "led", color: "orange", state: "off" });
+          await sendA5Command({ device: "led", color: "green", state: "off" });
+          await sendA5Command({ device: "servo", angle: 0 });
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+    }
+  }
+
+  // bind command buttons immediately
+  bindCmdButtons();
 
   function openModalFromCard(card) {
     if (!modal) return;
@@ -218,6 +323,10 @@
     if (exId === "a5-ex21") startA5Telemetry();
     else stopA5Telemetry();
 
+    // ✅ Only show command panel when Exercise 22 is opened
+    if (exId === "a5-ex22") startA5Commands();
+    else stopA5Commands();
+
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
@@ -230,8 +339,8 @@
     document.body.classList.remove("modal-open");
     modalExerciseId = null;
 
-    // ✅ stop polling when modal closes
     stopA5Telemetry();
+    stopA5Commands();
   }
 
   if (modalClose) modalClose.addEventListener("click", closeModal);
