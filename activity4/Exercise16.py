@@ -6,65 +6,51 @@ import board
 import digitalio
 import pwmio
 
-# ----------------------------
-# Pins (as you requested)
-# ----------------------------
 PIR_PIN = board.D22
 SERVO_PIN = board.D12
 
-# ----------------------------
-# Servo PWM settings
-# ----------------------------
-FREQUENCY = 50          # 50Hz typical servo
-MIN_PULSE_US = 500      # 0° pulse width (tweak if needed)
-MAX_PULSE_US = 2500     # 180° pulse width (tweak if needed)
+FREQUENCY = 50
+MIN_PULSE_US = 500
+MAX_PULSE_US = 2500
 
-# Angles for this exercise
 ANGLE_IDLE = 0
 ANGLE_ACTIVE = 90
 
 
 def angle_to_duty_u16(angle: int) -> int:
-    """Convert servo angle (0-180) to 16-bit PWM duty cycle for 50Hz."""
     angle = max(0, min(180, int(angle)))
     pulse_us = MIN_PULSE_US + (MAX_PULSE_US - MIN_PULSE_US) * (angle / 180.0)
-    # 50Hz period = 20,000 us
     duty = int((pulse_us / 20000.0) * 65535.0)
     return max(0, min(65535, duty))
 
 
 def main():
-    # PIR input
     pir = digitalio.DigitalInOut(PIR_PIN)
     pir.direction = digitalio.Direction.INPUT
-
-    # Some PIR modules work fine without pull.
-    # If your PIR output is "floating" without motion, you can try enabling pull-down.
     try:
         pir.pull = digitalio.Pull.DOWN
     except Exception:
         pass
 
-    # Servo PWM output
     servo = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
-    def set_servo(angle: int):
+    def servo_on(angle: int):
+        # send pulses long enough to reach the target
         servo.duty_cycle = angle_to_duty_u16(angle)
+        time.sleep(0.35)
+
+    def servo_off():
+        # stop sending pulses (servo relaxes / “turns off”)
+        servo.duty_cycle = 0
 
     def cleanup(*_):
         try:
-            # Return to 0°
+            # Go safe idle then OFF
             try:
-                set_servo(ANGLE_IDLE)
-                time.sleep(0.25)
+                servo_on(ANGLE_IDLE)
             except Exception:
                 pass
-
-            # Stop PWM (optional: keep holding position by NOT zeroing)
-            try:
-                servo.duty_cycle = 0
-            except Exception:
-                pass
+            servo_off()
         finally:
             try:
                 pir.deinit()
@@ -80,26 +66,31 @@ def main():
     signal.signal(signal.SIGTERM, cleanup)
 
     print("Exercise 16: PIR Motion-Activated Servo running...")
-    print("PIR: D22 | SERVO: D12 | Ctrl+C to stop")
+    print("No motion -> 0° then OFF | Motion -> 90° holding | Ctrl+C to stop")
 
-    # Start idle
-    set_servo(ANGLE_IDLE)
+    # Start at idle and OFF
+    servo_on(ANGLE_IDLE)
+    servo_off()
+
     last_state = None
 
     while True:
         motion = bool(pir.value)
 
-        # only move when state changes
         if motion != last_state:
             if motion:
-                print("Motion detected -> Servo 90°")
-                set_servo(ANGLE_ACTIVE)
+                print("Motion detected -> Servo 90° (ON)")
+                servo_on(ANGLE_ACTIVE)   # keep ON while motion continues (hold 90°)
+                # NOTE: we do NOT turn OFF here because we want it to HOLD at 90°
             else:
-                print("No motion -> Servo 0°")
-                set_servo(ANGLE_IDLE)
+                print("No motion -> Servo 0° then OFF")
+                servo_on(ANGLE_IDLE)
+                servo_off()
 
             last_state = motion
 
+        # While motion is true, keep holding 90° by keeping PWM running.
+        # No extra writes needed; duty stays set.
         time.sleep(0.05)
 
 
