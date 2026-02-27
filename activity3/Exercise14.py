@@ -5,6 +5,8 @@
 
 import time
 import math
+import signal
+import sys               # ← added
 
 # ---- I2C mux (TCA9548A) ----
 from smbus2 import SMBus
@@ -42,6 +44,20 @@ MPU_ADDR = None      # None -> try 0x68 then 0x69
 # screen timing
 SCREEN_S = 2.5
 # =========================
+
+
+# ────────────────────────────────────────────────
+# Added: SIGTERM + SIGINT handling (Stop button / Ctrl+C)
+# ────────────────────────────────────────────────
+_should_exit = False
+
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)
+# ────────────────────────────────────────────────
 
 
 def mux_select(channel: int):
@@ -148,6 +164,9 @@ if lcd:
 
 try:
     while True:
+        if _should_exit:
+            break
+
         # ---- Screen 1: BMP280 ----
         if bmp:
             try:
@@ -207,3 +226,6 @@ finally:
             lcd.clear()
         except Exception:
             pass
+
+    print("Exercise 14 exited cleanly.")
+    sys.exit(0)
