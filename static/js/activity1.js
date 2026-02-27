@@ -53,6 +53,71 @@
     }
   }
 
+  // ---------- busy/lock UI (single-exercise focus) ----------
+  // When an exercise is running, we "lock" the rest of the UI so only that
+  // exercise can be interacted with (Run/Stop/Speak + card click).
+  function setBusyUI(runningExId) {
+    const hasRunning = !!runningExId;
+
+    qsa(".exercise-card[data-exercise]").forEach((card) => {
+      const exId = card.dataset.exercise;
+      const isThis = hasRunning && exId === runningExId;
+
+      // Card lock
+      if (hasRunning && !isThis) {
+        // save tabindex once
+        if (card.dataset.prevTabindex === undefined) {
+          card.dataset.prevTabindex = card.getAttribute("tabindex") ?? "";
+        }
+        card.setAttribute("aria-disabled", "true");
+        card.setAttribute("tabindex", "-1");
+        card.style.pointerEvents = "none";
+        card.style.opacity = "0.55";
+        card.style.filter = "grayscale(0.35)";
+      } else {
+        card.removeAttribute("aria-disabled");
+        const prev = card.dataset.prevTabindex;
+        if (prev !== undefined) {
+          if (prev === "") card.removeAttribute("tabindex");
+          else card.setAttribute("tabindex", prev);
+          delete card.dataset.prevTabindex;
+        }
+        card.style.pointerEvents = "";
+        card.style.opacity = "";
+        card.style.filter = "";
+      }
+
+      // Buttons inside the card
+      const btns = qsa("button", card);
+      btns.forEach((btn) => {
+        // Always keep the stop button enabled for the running exercise
+        const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
+        const allow = !hasRunning || isThis || (isThis && isStop);
+
+        if (!allow) {
+          btn.disabled = true;
+          btn.setAttribute("aria-disabled", "true");
+          btn.style.pointerEvents = "none";
+          btn.style.opacity = "0.6";
+        } else {
+          btn.disabled = false;
+          btn.removeAttribute("aria-disabled");
+          btn.style.pointerEvents = "";
+          btn.style.opacity = "";
+        }
+      });
+    });
+
+    // Also lock modal Run/Speak if modal is open for another exercise
+    if (hasRunning && modalExerciseId && modalExerciseId !== runningExId) {
+      if (modalRunBtn) modalRunBtn.disabled = true;
+      if (modalSpeakBtn) modalSpeakBtn.disabled = true;
+    } else {
+      if (modalRunBtn) modalRunBtn.disabled = false;
+      if (modalSpeakBtn) modalSpeakBtn.disabled = false;
+    }
+  }
+
   // ---------- speech ----------
   function speak(text) {
     try {
@@ -451,10 +516,12 @@
   async function runExercise(exId) {
     if (!exId) return;
 
+    // If something is already running, don't auto-stop it.
+    // Keep the UI focused and require the user to press Stop.
     if (currentRunningEx && currentRunningEx !== exId) {
-      await postJSON(API_STOP, {});
-      setStatus(currentRunningEx, "Stopped");
-      currentRunningEx = null;
+      setStatus(exId, "Busy (stop current first)");
+      setBusyUI(currentRunningEx);
+      return;
     }
 
     setStatus(exId, "Running...", "state-running");
@@ -470,6 +537,7 @@
 
     currentRunningEx = exId;
     setStatus(exId, "Running...", "state-running");
+    setBusyUI(currentRunningEx);
 
     // If Ex23 is running and modal is open on it, ensure storage polling is on
     if (exId === "a5-ex23" && modalExerciseId === "a5-ex23") {
@@ -501,6 +569,7 @@
 
     setStatus(stoppingId, "Stopped");
     currentRunningEx = null;
+    setBusyUI(null);
 
     // Stop storage polling after stop (if modal isn't on ex23, it's already hidden)
     if (modalExerciseId !== "a5-ex23") stopA5StoragePanel();
@@ -526,11 +595,13 @@
       if (err) console.warn("[Exercise stderr]\n" + err);
 
       currentRunningEx = null;
+      setBusyUI(null);
       return;
     }
 
     if (isRunning && currentRunningEx) {
       setStatus(currentRunningEx, "Running...", "state-running");
+      setBusyUI(currentRunningEx);
     }
   }
 
@@ -582,6 +653,9 @@
     const exId = card.dataset.exercise;
     setStatus(exId, "Ready");
   });
+
+  // Ensure UI starts unlocked
+  setBusyUI(null);
 
   setInterval(() => {
     refreshStatus().catch(() => {});
