@@ -2,7 +2,8 @@
    SENSOR DASHBOARD – FRONTEND LOGIC (FULL)
    - Shows values for ALL sensors
    - Adds missing toggleRelay() / toggleServo()
-   - ✅ LED_TOOL REMOVED (logic only)
+   - ✅ LED_TOOL REMOVED
+   - ✅ MIC added (INMP441)
 ============================================= */
 
 const qs  = (sel, root = document) => root.querySelector(sel);
@@ -49,7 +50,7 @@ qsa(".sensor-card:not(.disabled)").forEach(card => {
   // Exclude relay/servo (they use inline onclick)
   if (id === "Relay" || id === "servomotor") return;
 
-  // Exclude tools (LED_TOOL removed)
+  // Exclude tools
   if (id === "BUZZER" || id === "LCD_TOOL") return;
 
   card.addEventListener("click", async () => {
@@ -67,7 +68,7 @@ qsa(".sensor-card:not(.disabled)").forEach(card => {
 });
 
 // -------------------------
-// Relay + Servo (MISSING BEFORE)
+// Relay + Servo
 // -------------------------
 async function toggleRelay() {
   const r = await postJSON("/api/toggle", { sensor: "Relay" });
@@ -83,7 +84,6 @@ async function toggleServo() {
   }
 }
 
-// expose for inline onclick in HTML
 window.toggleRelay = toggleRelay;
 window.toggleServo = toggleServo;
 
@@ -178,6 +178,15 @@ function formatSensorValue(name, data) {
     return `${t} °C • ${h}%`;
   }
 
+  if (name === "MIC") {
+    const peak = data.peak;
+    const rms = data.rms;
+    const claps = data.claps ?? 0;
+    const p = (peak == null) ? "—" : Number(peak).toFixed(3);
+    const r = (rms == null) ? "—" : Number(rms).toFixed(3);
+    return `Peak: ${p} • RMS: ${r} • Claps: ${claps}`;
+  }
+
   if (name === "MHMQ") {
     const lvl = (data.level_percent != null) ? `${data.level_percent}%` : "—";
     return data.gas_detected ? `Gas Detected! (${lvl})` : `Clear (${lvl})`;
@@ -207,7 +216,7 @@ function formatSensorValue(name, data) {
 }
 
 // -------------------------
-// Polling (updates ALL cards)
+// Polling
 // -------------------------
 async function updateDashboard() {
   const res = await fetch("/api/sensors", { cache: "no-store" });
@@ -216,18 +225,15 @@ async function updateDashboard() {
 
   const data = state.data || {};
 
-  // Sensor cards (includes Relay + Servo special UI)
   qsa(".sensor-card").forEach(card => {
     const name = card.id;
 
-    // Tool cards handled below (LED_TOOL removed)
     const isTool = (name === "BUZZER" || name === "LCD_TOOL");
     if (isTool) return;
 
     const active = !!state[name];
     card.classList.toggle("active", active);
 
-    // Relay special UI
     if (name === "Relay") {
       const d = data.Relay || {};
       const anyOn = !!(d.ch1 || d.ch2 || d.ch3 || d.ch4);
@@ -239,7 +245,6 @@ async function updateDashboard() {
       return;
     }
 
-    // Servo special UI
     if (name === "servomotor") {
       const d = data.servomotor || {};
       const el = qs("#servo-status");
@@ -251,7 +256,6 @@ async function updateDashboard() {
       return;
     }
 
-    // Normal sensor card value
     const val = card.querySelector(".sensor-value");
     if (!val) return;
 
@@ -272,7 +276,6 @@ async function updateDashboard() {
     }
   });
 
-  // Tool status cards (LED_TOOL removed)
   updateBuzzerStatus(data.BUZZER || { on: false });
   updateLcdStatus(data.LCD_TOOL || { line1: "", line2: "" });
 }
