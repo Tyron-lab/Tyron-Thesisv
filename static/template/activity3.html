@@ -19,35 +19,36 @@
 
     <header class="act-header">
       <h1>Group 3 Activity</h1>
-      <p>I²C &amp; Integration</p>
+      <p>I²C Sensors &amp; Integration</p>
     </header>
 
     <section aria-label="Activity 3 Exercises">
       <h2 class="section-title">Exercises</h2>
 
       <div class="cards">
+
         <!-- EX 11 -->
         <article class="exercise-card"
           data-exercise="a3-ex11"
           data-image="/images/ex11.jpg"
           data-image2="/images/ex11_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 11: I2C Sensor Reading"
-          data-say-text="This exercise reads the BMP280 sensor using I2C and displays the values on the LCD.">
+          data-say-title="Exercise 11: BMP280 Temperature & Pressure"
+          data-say-text="Reads temperature and pressure from BMP280 via I2C (through TCA9548A mux) and displays clean values on the LCD.">
           <div class="ex-card-head">
-            <h3>Exercise 11: I²C Sensor Reading</h3>
+            <h3>Exercise 11: BMP280 on LCD</h3>
             <span class="pill">BMP280 • I²C</span>
           </div>
-          <p class="ex-desc">Read BMP280 through I²C and show pressure/temperature on LCD.</p>
+          <p class="ex-desc">Displays real-time temperature (°C) and pressure (kPa) from BMP280 sensor on the LCD using I²C mux.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> BMP280</span>
-            <span><b>Output:</b> LCD</span>
+            <span><b>Input:</b> BMP280 (mux CH2)</span>
+            <span><b>Output:</b> LCD (T &amp; P)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex11">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex11">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex11">Speak</button>
-            <span class="status" data-status-for="a3-ex11">Checking...</span>
+            <span class="status" data-status-for="a3-ex11">Ready</span>
           </div>
         </article>
 
@@ -57,22 +58,22 @@
           data-image="/images/MPU6500.jpg"
           data-image2="/images/MPU6500_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 12: Motion Sensor Data"
-          data-say-text="This exercise reads motion values from the MPU6050 and shows the status on screen or LCD.">
+          data-say-title="Exercise 12: MPU6050 Motion Status"
+          data-say-text="Reads accelerometer and gyroscope from MPU6050 via I2C and classifies motion as STILL or MOVING.">
           <div class="ex-card-head">
-            <h3>Exercise 12: Motion Sensor Data</h3>
-            <span class="pill">MPU6050</span>
+            <h3>Exercise 12: MPU6050 Motion Status</h3>
+            <span class="pill">MPU6050 • Motion</span>
           </div>
-          <p class="ex-desc">Read accelerometer and gyroscope values from MPU6050.</p>
+          <p class="ex-desc">Detects movement using accel &amp; gyro thresholds. Shows STILL / MOVING + debug values on LCD.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> MPU6050</span>
-            <span><b>Output:</b> Status display</span>
+            <span><b>Input:</b> MPU6050 (mux CH1)</span>
+            <span><b>Output:</b> LCD motion status</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex12">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex12">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex12">Speak</button>
-            <span class="status" data-status-for="a3-ex12">Checking...</span>
+            <span class="status" data-status-for="a3-ex12">Ready</span>
           </div>
         </article>
 
@@ -82,22 +83,22 @@
           data-image="/images/ex13.jpg"
           data-image2="/images/ex13_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 13: Display Output"
-          data-say-text="This exercise formats sensor readings and prints them cleanly to the LCD.">
+          data-say-title="Exercise 13: Multi-Sensor Formatted Display"
+          data-say-text="Cycles through DHT11, BMP280, and MQ Gas sensor readings with clean, readable formatting on the LCD.">
           <div class="ex-card-head">
-            <h3>Exercise 13: Display Output</h3>
-            <span class="pill">Format • LCD</span>
+            <h3>Exercise 13: Formatted Multi-Sensor Display</h3>
+            <span class="pill">DHT11 • BMP280 • GAS</span>
           </div>
-          <p class="ex-desc">Format readings into a clean display output for LCD.</p>
+          <p class="ex-desc">Cycles every 3 seconds: DHT11 (T/H), BMP280 (T/P), Gas sensor (level % + ALERT/OK) with nice formatting.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Sensor values</span>
-            <span><b>Output:</b> LCD text</span>
+            <span><b>Input:</b> DHT11, BMP280, MQ Gas DO</span>
+            <span><b>Output:</b> LCD (cycling screens)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex13">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex13">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex13">Speak</button>
-            <span class="status" data-status-for="a3-ex13">Checking...</span>
+            <span class="status" data-status-for="a3-ex13">Ready</span>
           </div>
         </article>
 
@@ -107,22 +108,22 @@
           data-image="/images/ex14.jpg"
           data-image2="/images/ex14_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 14: Multiple I2C Devices"
-          data-say-text="This exercise uses multiple I2C devices on the same bus and checks correct readings from each device.">
+          data-say-title="Exercise 14: Multiple I²C Devices"
+          data-say-text="Reads from BMP280 and MPU6050 on the same I²C bus using TCA9548A mux channels and cycles their data on LCD.">
           <div class="ex-card-head">
-            <h3>Exercise 14: Multiple I²C Devices</h3>
+            <h3>Exercise 14: BMP280 + MPU6050</h3>
             <span class="pill">Multi • I²C</span>
           </div>
-          <p class="ex-desc">Read from multiple I²C devices correctly and display results.</p>
+          <p class="ex-desc">Demonstrates two I²C sensors sharing the bus via mux. Cycles BMP280 (T/P) and MPU6050 (motion) screens.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Multiple I²C</span>
-            <span><b>Output:</b> Combined status</span>
+            <span><b>Input:</b> BMP280 + MPU6050 (mux)</span>
+            <span><b>Output:</b> LCD cycling</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex14">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex14">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex14">Speak</button>
-            <span class="status" data-status-for="a3-ex14">Checking...</span>
+            <span class="status" data-status-for="a3-ex14">Ready</span>
           </div>
         </article>
 
@@ -132,28 +133,30 @@
           data-image="/images/ex15.jpg"
           data-image2="/images/ex15_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 15: Communication Error"
-          data-say-text="This exercise simulates an I2C communication error and shows an error indicator on the LED or LCD.">
+          data-say-title="Exercise 15: I²C Communication Check"
+          data-say-text="Scans for LCD, BMP280 and MPU6050 on the I²C bus. GREEN = all present, RED = any missing, with LCD details.">
           <div class="ex-card-head">
-            <h3>Exercise 15: Communication Error</h3>
+            <h3>Exercise 15: I²C Device Check</h3>
             <span class="pill">Error • I²C</span>
           </div>
-          <p class="ex-desc">Detect missing or disconnected I²C device and show an error status.</p>
+          <p class="ex-desc">Strict I²C presence test: GREEN LED = all devices OK, RED = missing device(s). Shows exact missing sensors on LCD + orange blink while checking.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Missing device</span>
-            <span><b>Output:</b> Error indicator</span>
+            <span><b>Input:</b> I²C bus scan</span>
+            <span><b>Output:</b> RGB LEDs + LCD</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex15">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex15">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex15">Speak</button>
-            <span class="status" data-status-for="a3-ex15">Checking...</span>
+            <span class="status" data-status-for="a3-ex15">Ready</span>
           </div>
         </article>
+
       </div>
     </section>
   </div>
 
+  <!-- MODAL -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>

@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Group 2 Activity • TrainerKit</title>
 
-  <!-- ✅ reuse activity1.css -->
   <link rel="stylesheet" href="/static/css/activity1.css" />
 </head>
 
@@ -20,142 +19,137 @@
 
     <header class="act-header">
       <h1>Group 2 Activity</h1>
-      <p>Data &amp; Safety Checks</p>
+      <p>Sound & Safety Monitoring</p>
     </header>
 
     <h2 class="section-title">Exercises</h2>
 
     <section class="cards" aria-label="Activity 2 Exercises">
 
-      <!-- EX 6 -->
       <article class="exercise-card"
         data-exercise="a2-ex6"
-        data-image="/static/gui/images/ex6.jpg"
-        data-image2="/static/gui/images/ex6_2.jpg"
+        data-image="/static/images/ex6.jpg"
+        data-image2="/static/images/ex6_2.jpg"
         tabindex="0" role="button"
-        data-say-title="Exercise 6: Normal versus Abnormal Data"
-        data-say-text="This exercise checks sensor values and decides if they are normal or abnormal. Normal means stable. Abnormal means warning or blinking.">
+        data-say-title="Exercise 6: Clap Switch"
+        data-say-text="Detects single clap to toggle GREEN LED ON, double clap to turn it OFF. Uses smart noise rejection and anti-false-trigger logic.">
         <div class="ex-card-head">
-          <h3>Exercise 6: Normal vs Abnormal Data</h3>
-          <span class="pill">Check • Status</span>
+          <h3>Exercise 6: Clap Switch</h3>
+          <span class="pill">INMP441 • Toggle</span>
         </div>
-        <p class="ex-desc">System checks readings if normal or abnormal, then shows status using LEDs or LCD.</p>
+        <p class="ex-desc">Listens for 1 clap → GREEN LED ON / 2 claps → GREEN LED OFF. Includes warmup, spike detection, and re-arm logic to avoid false triggers.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> Sensor values</span>
-          <span><b>Output:</b> Status indicator</span>
+          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Output:</b> GREEN LED (D6)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex6">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex6">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex6">Speak</button>
-          <span class="status" data-status-for="a2-ex6">Checking</span>
+          <span class="status" data-status-for="a2-ex6">Ready</span>
         </div>
       </article>
 
-      <!-- EX 7 -->
       <article class="exercise-card"
         data-exercise="a2-ex7"
-        data-image="/static/gui/images/ex7.jpg"
-        data-image2="/static/gui/images/ex7_2.jpg"
+        data-image="/static/images/ex7.jpg"
+        data-image2="/static/images/ex7_2.jpg"
         tabindex="0" role="button"
-        data-say-title="Exercise 7: Gas Safety Check"
-        data-say-text="This exercise reads the gas sensor and decides if the air is safe or unsafe. If unsafe, it triggers a warning indicator.">
+        data-say-title="Exercise 7: Sound Level Indicator with Running Lights"
+        data-say-text="Classifies ambient sound into QUIET (GREEN), MODERATE (running lights), LOUD (solid RED). MID level shows animated traffic-light pattern.">
         <div class="ex-card-head">
-          <h3>Exercise 7: Gas Safety Check</h3>
-          <span class="pill">MQ • Safety</span>
+          <h3>Exercise 7: Sound Level Indicator</h3>
+          <span class="pill">INMP441 • 3 Levels</span>
         </div>
-        <p class="ex-desc">Checks gas level and triggers warning when the reading is unsafe.</p>
+        <p class="ex-desc">Shows sound intensity: solid GREEN = quiet, running G→O→R pattern = moderate, solid RED = loud. Uses adaptive thresholds.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> MQ sensor</span>
-          <span><b>Output:</b> Warning</span>
+          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Output:</b> LEDs (D5 red, D6 green, D13 orange)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex7">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex7">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex7">Speak</button>
-          <span class="status" data-status-for="a2-ex7">Checking</span>
+          <span class="status" data-status-for="a2-ex7">Ready</span>
         </div>
       </article>
 
-      <!-- EX 8 -->
       <article class="exercise-card"
         data-exercise="a2-ex8"
-        data-image="/static/gui/images/ex8.jpg"
-        data-image2="/static/gui/images/ex8_2.jpg"
+        data-image="/static/images/ex8.jpg"
+        data-image2="/static/images/ex8_2.jpg"
         tabindex="0" role="button"
-        data-say-title="Exercise 8: Motion Activity Check"
-        data-say-text="This exercise counts multiple motion detections and classifies activity level. It displays low, normal, or high activity.">
+        data-say-title="Exercise 8: Noise Level Classifier"
+        data-say-text="Classifies current noise level into quiet (GREEN), moderate (ORANGE), or too noisy (RED) using adaptive thresholds and anti-flicker hold.">
         <div class="ex-card-head">
-          <h3>Exercise 8: Motion Activity Check</h3>
-          <span class="pill">PIR • Count</span>
+          <h3>Exercise 8: Noise Level Classifier</h3>
+          <span class="pill">INMP441 • 3 States</span>
         </div>
-        <p class="ex-desc">Counts motion events and shows activity level as low, normal, or high.</p>
+        <p class="ex-desc">Real-time noise classification with hold logic to prevent rapid LED flickering. GREEN = quiet, ORANGE = moderate, RED = noisy.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> Motion events</span>
-          <span><b>Output:</b> Activity status</span>
+          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Output:</b> LEDs (D5 red, D6 green, D13 orange)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex8">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex8">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex8">Speak</button>
-          <span class="status" data-status-for="a2-ex8">Checking</span>
+          <span class="status" data-status-for="a2-ex8">Ready</span>
         </div>
       </article>
 
-      <!-- EX 9 -->
       <article class="exercise-card"
         data-exercise="a2-ex9"
-        data-image="/static/gui/images/ex9.jpg"
-        data-image2="/static/gui/images/ex9_2.jpg"
+        data-image="/static/images/ex9.jpg"
+        data-image2="/static/images/ex9_2.jpg"
         tabindex="0" role="button"
-        data-say-title="Exercise 9: Temperature Alert"
-        data-say-text="This exercise checks the temperature against a safe range. If the temperature is too high, it triggers an alert using buzzer or LED.">
+        data-say-title="Exercise 9: Voice Activated System"
+        data-say-text="Detects when someone is speaking → shows 'VOICE DETECTED' on LCD and beeps buzzer briefly. Includes cooldown and minimum duration filter.">
         <div class="ex-card-head">
-          <h3>Exercise 9: Temperature Alert</h3>
-          <span class="pill">DHT • Alert</span>
+          <h3>Exercise 9: Voice Activated System</h3>
+          <span class="pill">INMP441 • Voice + LCD</span>
         </div>
-        <p class="ex-desc">Compares temperature to safe range and triggers buzzer or warning if too hot.</p>
+        <p class="ex-desc">Activates on sustained voice/speech: updates LCD message and beeps buzzer (2 beeps). Uses adaptive threshold and voice duration check.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> Temperature</span>
-          <span><b>Output:</b> Alert</span>
+          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Output:</b> LCD + Buzzer (D21)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex9">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex9">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex9">Speak</button>
-          <span class="status" data-status-for="a2-ex9">Checking</span>
+          <span class="status" data-status-for="a2-ex9">Ready</span>
         </div>
       </article>
 
-      <!-- EX 10 -->
       <article class="exercise-card"
         data-exercise="a2-ex10"
-        data-image="/static/gui/images/ex10.jpg"
-        data-image2="/static/gui/images/ex10_2.jpg"
+        data-image="/static/images/ex10.jpg"
+        data-image2="/static/images/ex10_2.jpg"
         tabindex="0" role="button"
-        data-say-title="Exercise 10: Overall Safety Status"
-        data-say-text="This exercise checks multiple sensors and gives an overall system status. It shows safe or unsafe using LED or LCD.">
+        data-say-title="Exercise 10: Loud Sound Alert System"
+        data-say-text="Detects sudden loud sounds → activates buzzer alarm + blinking RED + ORANGE LEDs. Includes hold time, cooldown, and optional LCD message.">
         <div class="ex-card-head">
-          <h3>Exercise 10: Overall Safety Status</h3>
-          <span class="pill">Overall • Safe</span>
+          <h3>Exercise 10: Loud Sound Alert</h3>
+          <span class="pill">INMP441 • Alarm</span>
         </div>
-        <p class="ex-desc">Combines multiple sensor checks and shows overall SAFE or UNSAFE status.</p>
+        <p class="ex-desc">Triggers alarm (buzzer + blinking red/orange LEDs) when loud sound is detected for a minimum duration. Features cooldown and adaptive threshold.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> Multiple sensors</span>
-          <span><b>Output:</b> Overall status</span>
+          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Output:</b> Buzzer (D21) + Red LED (D5) + Orange LED (D13) + optional LCD</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex10">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex10">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex10">Speak</button>
-          <span class="status" data-status-for="a2-ex10">Checking</span>
+          <span class="status" data-status-for="a2-ex10">Ready</span>
         </div>
       </article>
 
     </section>
   </main>
 
-  <!-- ✅ MODAL (Popup) -->
+  <!-- MODAL -->
   <div class="modal-overlay" id="exModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
@@ -183,7 +177,6 @@
     </div>
   </div>
 
-  <!-- ✅ correct Flask static path -->
   <script src="/static/js/activity1.js" defer></script>
 </body>
 </html>

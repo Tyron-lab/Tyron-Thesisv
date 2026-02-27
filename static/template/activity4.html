@@ -19,7 +19,7 @@
 
     <header class="act-header">
       <h1>Group 4 Activity</h1>
-      <p>Outputs &amp; Control (LED • Buzzer • Relay)</p>
+      <p>Sensor-Triggered Outputs (LED • Buzzer • Relay • Servo)</p>
     </header>
 
     <section aria-label="Activity 4 Exercises">
@@ -32,22 +32,22 @@
           data-image="/images/ex16.jpg"
           data-image2="/images/ex16_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 16: Power Indicator"
-          data-say-text="System start sequence. Power LED turns on and relays run a loading sequence, then steady on.">
+          data-say-title="Exercise 16: PIR Motion Servo Control"
+          data-say-text="Detects motion with PIR sensor and spins continuous rotation servo fast; stops completely on no motion.">
           <div class="ex-card-head">
-            <h3>Exercise 16: Power Indicator</h3>
-            <span class="pill">LED • Relay</span>
+            <h3>Exercise 16: PIR → Servo Spin</h3>
+            <span class="pill">PIR • Servo</span>
           </div>
-          <p class="ex-desc">Boot/Loading: LED + relay sequence. Running: LED ON + relays ON.</p>
+          <p class="ex-desc">Motion detected → servo spins fast; no motion → total stop (pulses off).</p>
           <div class="ex-meta">
-            <span><b>Input:</b> System start</span>
-            <span><b>Output:</b> Power LED + Relay sequence</span>
+            <span><b>Input:</b> PIR sensor (D22)</span>
+            <span><b>Output:</b> Continuous servo (D12)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex16">Run</button>
             <button class="stop-btn" type="button" data-stop="a4-ex16">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex16">Speak</button>
-            <span class="status" data-status-for="a4-ex16">Checking...</span>
+            <span class="status" data-status-for="a4-ex16">Ready</span>
           </div>
         </article>
 
@@ -57,22 +57,22 @@
           data-image="/images/ex17.jpg"
           data-image2="/images/ex17_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 17: Warning Indicator"
-          data-say-text="Abnormal event triggers warning LED and relay alarm pattern. Normal event turns everything off.">
+          data-say-title="Exercise 17: Voice-Controlled LEDs"
+          data-say-text="Uses Vosk speech recognition to turn LEDs on/off with commands like 'open red' or 'close green'. Supports red, orange, green.">
           <div class="ex-card-head">
-            <h3>Exercise 17: Warning Indicator</h3>
-            <span class="pill">LED • Relay</span>
+            <h3>Exercise 17: Voice LED Control</h3>
+            <span class="pill">Mic • LEDs</span>
           </div>
-          <p class="ex-desc">Abnormal = Warning LED ON + relay alarm sequence. Normal = LED OFF + relays OFF.</p>
+          <p class="ex-desc">Speech commands (open/close + color) control red (D5), orange (D13), green (D6) LEDs. Uses Vosk model with grammar.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Abnormal / Normal event</span>
-            <span><b>Output:</b> Warning LED + Relay pattern</span>
+            <span><b>Input:</b> Microphone (speech)</span>
+            <span><b>Output:</b> RGB LEDs</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex17">Run</button>
             <button class="stop-btn" type="button" data-stop="a4-ex17">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex17">Speak</button>
-            <span class="status" data-status-for="a4-ex17">Checking...</span>
+            <span class="status" data-status-for="a4-ex17">Ready</span>
           </div>
         </article>
 
@@ -82,22 +82,22 @@
           data-image="/images/ex18.jpg"
           data-image2="/images/ex18_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 18: Sound Alert"
-          data-say-text="Unsafe condition activates buzzer alert. Stop turns the buzzer off.">
+          data-say-title="Exercise 18: Clap-Triggered Relay Pattern"
+          data-say-text="Detects claps to toggle a sequential relay pattern across 4 channels; claps again to stop and turn all off.">
           <div class="ex-card-head">
-            <h3>Exercise 18: Sound Alert</h3>
-            <span class="pill">Buzzer</span>
+            <h3>Exercise 18: Clap Relay Sequence</h3>
+            <span class="pill">Mic • Relays</span>
           </div>
-          <p class="ex-desc">Buzzer sounds as an alert during unsafe conditions.</p>
+          <p class="ex-desc">Clap toggles pattern: relays cycle ON/OFF sequentially (CH1→CH2→CH3→CH4). Active-low relays with threshold and cooldown.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Unsafe status</span>
-            <span><b>Output:</b> Buzzer</span>
+            <span><b>Input:</b> Microphone (clap)</span>
+            <span><b>Output:</b> 4 Relays (D27, D10, D26, D25)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex18">Run</button>
             <button class="stop-btn" type="button" data-stop="a4-ex18">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex18">Speak</button>
-            <span class="status" data-status-for="a4-ex18">Checking...</span>
+            <span class="status" data-status-for="a4-ex18">Ready</span>
           </div>
         </article>
 
@@ -107,22 +107,22 @@
           data-image="/images/ex19.jpg"
           data-image2="/images/ex19_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 19: Device Control"
-          data-say-text="Relay control for external device. Supports relay switching and relay sequence on 4-channel relay module.">
+          data-say-title="Exercise 19: Intrusion Alert System"
+          data-say-text="PIR motion triggers red LED, buzzer beep pattern, and LCD alert; returns to secure on no motion.">
           <div class="ex-card-head">
-            <h3>Exercise 19: Device Control</h3>
-            <span class="pill">Relay • 4CH</span>
+            <h3>Exercise 19: PIR Intrusion Alert</h3>
+            <span class="pill">PIR • LED • Buzzer • LCD</span>
           </div>
-          <p class="ex-desc">Control external devices using a 4-channel relay (ON/OFF/TOGGLE/SEQUENCE).</p>
+          <p class="ex-desc">Motion → red LED ON, buzzer beeps (0.15s on/0.12s off), LCD "INTRUDER ALERT"; no motion → all off, LCD "SECURE".</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Command</span>
-            <span><b>Output:</b> Relay switching (4 relays)</span>
+            <span><b>Input:</b> PIR sensor (D22)</span>
+            <span><b>Output:</b> Red LED (D5), Buzzer (D21), LCD</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex19">Run</button>
             <button class="stop-btn" type="button" data-stop="a4-ex19">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex19">Speak</button>
-            <span class="status" data-status-for="a4-ex19">Checking...</span>
+            <span class="status" data-status-for="a4-ex19">Ready</span>
           </div>
         </article>
 
@@ -132,22 +132,22 @@
           data-image="/images/ex20.jpg"
           data-image2="/images/ex20_2.jpg"
           tabindex="0" role="button"
-          data-say-title="Exercise 20: Status Feedback"
-          data-say-text="System state feedback using patterns. LEDs and 4 relays run synchronized sequences to show state changes.">
+          data-say-title="Exercise 20: Ultrasonic Object Response"
+          data-say-text="Ultrasonic detects near object (<=20cm) → servo to 90°, orange LED on, buzzer beeps; far → servo to 0° (off), all off.">
           <div class="ex-card-head">
-            <h3>Exercise 20: Status Feedback</h3>
-            <span class="pill">Pattern • LED • Relay</span>
+            <h3>Exercise 20: Ultrasonic Smart Response</h3>
+            <span class="pill">HC-SR04 • Servo • LED • Buzzer</span>
           </div>
-          <p class="ex-desc">State change updates patterns: LED sequence + 4-relay synchronized sequence.</p>
+          <p class="ex-desc">Near (<=20cm) → servo 90° hold, orange ON, buzzer beep (0.1s on/off); far → servo 0° (off), all off. Reads every 0.12s.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> State change</span>
-            <span><b>Output:</b> LED pattern + Relay pattern</span>
+            <span><b>Input:</b> Ultrasonic (D23 trig, D24 echo)</span>
+            <span><b>Output:</b> Servo (D12), Orange LED (D5), Buzzer (D21)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a4-ex20">Run</button>
             <button class="stop-btn" type="button" data-stop="a4-ex20">Stop</button>
             <button class="speak-btn" type="button" data-speak="a4-ex20">Speak</button>
-            <span class="status" data-status-for="a4-ex20">Checking...</span>
+            <span class="status" data-status-for="a4-ex20">Ready</span>
           </div>
         </article>
       </div>
