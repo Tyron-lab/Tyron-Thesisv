@@ -1,26 +1,19 @@
-/* activity1.js (FULL UPDATED)
-   Goal: Make Activities 1-5 behave like Tools in real-time (multi-phone):
-   - Activities 1-4 Run/Stop -> /api/toggle (same server sensor threads used by Tools)
-   - Activity 5 (a5-ex21/22/23/24/25) Run/Stop -> /api/exercise (MQTT scripts)
-   - Adds /api/focus sync so ONE activity is "focused" and other phones lock UI
+/* activity1.js — FULL UPDATED
+   MODE A (default): Activities behave like Tools (use /api/toggle + live status across phones)
+   MODE B (optional): SHIFT + click "Run" to run the actual Exercise#.py via /api/exercise
+   Multi-phone lock: /api/focus
 
-   Requires server.py additions (see section 2 below):
-     GET/POST /api/focus
-
-   Existing backend used:
-     POST /api/toggle   {sensor:"PIR"} etc
-     GET  /api/sensors
-     GET  /api/mic_wave  (optional; we don’t force it)
-     POST /api/exercise  {exercise_id:"a5-ex21"}
-     POST /api/exercise_stop  {}
-     GET  /api/exercise_status
-     GET  /api/exercise_logs (for a5-ex23)
+   Requires server.py:
+     - /api/focus
+     - /api/toggle
+     - /api/sensors
+     - /api/exercise /api/exercise_stop /api/exercise_status /api/exercise_logs
+     - /api/a5/latest /api/a5/command
 */
 
 (() => {
   const API_TOGGLE = "/api/toggle";
   const API_SENSORS = "/api/sensors";
-  const API_MIC_WAVE = "/api/mic_wave";
 
   const API_RUN = "/api/exercise";
   const API_STOP = "/api/exercise_stop";
@@ -30,14 +23,11 @@
   const API_A5_LATEST = "/api/a5/latest";
   const API_A5_COMMAND = "/api/a5/command";
 
-  const API_FOCUS = "/api/focus"; // NEW (server.py addition)
+  const API_FOCUS = "/api/focus";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-  // -------------------------
-  // HTTP helpers
-  // -------------------------
   async function postJSON(url, payload) {
     const res = await fetch(url, {
       method: "POST",
@@ -58,32 +48,26 @@
     return { ok: res.ok, status: res.status, data, text };
   }
 
-  // -------------------------
-  // Exercise -> Sensors mapping (Activities 1-4 use /api/toggle)
-  // -------------------------
+  // Activity 1–4 mapping to Tools sensors (MODE A)
   const EX_TOGGLE_MAP = {
-    // Activity 1
     "a1-ex1": ["PIR"],
     "a1-ex2": ["MHMQ"],
     "a1-ex3": ["DHT11", "LCD_TOOL"],
     "a1-ex4": ["ULTRASONIC", "BUZZER"],
     "a1-ex5": ["BMP280", "LCD_TOOL"],
 
-    // Activity 2
-    "a2-ex6": ["DHT11", "PIR", "MHMQ"],     // “normal/abnormal” uses multiple readings
+    "a2-ex6": ["DHT11", "PIR", "MHMQ"],
     "a2-ex7": ["MHMQ"],
     "a2-ex8": ["PIR"],
     "a2-ex9": ["DHT11", "BUZZER"],
     "a2-ex10": ["DHT11", "PIR", "MHMQ", "BMP280"],
 
-    // Activity 3
     "a3-ex11": ["BMP280", "LCD_TOOL"],
     "a3-ex12": ["MPU6050"],
     "a3-ex13": ["LCD_TOOL"],
     "a3-ex14": ["BMP280", "MPU6050", "LCD_TOOL"],
     "a3-ex15": ["BMP280", "MPU6050", "LCD_TOOL"],
 
-    // Activity 4
     "a4-ex16": ["Relay"],
     "a4-ex17": ["Relay"],
     "a4-ex18": ["BUZZER"],
@@ -91,14 +75,9 @@
     "a4-ex20": ["Relay"],
   };
 
-  // Activity 5 uses the script runner (MQTT exercises)
-  const EX_RUNNER_SET = new Set([
-    "a5-ex21", "a5-ex22", "a5-ex23", "a5-ex24", "a5-ex25",
-  ]);
+  // Activity 5 still uses runner/MQTT
+  const EX_RUNNER_SET = new Set(["a5-ex21", "a5-ex22", "a5-ex23", "a5-ex24", "a5-ex25"]);
 
-  // -------------------------
-  // UI status helper
-  // -------------------------
   function setStatus(exId, text, state = "") {
     const el = qs(`[data-status-for="${CSS.escape(exId)}"]`);
     if (el) el.textContent = text;
@@ -110,10 +89,69 @@
     }
   }
 
-  // -------------------------
-  // Focus / Busy lock (shared across phones)
-  // -------------------------
-  let currentRunningEx = null; // UI local mirror of server focus
+  // ---------- speech ----------
+  function speak(text) {
+    try {
+      if (!("speechSynthesis" in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1;
+      u.pitch = 1;
+      u.lang = "en-US";
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+
+  // ---------- modal ----------
+  const modal = qs("#exModal");
+  const modalClose = qs("#modalClose");
+  const modalTitle = qs("#modalTitle");
+  const modalDesc = qs("#modalDesc");
+  const modalMeta = qs("#modalMeta");
+  const modalImg = qs("#modalImg");
+  const modalImg2 = qs("#modalImg2");
+  const modalRunBtn = qs("#modalRunBtn");
+  const modalStopBtn = qs("#modalStopBtn");
+  const modalSpeakBtn = qs("#modalSpeakBtn");
+
+  // A5 EX21 live panel
+  const a5LivePanel = qs("#a5LivePanel");
+  const a5Dot = qs("#a5Dot");
+  const a5ConnText = qs("#a5ConnText");
+  const a5Temp = qs("#a5Temp");
+  const a5Motion = qs("#a5Motion");
+  const a5Noise = qs("#a5Noise");
+  const a5Updated = qs("#a5Updated");
+  const a5Raw = qs("#a5Raw");
+
+  // A5 EX22 commands panel
+  const a5CmdPanel = qs("#a5CmdPanel");
+  const a5CmdDot = qs("#a5CmdDot");
+  const a5CmdText = qs("#a5CmdText");
+  const a5CmdLast = qs("#a5CmdLast");
+  const a5CmdRaw = qs("#a5CmdRaw");
+
+  const cmdLightOn  = qs("#cmdLightOn");
+  const cmdLightOff = qs("#cmdLightOff");
+  const cmdGateOpen = qs("#cmdGateOpen");
+  const cmdGateClose= qs("#cmdGateClose");
+  const cmdLedGreen = qs("#cmdLedGreen");
+  const cmdAllOff   = qs("#cmdAllOff");
+
+  // A5 EX23 storage
+  const a5StorePanel   = qs("#a5StorePanel");
+  const a5StoreDot     = qs("#a5StoreDot");
+  const a5StoreText    = qs("#a5StoreText");
+  const a5StorePath    = qs("#a5StorePath");
+  const a5StoreLast    = qs("#a5StoreLast");
+  const a5StoreCount   = qs("#a5StoreCount");
+  const a5StoreUpdated = qs("#a5StoreUpdated");
+  const a5StoreRaw     = qs("#a5StoreRaw");
+
+  let modalExerciseId = null;
+
+  // ---------- busy/lock UI (multi-phone focus) ----------
+  let currentRunningEx = null;
 
   function setBusyUI(runningExId) {
     const hasRunning = !!runningExId;
@@ -122,7 +160,6 @@
       const exId = card.dataset.exercise;
       const isThis = hasRunning && exId === runningExId;
 
-      // Lock other cards completely (not touchable), focus on one
       if (hasRunning && !isThis) {
         if (card.dataset.prevTabindex === undefined) {
           card.dataset.prevTabindex = card.getAttribute("tabindex") ?? "";
@@ -145,7 +182,6 @@
         card.style.filter = "";
       }
 
-      // Buttons
       const btns = qsa("button", card);
       btns.forEach((btn) => {
         const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
@@ -165,7 +201,6 @@
       });
     });
 
-    // Modal buttons too
     if (hasRunning && modalExerciseId && modalExerciseId !== runningExId) {
       if (modalRunBtn) modalRunBtn.disabled = true;
       if (modalSpeakBtn) modalSpeakBtn.disabled = true;
@@ -176,7 +211,6 @@
   }
 
   async function setFocus(exId, running) {
-    // "by" is optional; helpful for debugging who started it
     const by = (navigator.userAgent || "phone").slice(0, 40);
     await postJSON(API_FOCUS, { exercise_id: exId, running: !!running, by }).catch(() => {});
   }
@@ -199,80 +233,11 @@
     if (exId && exId !== currentRunningEx) {
       currentRunningEx = exId;
       setBusyUI(currentRunningEx);
-      // Mark only that as running
-      qsa(".exercise-card[data-exercise]").forEach((card) => {
-        const id = card.dataset.exercise;
-        if (id === currentRunningEx) setStatus(id, "Running...", "state-running");
-      });
+      setStatus(currentRunningEx, "Running...", "state-running");
     }
   }
 
-  // -------------------------
-  // Speech (unchanged)
-  // -------------------------
-  function speak(text) {
-    try {
-      if (!("speechSynthesis" in window)) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1; u.pitch = 1; u.lang = "en-US";
-      window.speechSynthesis.speak(u);
-    } catch {}
-  }
-
-  // -------------------------
-  // MODAL (same structure as before + A5 panels)
-  // -------------------------
-  const modal = qs("#exModal");
-  const modalClose = qs("#modalClose");
-  const modalTitle = qs("#modalTitle");
-  const modalDesc = qs("#modalDesc");
-  const modalMeta = qs("#modalMeta");
-  const modalImg = qs("#modalImg");
-  const modalImg2 = qs("#modalImg2");
-  const modalRunBtn = qs("#modalRunBtn");
-  const modalStopBtn = qs("#modalStopBtn");
-  const modalSpeakBtn = qs("#modalSpeakBtn");
-
-  // A5 EX21
-  const a5LivePanel = qs("#a5LivePanel");
-  const a5Dot = qs("#a5Dot");
-  const a5ConnText = qs("#a5ConnText");
-  const a5Temp = qs("#a5Temp");
-  const a5Motion = qs("#a5Motion");
-  const a5Noise = qs("#a5Noise");
-  const a5Updated = qs("#a5Updated");
-  const a5Raw = qs("#a5Raw");
-
-  // A5 EX22
-  const a5CmdPanel = qs("#a5CmdPanel");
-  const a5CmdDot = qs("#a5CmdDot");
-  const a5CmdText = qs("#a5CmdText");
-  const a5CmdLast = qs("#a5CmdLast");
-  const a5CmdRaw = qs("#a5CmdRaw");
-
-  const cmdLightOn  = qs("#cmdLightOn");
-  const cmdLightOff = qs("#cmdLightOff");
-  const cmdGateOpen = qs("#cmdGateOpen");
-  const cmdGateClose= qs("#cmdGateClose");
-  const cmdLedGreen = qs("#cmdLedGreen");
-  const cmdAllOff   = qs("#cmdAllOff");
-
-  // A5 EX23 storage panel
-  const a5StorePanel   = qs("#a5StorePanel");
-  const a5StoreDot     = qs("#a5StoreDot");
-  const a5StoreText    = qs("#a5StoreText");
-  const a5StorePath    = qs("#a5StorePath");
-  const a5StoreLast    = qs("#a5StoreLast");
-  const a5StoreCount   = qs("#a5StoreCount");
-  const a5StoreUpdated = qs("#a5StoreUpdated");
-  const a5StoreRaw     = qs("#a5StoreRaw");
-
-  let modalExerciseId = null;
-
-  // -------------------------
-  // A5 helpers (same behavior)
-  // -------------------------
+  // ---------- A5 helpers ----------
   let a5Timer = null;
 
   function setA5Conn(state, text) {
@@ -307,9 +272,9 @@
     const payload = r.data.payload || null;
     const raw = r.data.raw || "";
 
-    let t = payload && (payload.temperature ?? payload.temp ?? payload.Temperature);
-    let m = payload && (payload.motion ?? payload.pir ?? payload.Motion);
-    let n = payload && (payload.noise ?? payload.sound ?? payload.Noise);
+    const t = payload && (payload.temperature ?? payload.temp ?? payload.Temperature);
+    const m = payload && (payload.motion ?? payload.pir ?? payload.Motion);
+    const n = payload && (payload.noise ?? payload.sound ?? payload.Noise);
 
     if (a5Temp) a5Temp.textContent = safeVal(t);
     if (a5Motion) a5Motion.textContent = safeVal(m);
@@ -457,7 +422,7 @@
     if (a5StorePanel) a5StorePanel.hidden = true;
   }
 
-  // Modal open/close
+  // ---------- modal open/close ----------
   function openModalFromCard(card) {
     if (!modal) return;
     const exId = card.dataset.exercise || "";
@@ -485,11 +450,10 @@
       });
     }
 
-    if (modalRunBtn)  modalRunBtn.onclick  = () => startExercise(exId);
+    if (modalRunBtn)  modalRunBtn.onclick  = () => startExercise(exId, false);
     if (modalStopBtn) modalStopBtn.onclick = () => stopExercise(exId);
     if (modalSpeakBtn) modalSpeakBtn.onclick = () => speak(`${title}. ${desc}`);
 
-    // A5 panels
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
     if (exId === "a5-ex22") startA5Commands();  else stopA5Commands();
     if (exId === "a5-ex23") startA5StoragePanel(); else stopA5StoragePanel();
@@ -498,7 +462,6 @@
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
 
-    // Lock modal buttons if another exercise is focused
     setBusyUI(currentRunningEx);
   }
 
@@ -520,13 +483,8 @@
   }
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
-  // -------------------------
-  // START/STOP (multi-phone focus)
-  // -------------------------
-  async function toggleSensor(sensor, desiredOn) {
-    // server /api/toggle is flip-only, so we’ll flip until matches desired state
-    // BUT: we can just flip once when starting/stopping; polling keeps everyone synced.
-    // Best effort: one toggle per sensor.
+  // ---------- MODE A: toggle helper ----------
+  async function toggleOnce(sensor) {
     const { ok, data, text } = await postJSON(API_TOGGLE, { sensor });
     if (!ok || !data || data.ok === false) {
       throw new Error((data && (data.error || data.message)) || text || "Toggle failed");
@@ -534,10 +492,10 @@
     return data;
   }
 
-  async function startExercise(exId) {
+  // ---------- START/STOP ----------
+  async function startExercise(exId, forceScriptMode) {
     if (!exId) return;
 
-    // Sync first (if other phone already running)
     await syncFocusFromServer();
     if (currentRunningEx && currentRunningEx !== exId) {
       setStatus(exId, `BUSY (running: ${currentRunningEx})`);
@@ -545,38 +503,46 @@
       return;
     }
 
-    // Set focus globally first (so other phones lock immediately)
     await setFocus(exId, true);
     currentRunningEx = exId;
     setBusyUI(currentRunningEx);
     setStatus(exId, "Running...", "state-running");
 
-    // Activity 5 -> script runner
-    if (EX_RUNNER_SET.has(exId)) {
+    // MODE B: SHIFT run => run python script
+    if (forceScriptMode) {
       const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
       if (!ok) {
-        setStatus(exId, "Error", "state-error");
         await setFocus(exId, false);
         currentRunningEx = null;
         setBusyUI(null);
+        setStatus(exId, "Error", "state-error");
         throw new Error((data && (data.error || data.message)) || text || "Run failed");
       }
-      // If Ex23 is running and modal open, ensure panel is on
-      if (exId === "a5-ex23" && modalExerciseId === "a5-ex23") startA5StoragePanel();
       return;
     }
 
-    // Activities 1-4 -> toggle sensors ON
+    // Activity 5 always uses runner/MQTT (even in mode A)
+    if (EX_RUNNER_SET.has(exId)) {
+      const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
+      if (!ok) {
+        await setFocus(exId, false);
+        currentRunningEx = null;
+        setBusyUI(null);
+        setStatus(exId, "Error", "state-error");
+        throw new Error((data && (data.error || data.message)) || text || "Run failed");
+      }
+      return;
+    }
+
+    // MODE A: Activities 1–4 behave like Tools => toggle sensors
     const sensors = EX_TOGGLE_MAP[exId] || [];
     try {
-      for (const s of sensors) {
-        await toggleSensor(s, true);
-      }
+      for (const s of sensors) await toggleOnce(s);
     } catch (e) {
-      setStatus(exId, "Error", "state-error");
       await setFocus(exId, false);
       currentRunningEx = null;
       setBusyUI(null);
+      setStatus(exId, "Error", "state-error");
       throw e;
     }
   }
@@ -584,7 +550,6 @@
   async function stopExercise(requestedExId = null) {
     await syncFocusFromServer();
 
-    // If someone tries to stop not-running focus
     if (!currentRunningEx) {
       if (requestedExId) setStatus(requestedExId, "Ready");
       setBusyUI(null);
@@ -592,7 +557,6 @@
     }
 
     if (requestedExId && requestedExId !== currentRunningEx) {
-      // can't stop other running exercise
       setStatus(requestedExId, `BUSY (running: ${currentRunningEx})`);
       setBusyUI(currentRunningEx);
       return;
@@ -601,21 +565,15 @@
     const exId = currentRunningEx;
     setStatus(exId, "Stopping...");
 
-    // Activity 5 -> stop runner script
-    if (EX_RUNNER_SET.has(exId)) {
-      const { ok, data, text } = await postJSON(API_STOP, {});
-      if (!ok) {
-        setStatus(exId, "Stop failed", "state-error");
-        throw new Error((data && (data.error || data.message)) || text || "Stop failed");
-      }
-      // panels
-      if (modalExerciseId !== "a5-ex23") stopA5StoragePanel();
-    } else {
-      // Activities 1-4 -> toggle sensors OFF
+    // Stop runner scripts (covers Activity5 and ModeB scripts)
+    const { ok } = await postJSON(API_STOP, {});
+    // ok can be false when nothing is running on backend; that’s fine for Mode A toggles
+
+    if (!EX_RUNNER_SET.has(exId) && !ok) {
+      // MODE A only: toggle mapped sensors OFF (best-effort: toggle once each)
       const sensors = EX_TOGGLE_MAP[exId] || [];
-      // best-effort: flip once per sensor
       for (const s of sensors) {
-        try { await toggleSensor(s, false); } catch {}
+        try { await toggleOnce(s); } catch {}
       }
     }
 
@@ -625,23 +583,33 @@
     setBusyUI(null);
   }
 
-  // -------------------------
-  // LIVE STATUS TEXT (multi-phone realtime)
-  // -------------------------
+  // Runner watcher: if script ends, clear focus
+  async function refreshRunnerStatusIfNeeded() {
+    if (!currentRunningEx) return;
+
+    const r = await getJSON(API_STATUS);
+    if (!r.ok || !r.data) return;
+
+    const running = !!r.data.running;
+    if (!running) {
+      const finishedId = currentRunningEx;
+      await setFocus(finishedId, false);
+      currentRunningEx = null;
+      setBusyUI(null);
+      setStatus(finishedId, "Finished");
+    }
+  }
+
+  // ---------- LIVE STATUS TEXT (all activities) ----------
   function fmt(n, digits = 1) {
     if (n === null || n === undefined) return "—";
     if (typeof n !== "number") return String(n);
     return n.toFixed(digits);
   }
 
-  function computeExStatus(exId, sensorsResp, micResp) {
+  function computeExStatus(exId, sensorsResp) {
     const data = sensorsResp?.data || {};
-    const state = sensorsResp || {};
 
-    // Helper for “ON/OFF”
-    const onOff = (v) => (v ? "ON" : "OFF");
-
-    // Activity 1
     if (exId === "a1-ex1") {
       const pir = data.PIR || {};
       return `PIR: ${pir.motion ? "MOTION" : "NO"} • Count: ${pir.count ?? 0}`;
@@ -657,144 +625,31 @@
     if (exId === "a1-ex4") {
       const u = data.ULTRASONIC || {};
       const bz = (data.BUZZER || {}).on;
-      return `Dist: ${fmt(u.distance_cm)}cm • Buzzer: ${onOff(bz)}`;
+      return `Dist: ${fmt(u.distance_cm)}cm • Buzzer: ${bz ? "ON" : "OFF"}`;
     }
     if (exId === "a1-ex5") {
       const b = data.BMP280 || {};
-      return `Temp: ${fmt(b.temperature)}°C • Press: ${fmt(b.pressure, 0)}Pa`;
+      return `Temp: ${fmt(b.temperature)}°C • Press: ${fmt(b.pressure, 0)}`;
     }
 
-    // Activity 2
-    if (exId === "a2-ex6") {
-      const dht = data.DHT11 || {};
-      const mq = data.MHMQ || {};
-      const pir = data.PIR || {};
-      const ok = (dht.temperature ?? 0) < 35 && !mq.gas_detected;
-      return `Check: ${ok ? "NORMAL" : "ABNORMAL"} • PIR:${pir.count ?? 0} • Gas:${mq.gas_detected ? "YES" : "NO"}`;
-    }
-    if (exId === "a2-ex7") {
-      const mq = data.MHMQ || {};
-      return `Safety: ${mq.gas_detected ? "UNSAFE" : "SAFE"} • Level: ${fmt(mq.level_percent, 0)}%`;
-    }
-    if (exId === "a2-ex8") {
-      const pir = data.PIR || {};
-      return `Motion Count: ${pir.count ?? 0} • Now: ${pir.motion ? "MOTION" : "NO"}`;
-    }
-    if (exId === "a2-ex9") {
-      const dht = data.DHT11 || {};
-      const hot = (dht.temperature ?? 0) >= 35;
-      return `Temp: ${fmt(dht.temperature)}°C • Alert: ${hot ? "HOT" : "OK"}`;
-    }
-    if (exId === "a2-ex10") {
-      const dht = data.DHT11 || {};
-      const mq = data.MHMQ || {};
-      const pir = data.PIR || {};
-      const b = data.BMP280 || {};
-      const safe = !mq.gas_detected && (dht.temperature ?? 0) < 35;
-      return `Overall: ${safe ? "SAFE" : "UNSAFE"} • T:${fmt(dht.temperature)} • Gas:${mq.gas_detected ? "YES" : "NO"} • PIR:${pir.count ?? 0} • P:${fmt(b.pressure, 0)}`;
-    }
-
-    // Activity 3
-    if (exId === "a3-ex11") {
-      const b = data.BMP280 || {};
-      return `BMP: ${fmt(b.temperature)}°C • ${fmt(b.pressure, 0)}Pa`;
-    }
-    if (exId === "a3-ex12") {
-      const m = data.MPU6050 || {};
-      return `AX:${fmt(m.ax)} AY:${fmt(m.ay)} AZ:${fmt(m.az)} • GX:${fmt(m.gx)} GY:${fmt(m.gy)} GZ:${fmt(m.gz)}`;
-    }
-    if (exId === "a3-ex13") {
-      const lcd = data.LCD_TOOL || {};
-      return `LCD: "${(lcd.line1 || "").slice(0, 12)}" / "${(lcd.line2 || "").slice(0, 12)}"`;
-    }
-    if (exId === "a3-ex14") {
-      const b = data.BMP280 || {};
-      const m = data.MPU6050 || {};
-      return `I2C OK • BMP:${fmt(b.temperature)}°C • MPU AX:${fmt(m.ax)}`;
-    }
-    if (exId === "a3-ex15") {
-      // We can’t truly detect missing device without a dedicated backend flag,
-      // but we can reflect “error” fields if set.
-      const b = data.BMP280 || {};
-      const m = data.MPU6050 || {};
-      const err = (b.error || "") || (m.error || "");
-      return err ? `I2C Error: ${err}` : "I2C: No error reported";
-    }
-
-    // Activity 4
-    if (exId === "a4-ex16") {
-      const r = data.Relay || {};
-      return `Relay CH1:${onOff(r.ch1)} CH2:${onOff(r.ch2)} CH3:${onOff(r.ch3)} CH4:${onOff(r.ch4)}`;
-    }
-    if (exId === "a4-ex17") {
-      const r = data.Relay || {};
-      return `Warning Pattern • CH1:${onOff(r.ch1)} CH2:${onOff(r.ch2)} CH3:${onOff(r.ch3)} CH4:${onOff(r.ch4)}`;
-    }
-    if (exId === "a4-ex18") {
-      const bz = (data.BUZZER || {}).on;
-      return `Buzzer: ${onOff(bz)}`;
-    }
-    if (exId === "a4-ex19") {
-      const r = data.Relay || {};
-      return `Relay Control • ${onOff(r.ch1)}/${onOff(r.ch2)}/${onOff(r.ch3)}/${onOff(r.ch4)}`;
-    }
-    if (exId === "a4-ex20") {
-      const r = data.Relay || {};
-      return `Sync Pattern • ${onOff(r.ch1)}-${onOff(r.ch2)}-${onOff(r.ch3)}-${onOff(r.ch4)}`;
-    }
-
-    // Activity 5 (still show something small on card)
-    if (exId === "a5-ex21") return "MQTT publish → check popup";
-    if (exId === "a5-ex22") return "MQTT subscribe → use popup buttons";
-    if (exId === "a5-ex23") return "Saving telemetry → check popup";
-    if (exId === "a5-ex24") return "MQTT relay control";
-    if (exId === "a5-ex25") return "MQTT sensors subscribe";
+    if (EX_RUNNER_SET.has(exId)) return "Use Run/Stop";
 
     return "Ready";
   }
 
   async function refreshLiveCards() {
     const sensors = await getJSON(API_SENSORS);
-    let mic = null;
-    // optional mic endpoint (safe if server has it)
-    try { mic = await getJSON(API_MIC_WAVE); } catch {}
+    if (!sensors.ok || !sensors.data) return;
 
     qsa(".exercise-card[data-exercise]").forEach((card) => {
       const exId = card.dataset.exercise;
-      // If running, keep "Running..." label (don’t overwrite)
       if (currentRunningEx && exId === currentRunningEx) return;
-
-      const txt = computeExStatus(exId, sensors?.data, mic?.data);
+      const txt = computeExStatus(exId, sensors.data);
       setStatus(exId, txt);
     });
   }
 
-  // -------------------------
-  // Runner status watcher (for Activity 5 scripts)
-  // -------------------------
-  async function refreshRunnerStatusIfNeeded() {
-    if (!currentRunningEx) return;
-    if (!EX_RUNNER_SET.has(currentRunningEx)) return;
-
-    const r = await getJSON(API_STATUS);
-    if (!r.ok) return;
-
-    const isRunning = !!(r.data && r.data.running);
-    if (!isRunning) {
-      // runner ended, clear focus
-      const exId = currentRunningEx;
-      await setFocus(exId, false);
-      currentRunningEx = null;
-      setBusyUI(null);
-
-      // mark finished
-      setStatus(exId, "Finished");
-    }
-  }
-
-  // -------------------------
-  // Bind cards + buttons
-  // -------------------------
+  // ---------- bind cards ----------
   qsa(".exercise-card").forEach((card) => {
     card.addEventListener("click", (e) => {
       const target = e.target;
@@ -810,14 +665,24 @@
     });
   });
 
+  // Run buttons
   qsa("button.run-btn[data-run]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      try { await startExercise(btn.dataset.run); }
-      catch (err) { alert(String(err.message || err)); }
+      const exId = btn.dataset.run;
+
+      // ✅ SHIFT => Mode B script
+      const useScript = !!e.shiftKey;
+
+      try {
+        await startExercise(exId, useScript);
+      } catch (err) {
+        alert(String(err.message || err));
+      }
     });
   });
 
+  // Stop buttons
   qsa("button.stop-btn[data-stop]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -826,6 +691,7 @@
     });
   });
 
+  // Speak buttons
   qsa("button.speak-btn[data-speak]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -838,9 +704,7 @@
     });
   });
 
-  // -------------------------
-  // Init
-  // -------------------------
+  // ---------- init ----------
   qsa(".exercise-card[data-exercise]").forEach((card) => {
     const exId = card.dataset.exercise;
     setStatus(exId, "Ready");
@@ -848,11 +712,7 @@
 
   setBusyUI(null);
 
-  // Main realtime loops:
-  //  - sync focus across phones
-  //  - refresh live sensor text (like Tools)
-  //  - keep runner scripts in sync
   setInterval(() => { syncFocusFromServer().catch(() => {}); }, 500);
-  setInterval(() => { refreshLiveCards().catch(() => {}); }, 700);
+  setInterval(() => { refreshLiveCards().catch(() => {}); }, 800);
   setInterval(() => { refreshRunnerStatusIfNeeded().catch(() => {}); }, 900);
 })();
