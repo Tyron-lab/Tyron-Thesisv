@@ -1,9 +1,12 @@
 /* =============================================
    SENSOR DASHBOARD – FRONTEND LOGIC (FULL)
    - Shows values for ALL sensors
-   - Adds missing toggleRelay() / toggleServo()
-   - ✅ LED_TOOL REMOVED
-   - ✅ MIC added (INMP441)
+   - Adds toggleRelay() / toggleServo()
+   - ✅ MIC now uses VOSK + LIVE WAVE (no clap)
+   - Uses:
+        GET  /api/sensors      (main polling)
+        GET  /api/mic_wave     (fast wave + text)
+        POST /api/mic_command  (clear command, optional)
 ============================================= */
 
 const qs  = (sel, root = document) => root.querySelector(sel);
@@ -35,7 +38,7 @@ async function postJSON(url, payload) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(payload || {}),
   });
   const data = await safeJson(res);
   return { ok: res.ok, data };
@@ -50,7 +53,7 @@ qsa(".sensor-card:not(.disabled)").forEach(card => {
   // Exclude relay/servo (they use inline onclick)
   if (id === "Relay" || id === "servomotor") return;
 
-  // Exclude tools
+  // Exclude tools (they use buttons)
   if (id === "BUZZER" || id === "LCD_TOOL") return;
 
   card.addEventListener("click", async () => {
@@ -178,13 +181,22 @@ function formatSensorValue(name, data) {
     return `${t} °C • ${h}%`;
   }
 
+  // ✅ MIC: voice + audio level (no clap)
   if (name === "MIC") {
     const peak = data.peak;
-    const rms = data.rms;
-    const claps = data.claps ?? 0;
+    const rms  = data.rms;
     const p = (peak == null) ? "—" : Number(peak).toFixed(3);
-    const r = (rms == null) ? "—" : Number(rms).toFixed(3);
-    return `Peak: ${p} • RMS: ${r} • Claps: ${claps}`;
+    const r = (rms  == null) ? "—" : Number(rms).toFixed(3);
+
+    const text = (data.text || "").trim();
+    const partial = (data.partial || "").trim();
+    const cmd = (data.command || "").trim();
+
+    const speechLine = cmd
+      ? `CMD: ${cmd}`
+      : (text ? `Text: ${text}` : (partial ? `... ${partial}` : "Say: open / hello"));
+
+    return `Peak: ${p} • RMS: ${r} • ${speechLine}`;
   }
 
   if (name === "MHMQ") {
@@ -216,7 +228,7 @@ function formatSensorValue(name, data) {
 }
 
 // -------------------------
-// Polling
+// MAIN Polling (ALL sensors)
 // -------------------------
 async function updateDashboard() {
   const res = await fetch("/api/sensors", { cache: "no-store" });
@@ -256,6 +268,21 @@ async function updateDashboard() {
       return;
     }
 
+    // MIC card has special UI (wave + mic-line), but keep fallback too
+    if (name === "MIC") {
+      const micLine = qs("#mic-line");
+      if (micLine) {
+        micLine.textContent = active ? formatSensorValue("MIC", data.MIC || {}) : "—";
+        micLine.style.opacity = active ? "1" : "0.6";
+        micLine.style.color = (data.MIC?.error) ? "#ef4444" : "";
+      }
+      const micSmall = qs("#mic-small");
+      if (micSmall && data.MIC?.last_update) {
+        micSmall.textContent = `Last: ${new Date(data.MIC.last_update).toLocaleTimeString()}`;
+      }
+      return;
+    }
+
     const val = card.querySelector(".sensor-value");
     if (!val) return;
 
@@ -282,3 +309,103 @@ async function updateDashboard() {
 
 setInterval(updateDashboard, 900);
 updateDashboard();
+
+// -------------------------
+// MIC WAVE (fast polling)
+// -------------------------
+const micCanvas = qs("#mic-wave");
+const micCtx = micCanvas ? micCanvas.getContext("2d") : null;
+
+let micLastCommandAt = null;
+
+function drawMicWave(arr) {
+  if (!micCanvas || !micCtx) return;
+  const w = micCanvas.width;
+  const h = micCanvas.height;
+
+  micCtx.clearRect(0, 0, w, h);
+
+  if (!arr || !arr.length) return;
+
+  // normalize for visible plot
+  let max = 0.0001;
+  for (const v of arr) max = Math.max(max, v || 0);
+  const scale = 0.95 / max;
+
+  micCtx.beginPath();
+  const mid = h * 0.5;
+
+  for (let i = 0; i < arr.length; i++) {
+    const x = (i / (arr.length - 1)) * w;
+    const y = mid - (arr[i] * scale) * mid;
+    if (i === 0) micCtx.moveTo(x, y);
+    else micCtx.lineTo(x, y);
+  }
+
+  micCtx.stroke();
+}
+
+async function pollMicWave() {
+  // Only poll if canvas exists on page
+  if (!micCanvas) return;
+
+  try {
+    const res = await fetch("/api/mic_wave", { cache: "no-store" });
+    const d = await safeJson(res);
+    if (!res.ok || !d || d.ok === false) return;
+
+    // update live wave
+    drawMicWave(Array.isArray(d.wave) ? d.wave : []);
+
+    // update mic line using mic_wave payload (more real-time)
+    const micLine = qs("#mic-line");
+    if (micLine) {
+      const active = !!d.active;
+      if (!active) {
+        micLine.textContent = "—";
+        micLine.style.opacity = "0.6";
+      } else {
+        const peak = (d.peak == null) ? "—" : Number(d.peak).toFixed(3);
+        const rms  = (d.rms  == null) ? "—" : Number(d.rms).toFixed(3);
+
+        const text = (d.text || "").trim();
+        const partial = (d.partial || "").trim();
+        const cmd = (d.command || "").trim();
+
+        let speechLine = cmd
+          ? `CMD: ${cmd}`
+          : (text ? `Text: ${text}` : (partial ? `... ${partial}` : "Say: open / hello"));
+
+        if (d.error) speechLine = `Error: ${d.error}`;
+
+        micLine.textContent = `Peak: ${peak} • RMS: ${rms} • ${speechLine}`;
+        micLine.style.opacity = "1";
+        micLine.style.color = d.error ? "#ef4444" : "";
+      }
+    }
+
+    const micSmall = qs("#mic-small");
+    if (micSmall && d.last_update) {
+      micSmall.textContent = `Last: ${new Date(d.last_update).toLocaleTimeString()}`;
+    }
+
+    // one-shot command handling (optional)
+    if (d.command && d.command_at && d.command_at !== micLastCommandAt) {
+      micLastCommandAt = d.command_at;
+
+      // Example hook:
+      // if (d.command === "open") { ... }
+      // if (d.command === "hello") { ... }
+
+      // Clear command so it doesn't re-trigger
+      try { await postJSON("/api/mic_command", { clear: true }); } catch(e) {}
+    }
+
+  } catch (e) {
+    // ignore; dashboard still works
+  }
+}
+
+// fast poll to look live but not lag
+setInterval(pollMicWave, 120);
+pollMicWave();

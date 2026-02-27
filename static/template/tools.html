@@ -96,9 +96,17 @@
           <img src="/static/images/MIC.jpg" alt="INMP441 Mic" />
           <h3>INMP441 Mic</h3>
         </div>
-        <p>Clap detection • Audio level</p>
-        <div class="sensor-value">—</div>
-        <small class="last-update"></small>
+
+        <p>Voice trigger: <b>open</b> / <b>hello</b> / <b>hello hello</b></p>
+
+        <!-- LIVE WAVE -->
+        <canvas id="mic-wave"
+          width="700" height="110"
+          style="width:100%; height:110px; border-radius:12px; border:1px solid rgba(255,255,255,.12); margin-top:8px;">
+        </canvas>
+
+        <div class="sensor-value" id="mic-line">—</div>
+        <small class="last-update" id="mic-small"></small>
       </div>
 
       <!-- Relay -->
@@ -143,6 +151,8 @@
         <div class="sensor-value" id="lcd-status">—</div>
         <small class="last-update"></small>
       </div>
+
+      <!-- BUZZER TOOL (if you have a buzzer card elsewhere keep it; if not, ignore) -->
 
     </div>
   </div>
