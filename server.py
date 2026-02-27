@@ -557,7 +557,7 @@ def set_all_relays(on: bool) -> bool:
 # ────────────────────────────────────────────────
 #   SERVO
 # ────────────────────────────────────────────────
-SERVO_PIN = getattr(board, "D18", None) if SENSORS_AVAILABLE.get("board") else None
+SERVO_PIN = getattr(board, "D12", None) if SENSORS_AVAILABLE.get("board") else None
 FREQUENCY = 50
 MIN_PULSE = 500
 MAX_PULSE = 2500

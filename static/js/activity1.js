@@ -126,11 +126,16 @@
     const running = !!r.data.running;
     const exId = r.data.exercise_id || null;
 
+    // ✅ FIX: when focus is cleared, reset ALL cards to Ready on ALL phones
     if (!running) {
-      if (currentRunningEx) {
-        currentRunningEx = null;
-        setBusyUI(null);
-      }
+      currentRunningEx = null;
+      setBusyUI(null);
+
+      qsa(".exercise-card[data-exercise]").forEach((card) => {
+        const id = card.dataset.exercise;
+        setStatus(id, "Ready");
+      });
+
       return;
     }
 
@@ -212,7 +217,7 @@
 
   let modalExerciseId = null;
 
-  // A5 helpers (popup only; doesn’t affect card indicators)
+  // A5 helpers (popup only)
   let a5Timer = null;
 
   function setA5Conn(state, text) {
@@ -428,7 +433,6 @@
     if (modalStopBtn) modalStopBtn.onclick = () => stopExercise(exId);
     if (modalSpeakBtn) modalSpeakBtn.onclick = () => speak(`${title}. ${desc}`);
 
-    // A5 popup-only panels
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
     if (exId === "a5-ex22") startA5Commands();  else stopA5Commands();
     if (exId === "a5-ex23") startA5StoragePanel(); else stopA5StoragePanel();
@@ -510,14 +514,12 @@
     currentRunningEx = null;
     setBusyUI(null);
 
-    // reset others to Ready (no indicators)
     qsa(".exercise-card[data-exercise]").forEach((card) => {
       const id = card.dataset.exercise;
       if (id !== exId) setStatus(id, "Ready");
     });
   }
 
-  // If backend finishes naturally, clear focus across phones
   async function refreshRunnerStatus() {
     if (!currentRunningEx) return;
     const r = await getJSON(API_STATUS);
@@ -530,6 +532,7 @@
       currentRunningEx = null;
       setBusyUI(null);
       setStatus(doneId, "Finished");
+
       qsa(".exercise-card[data-exercise]").forEach((card) => {
         const id = card.dataset.exercise;
         if (id !== doneId) setStatus(id, "Ready");
@@ -592,7 +595,6 @@
 
   setBusyUI(null);
 
-  // Multi-phone syncing
   setInterval(() => { syncFocusFromServer().catch(() => {}); }, 500);
   setInterval(() => { refreshRunnerStatus().catch(() => {}); }, 900);
 })();
