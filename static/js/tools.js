@@ -1,7 +1,6 @@
 /* =============================================
-   SENSOR DASHBOARD – FRONTEND LOGIC (FULL)
-   - Shows values for ALL sensors
-   - Adds missing toggleRelay() / toggleServo()
+   SENSOR DASHBOARD – FRONTEND LOGIC
+   - LED completely removed
 ============================================= */
 
 const qs  = (sel, root = document) => root.querySelector(sel);
@@ -19,7 +18,7 @@ function setSmall(cardId, text) {
   el.textContent = text ?? "";
 }
 
-function setCardText(cardId, text, isError=false) {
+function setCardText(cardId, text, isError = false) {
   const card = document.getElementById(cardId);
   if (!card) return;
   const el = card.querySelector(".sensor-value");
@@ -39,206 +38,129 @@ async function postJSON(url, payload) {
   return { ok: res.ok, data };
 }
 
-// -------------------------
-// Sensor card toggles
-// -------------------------
+// Sensor card toggles (skip relay/servo since they use inline onclick)
 qsa(".sensor-card:not(.disabled)").forEach(card => {
   const id = card.id;
-
-  // Exclude relay/servo (they use inline onclick)
   if (id === "Relay" || id === "servomotor") return;
 
-  // Exclude tools
-  if (id === "LED_TOOL" || id === "BUZZER" || id === "LCD_TOOL") return;
-
   card.addEventListener("click", async () => {
-    const r = await postJSON("/api/toggle", { sensor: id });
-
-    if (!r.ok || r.data?.ok === false) {
-      const msg = r.data?.error || "Toggle failed";
-      setCardText(id, `Error: ${msg}`, true);
-      return;
+    const active = card.classList.toggle("active");
+    const { ok, data } = await postJSON("/api/toggle", { name: id, active });
+    if (!ok) {
+      card.classList.toggle("active", !active); // revert on failure
+      console.error(`Toggle ${id} failed:`, data?.error);
     }
-
-    // show backend-side init errors immediately if any
-    if (r.data?.error) setCardText(id, `Error: ${r.data.error}`, true);
   });
 });
 
-// -------------------------
-// Relay + Servo (MISSING BEFORE)
-// -------------------------
-async function toggleRelay() {
-  const r = await postJSON("/api/toggle", { sensor: "Relay" });
-  if (!r.ok || r.data?.ok === false) {
-    setCardText("Relay", `Error: ${r.data?.error || "Relay toggle failed"}`, true);
+// Relay channel toggles
+async function toggleRelay(channel) {
+  const { ok, data } = await postJSON("/api/toggle", { name: "Relay", channel });
+  if (!ok) {
+    console.error(`Toggle Relay ${channel} failed:`, data?.error);
+  } else {
+    updateDashboard(); // refresh UI
   }
 }
 
-async function toggleServo() {
-  const r = await postJSON("/api/toggle", { sensor: "servomotor" });
-  if (!r.ok || r.data?.ok === false) {
-    setCardText("servomotor", `Error: ${r.data?.error || "Servo toggle failed"}`, true);
+// Servo angle slider
+const servoSlider = qs("#servo-angle");
+if (servoSlider) {
+  servoSlider.addEventListener("input", async (e) => {
+    const angle = parseInt(e.target.value, 10);
+    const { ok, data } = await postJSON("/api/toggle", { name: "servomotor", angle });
+    if (!ok) {
+      console.error("Servo angle failed:", data?.error);
+    } else {
+      qs("#servo-value").textContent = `${angle}°`;
+    }
+  });
+}
+
+// Buzzer toggle (if using card click) – optional if you have direct button
+async function buzzerToggle() {
+  const card = qs("#BUZZER");
+  if (!card) return;
+  const active = card.classList.toggle("active");
+  const { ok, data } = await postJSON("/api/toggle", { name: "BUZZER", active });
+  if (!ok) {
+    card.classList.toggle("active", !active);
+    console.error("Buzzer toggle failed:", data?.error);
   }
 }
 
-// expose for inline onclick in HTML
-window.toggleRelay = toggleRelay;
-window.toggleServo = toggleServo;
-
-// -------------------------
-// Tool controls
-// -------------------------
-function ledToggle(color) {
-  postJSON("/api/led", { color, action: "toggle" })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) setCardText("LED_TOOL", `Error: ${r.data?.error || "LED failed"}`, true);
-    })
-    .catch(e => setCardText("LED_TOOL", `Error: ${String(e)}`, true));
+// LCD send / clear
+async function lcdSend() {
+  const line1 = qs("#lcd-line1")?.value ?? "";
+  const line2 = qs("#lcd-line2")?.value ?? "";
+  const { ok, data } = await postJSON("/api/toggle", { name: "LCD_TOOL", line1, line2 });
+  if (!ok) console.error("LCD send failed:", data?.error);
 }
 
-function buzzerToggle() {
-  postJSON("/api/buzzer", { mode: "toggle" })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) {
-        setCardText("BUZZER", `Error: ${r.data?.error || "Buzzer failed"}`, true);
-        return;
-      }
-      updateBuzzerStatus({ on: !!r.data?.on });
-    })
-    .catch(e => setCardText("BUZZER", `Error: ${String(e)}`, true));
+async function lcdClear() {
+  const { ok, data } = await postJSON("/api/toggle", { name: "LCD_TOOL", clear: true });
+  if (!ok) {
+    console.error("LCD clear failed:", data?.error);
+  } else {
+    qs("#lcd-line1").value = "";
+    qs("#lcd-line2").value = "";
+  }
 }
 
-function buzzerBeep() {
-  postJSON("/api/buzzer", { mode: "beep", count: 2, on_ms: 140, off_ms: 140 })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) {
-        setCardText("BUZZER", `Error: ${r.data?.error || "Beep failed"}`, true);
-        return;
-      }
-      updateBuzzerStatus({ on: false });
-    })
-    .catch(e => setCardText("BUZZER", `Error: ${String(e)}`, true));
-}
-
-function lcdSend() {
-  const line1 = (qs("#lcd-line1")?.value || "").trim();
-  const line2 = (qs("#lcd-line2")?.value || "").trim();
-
-  postJSON("/api/lcd", { line1, line2 })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) {
-        setCardText("LCD_TOOL", `Error: ${r.data?.error || "LCD failed"}`, true);
-        return;
-      }
-      updateLcdStatus({ line1, line2 });
-    })
-    .catch(e => setCardText("LCD_TOOL", `Error: ${String(e)}`, true));
-}
-
-function lcdClear() {
-  postJSON("/api/lcd", { clear: true })
-    .then(r => {
-      if (!r.ok || r.data?.ok === false) {
-        setCardText("LCD_TOOL", `Error: ${r.data?.error || "LCD clear failed"}`, true);
-        return;
-      }
-      updateLcdStatus({ line1: "", line2: "" });
-    })
-    .catch(e => setCardText("LCD_TOOL", `Error: ${String(e)}`, true));
-}
-
-window.ledToggle = ledToggle;
-window.buzzerToggle = buzzerToggle;
-window.buzzerBeep = buzzerBeep;
-window.lcdSend = lcdSend;
-window.lcdClear = lcdClear;
-
-// -------------------------
-// Status UI helpers
-// -------------------------
-function updateLedStatus(led) {
-  const el = qs("#led-status");
-  if (!el || !led) return;
-  el.textContent = `red:${led.red ? "ON" : "OFF"} • orange:${led.orange ? "ON" : "OFF"} • green:${led.green ? "ON" : "OFF"}`;
-}
-
-function updateBuzzerStatus(buz) {
-  const el = qs("#buzzer-status");
-  if (!el) return;
-  el.textContent = buz.on ? "ON" : "OFF";
-  el.style.color = buz.on ? "#22c55e" : "#ef4444";
-}
-
-function updateLcdStatus(lcd) {
-  const el = qs("#lcd-status");
-  if (!el) return;
-  const l1 = (lcd.line1 || "").slice(0, 16);
-  const l2 = (lcd.line2 || "").slice(0, 16);
-  el.textContent = (l1 || l2) ? `${l1} | ${l2}` : "—";
-}
-
-// -------------------------
-// Format ALL sensors (this was missing)
-// -------------------------
+// Formatting for display
 function formatSensorValue(name, data) {
-  if (!data) return "—";
-  if (data.error) return `Error: ${data.error}`;
+  if (!data || data.error) return data?.error ?? "Error";
 
-  if (name === "DHT11") {
-    const t = data.temperature;
-    const h = data.humidity;
-    if (t == null || h == null) return "Reading...";
-    return `${t} °C • ${h}%`;
+  switch (name) {
+    case "MPU6050":
+      const { ax, ay, az, gx, gy, gz } = data;
+      return `A: (${ax?.toFixed(2)}, ${ay?.toFixed(2)}, ${az?.toFixed(2)}) m/s²\nG: (${gx?.toFixed(2)}, ${gy?.toFixed(2)}, ${gz?.toFixed(2)}) °/s`;
+    case "BMP280":
+      return `Temp: ${data.temperature?.toFixed(1)}°C\nPressure: ${data.pressure?.toFixed(0)} hPa`;
+    case "DHT11":
+      return `Temp: ${data.temperature?.toFixed(1)}°C\nHumidity: ${data.humidity?.toFixed(0)}%`;
+    case "Relay":
+      return `CH1: ${data.ch1 ? "ON" : "OFF"} • CH2: ${data.ch2 ? "ON" : "OFF"}\nCH3: ${data.ch3 ? "ON" : "OFF"} • CH4: ${data.ch4 ? "ON" : "OFF"}`;
+    case "servomotor":
+      return `Angle: ${data.angle ?? 90}°`;
+    case "BUZZER":
+      return data.on ? "Beeping" : "Off";
+    case "LCD_TOOL":
+      return `${data.line1 ?? ""}\n${data.line2 ?? ""}`;
+    default:
+      return JSON.stringify(data, null, 2);
   }
-
-  if (name === "MHMQ") {
-    const lvl = (data.level_percent != null) ? `${data.level_percent}%` : "—";
-    return data.gas_detected ? `Gas Detected! (${lvl})` : `Clear (${lvl})`;
-  }
-
-  if (name === "PIR") {
-    return data.motion ? `MOTION! (${data.count ?? 0})` : `No motion (${data.count ?? 0})`;
-  }
-
-  if (name === "ULTRASONIC") {
-    if (data.distance_cm == null) return "Reading...";
-    return `${data.distance_cm} cm`;
-  }
-
-  if (name === "BMP280") {
-    if (data.temperature == null || data.pressure == null) return "Reading...";
-    return `${data.temperature} °C • ${data.pressure} hPa • ${data.altitude ?? "—"} m`;
-  }
-
-  if (name === "MPU6050") {
-    if (data.ax == null) return "Reading...";
-    const f = (v) => (typeof v === "number" ? v.toFixed(2) : v);
-    return `A:${f(data.ax)},${f(data.ay)},${f(data.az)} • G:${f(data.gx)},${f(data.gy)},${f(data.gz)}`;
-  }
-
-  return "—";
 }
 
-// -------------------------
-// Polling (updates ALL cards)
-// -------------------------
+// Buzzer status update
+function updateBuzzerStatus(data) {
+  const card = qs("#BUZZER");
+  if (!card) return;
+  const active = !!data.on;
+  card.classList.toggle("active", active);
+  const val = qs(".sensor-value", card);
+  if (val) val.textContent = active ? "Beeping" : "Off";
+}
+
+// LCD status update
+function updateLcdStatus(data) {
+  const card = qs("#LCD_TOOL");
+  if (!card) return;
+  const val = qs(".sensor-value", card);
+  if (val) val.textContent = `${data.line1 ?? ""}\n${data.line2 ?? ""}`;
+}
+
+// Main dashboard refresh
 async function updateDashboard() {
-  const res = await fetch("/api/sensors", { cache: "no-store" });
-  const state = await safeJson(res);
-  if (!res.ok || !state) return;
+  const res = await fetch("/api/sensors");
+  const data = await safeJson(res);
+  if (!data || !data.ok) return;
 
-  const data = state.data || {};
-
-  // Sensor cards (includes Relay + Servo special UI)
   qsa(".sensor-card").forEach(card => {
     const name = card.id;
+    if (!data[name]) return;
 
-    // Tool cards handled below
-    const isTool = (name === "LED_TOOL" || name === "BUZZER" || name === "LCD_TOOL");
-    if (isTool) return;
-
-    const active = !!state[name];
+    const active = !!data[name].active;
     card.classList.toggle("active", active);
 
     // Relay special UI
@@ -265,7 +187,7 @@ async function updateDashboard() {
       return;
     }
 
-    // Normal sensor card value
+    // Normal sensor value
     const val = card.querySelector(".sensor-value");
     if (!val) return;
 
@@ -286,8 +208,7 @@ async function updateDashboard() {
     }
   });
 
-  // Tool status cards
-  updateLedStatus(data.LED_TOOL || {});
+  // Update tool status (no LED)
   updateBuzzerStatus(data.BUZZER || { on: false });
   updateLcdStatus(data.LCD_TOOL || { line1: "", line2: "" });
 }
