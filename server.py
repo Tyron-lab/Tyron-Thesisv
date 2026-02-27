@@ -440,7 +440,7 @@ def init_tools_outputs():
 
     release_tools_outputs()
     time.sleep(0.05)
-        try:
+    try:
             _do_init()
             clear_error("BUZZER")
             return True
