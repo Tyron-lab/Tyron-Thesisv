@@ -444,7 +444,7 @@ def init_tools_outputs():
             _do_init()
             clear_error("BUZZER")
             return True
-        except Exception as e2:
+    except Exception as e2:
             set_error("BUZZER", f"init failed: {e2}")
             return False
 
