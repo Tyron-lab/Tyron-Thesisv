@@ -14,9 +14,13 @@ import sys
 import signal
 from collections import deque
 
+# ✅ NEW
 import json
 import atexit
 import paho.mqtt.client as mqtt
+
+# ✅ MIC + VOSK
+import queue
 
 # ────────────────────────────────────────────────
 #   Conditional imports – only load what we can
@@ -99,6 +103,22 @@ i2c_lock = threading.Lock()
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
+
+
+# ────────────────────────────────────────────────
+#   SHARED "FOCUS" STATE (multi-phone lock)
+#   Used by Activities pages to lock UI to one running exercise across devices
+#   API:
+#     GET  /api/focus
+#     POST /api/focus   {"exercise_id":"a1-ex1","running":true,"by":"..."}
+# ────────────────────────────────────────────────
+FOCUS_LOCK = threading.Lock()
+focus_state = {
+    "running": False,
+    "exercise_id": None,
+    "since": None,
+    "by": None,
+}
 
 # ────────────────────────────────────────────────
 #   SENSOR DATA/STATE
@@ -296,91 +316,48 @@ def init_mux():
         USE_MUX = False
         return False
 
-if SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("tca9548a"):
+if SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False):
     init_mux()
 
 # ────────────────────────────────────────────────
-#   LCD
+#   LCD TOOL (RPLCD)
 # ────────────────────────────────────────────────
-LCD_I2C_BUS = 1
+lcd = None
 LCD_ADDRS = [0x27, 0x3F]
 LCD_COLS = 16
 LCD_ROWS = 2
-_lcd = None
-_lcd_addr = None
 
-def mux_select_for_lcd():
+def init_lcd():
+    global lcd
     if not SENSORS_AVAILABLE.get("LCD"):
+        set_error("LCD_TOOL", "LCD libs not available")
         return False
-    if not USE_MUX:
-        return True
-    try:
-        with i2c_lock:
-            with SMBus(LCD_I2C_BUS) as bus:
-                bus.write_byte(MUX_ADDRESS, 1 << LCD_MUX_CH)
-        return True
-    except Exception as e:
-        set_error("LCD_TOOL", f"mux select failed: {e}")
+    if not SENSORS_AVAILABLE.get("board"):
+        set_error("LCD_TOOL", "board not available")
         return False
+    if lcd is not None:
+        return True
 
-def lcd_get():
-    global _lcd, _lcd_addr
-    if not SENSORS_AVAILABLE.get("LCD"):
-        set_error("LCD_TOOL", "LCD libraries not installed")
-        return None
-    if _lcd is not None:
-        return _lcd
-
-    if not mux_select_for_lcd():
-        return None
-
-    last_err = None
+    last = None
     for addr in LCD_ADDRS:
         try:
             with i2c_lock:
-                _lcd = CharLCD(
-                    "PCF8574",
-                    address=addr,
-                    port=LCD_I2C_BUS,
-                    cols=LCD_COLS,
-                    rows=LCD_ROWS,
-                    charmap="A00",
-                )
-                _lcd.clear()
-            _lcd_addr = addr
+                # RPLCD handles I2C internally; MUX isn’t used here by RPLCD directly.
+                lcd = CharLCD("PCF8574", address=addr, port=1, cols=LCD_COLS, rows=LCD_ROWS)
+                lcd.clear()
+            sensor_data["LCD_TOOL"].update({"line1": "", "line2": "", "last_update": now_iso(), "error": ""})
             clear_error("LCD_TOOL")
-            print(f"[LCD] OK addr=0x{addr:02X} mux_ch={LCD_MUX_CH if USE_MUX else 'direct'}")
-            return _lcd
+            print(f"[LCD] OK addr=0x{addr:02X}")
+            return True
         except Exception as e:
-            _lcd = None
-            last_err = e
+            lcd = None
+            last = e
 
-    set_error("LCD_TOOL", f"init failed: {last_err}")
-    return None
-
-def lcd_write(line1="", line2=""):
-    lcd = lcd_get()
-    if lcd is None:
-        return False
-    if not mux_select_for_lcd():
-        return False
-    try:
-        with i2c_lock:
-            lcd.clear()
-            lcd.write_string((line1 or "")[:LCD_COLS])
-            lcd.cursor_pos = (1, 0)
-            lcd.write_string((line2 or "")[:LCD_COLS])
-        sensor_data["LCD_TOOL"].update({"line1": line1, "line2": line2, "last_update": now_iso(), "error": ""})
-        return True
-    except Exception as e:
-        set_error("LCD_TOOL", f"write failed: {e}")
-        return False
+    set_error("LCD_TOOL", f"init failed: {last}")
+    return False
 
 def lcd_clear():
-    lcd = lcd_get()
-    if lcd is None:
-        return False
-    if not mux_select_for_lcd():
+    if not init_lcd():
         return False
     try:
         with i2c_lock:
@@ -388,439 +365,118 @@ def lcd_clear():
         sensor_data["LCD_TOOL"].update({"line1": "", "line2": "", "last_update": now_iso(), "error": ""})
         return True
     except Exception as e:
-        set_error("LCD_TOOL", f"clear failed: {e}")
+        set_error("LCD_TOOL", e)
         return False
 
-def lcd_release():
-    global _lcd
+def lcd_write(line1="", line2=""):
+    if not init_lcd():
+        return False
     try:
-        if _lcd is not None:
-            if mux_select_for_lcd():
-                with i2c_lock:
-                    _lcd.clear()
-            _lcd = None
-    except Exception:
-        _lcd = None
+        with i2c_lock:
+            lcd.clear()
+            lcd.cursor_pos = (0, 0)
+            lcd.write_string((line1 or "")[:LCD_COLS].ljust(LCD_COLS))
+            lcd.cursor_pos = (1, 0)
+            lcd.write_string((line2 or "")[:LCD_COLS].ljust(LCD_COLS))
+        sensor_data["LCD_TOOL"].update({"line1": line1, "line2": line2, "last_update": now_iso(), "error": ""})
+        return True
+    except Exception as e:
+        set_error("LCD_TOOL", e)
+        return False
 
 # ────────────────────────────────────────────────
-#   BUZZER (optional feedback for voice triggers)
+#   BUZZER
 # ────────────────────────────────────────────────
-BUZZER_PIN = board.D16 if SENSORS_AVAILABLE.get("board") else None
-BUZZER_ACTIVE_LOW = False
-buzzer = None
+BUZZER_ACTIVE_LOW = True
+buzzer_pin = None
 
-def make_out(pin, initial=False):
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.OUTPUT
-    io.value = bool(initial)
-    return io
-
-def release_tools_outputs():
-    global buzzer
-    _safe_deinit(buzzer)
-    buzzer = None
-
-def init_tools_outputs():
-    global buzzer
+def init_buzzer():
+    global buzzer_pin
     if not SENSORS_AVAILABLE.get("board"):
         set_error("BUZZER", "board not available")
         return False
-    if BUZZER_PIN is None:
-        set_error("BUZZER", "buzzer pin not set")
-        return False
-
-    def _do_init():
-        global buzzer
-        if buzzer is None:
-            off_value = True if BUZZER_ACTIVE_LOW else False
-            buzzer = make_out(BUZZER_PIN, off_value)
-
+    if buzzer_pin is not None:
+        return True
     try:
-        _do_init()
+        buzzer_pin = digitalio.DigitalInOut(board.D21)
+        buzzer_pin.direction = digitalio.Direction.OUTPUT
+        buzzer_pin.value = True if BUZZER_ACTIVE_LOW else False  # OFF
         clear_error("BUZZER")
+        print("[BUZZER] OK D21")
         return True
     except Exception as e:
-        release_tools_outputs()
-        time.sleep(0.05)
-        try:
-            _do_init()
-            clear_error("BUZZER")
-            return True
-        except Exception as e2:
-            set_error("BUZZER", f"init failed: {e2}")
-            return False
-
-def _buzzer_gpio_value(on: bool) -> bool:
-    return (not bool(on)) if BUZZER_ACTIVE_LOW else bool(on)
+        buzzer_pin = None
+        set_error("BUZZER", f"init failed: {e}")
+        return False
 
 def set_buzzer(on: bool):
-    if not init_tools_outputs():
-        return False
-    if buzzer is None:
-        set_error("BUZZER", "buzzer not initialized")
+    if not init_buzzer():
         return False
     try:
-        buzzer.value = _buzzer_gpio_value(on)
-        sensor_data["BUZZER"]["on"] = bool(on)
-        sensor_data["BUZZER"]["last_update"] = now_iso()
+        buzzer_pin.value = (not on) if BUZZER_ACTIVE_LOW else bool(on)
+        sensor_data["BUZZER"].update({"on": bool(on), "last_update": now_iso(), "error": ""})
         clear_error("BUZZER")
         return True
     except Exception as e:
-        set_error("BUZZER", f"set failed: {e}")
+        set_error("BUZZER", e)
         return False
 
-def beep(count=1, on_ms=90, off_ms=80):
-    if not init_tools_outputs():
-        return False
-    if buzzer is None:
+def beep(count=1, on_ms=100, off_ms=100):
+    if not init_buzzer():
         return False
     try:
         for _ in range(int(count)):
             set_buzzer(True)
-            time.sleep(max(0.01, on_ms / 1000.0))
+            time.sleep(on_ms / 1000.0)
             set_buzzer(False)
-            time.sleep(max(0.01, off_ms / 1000.0))
-        set_buzzer(False)
+            time.sleep(off_ms / 1000.0)
         return True
-    except Exception:
+    except Exception as e:
+        set_error("BUZZER", e)
         return False
 
 # ────────────────────────────────────────────────
-#   MIC + VOSK (VOICE TRIGGER + LIVE WAVE)
+#   SERVO
 # ────────────────────────────────────────────────
-import queue
-
-MIC_STREAM = None
-MIC_LOCK = threading.Lock()
-
-MIC_Q = queue.Queue(maxsize=80)
-MIC_WORKER_THREAD = None
-MIC_WORKER_RUN = False
-
-# LIVE WAVE buffer (RMS samples)
-MIC_WAVE = deque(maxlen=250)  # about ~25s if we push 10 per second (depends)
-MIC_WAVE_LOCK = threading.Lock()
-
-VOSK_MODEL_PATH = os.environ.get(
-    "VOSK_MODEL_PATH",
-    os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
-)
-VOSK_MODEL = None
-VOSK_REC = None
-VOSK_LOCK = threading.Lock()
-
-MIC_SR_CANDIDATES = [
-    int(os.environ.get("MIC_SAMPLE_RATE", "48000")),
-    48000,
-    44100,
-    16000,
-]
-VOSK_TARGET_SR = 16000
-
-# Voice trigger words (you can add more)
-VOICE_TRIGGERS = {"open", "hello", "hey", "hi"}
-
-# How confident? Vosk small model has no true confidence, so we use text rules:
-# - exact single word ("open"/"hello")
-# - or phrase contains "hello hello"
-def _detect_trigger(final_text: str) -> str:
-    t = (final_text or "").strip().lower()
-    if not t:
-        return ""
-    if t in VOICE_TRIGGERS:
-        return t
-    if "hello hello" in t:
-        return "hello hello"
-    # also allow: "open open"
-    if "open open" in t:
-        return "open open"
-    return ""
-
-def _fast_resample_mono_float32(x: "np.ndarray", src_sr: int, dst_sr: int = 16000) -> "np.ndarray":
-    if src_sr == dst_sr:
-        return x
-    if src_sr % dst_sr == 0:
-        step = src_sr // dst_sr
-        if step > 1:
-            return x[::step].astype(np.float32, copy=False)
-    if len(x) < 2:
-        return x.astype(np.float32, copy=False)
-
-    duration = len(x) / float(src_sr)
-    dst_len = int(duration * dst_sr)
-    if dst_len <= 1:
-        return x[:1].astype(np.float32, copy=False)
-
-    src_idx = np.linspace(0, len(x) - 1, num=len(x), dtype=np.float64)
-    dst_idx = np.linspace(0, len(x) - 1, num=dst_len, dtype=np.float64)
-    y = np.interp(dst_idx, src_idx, x).astype(np.float32)
-    return y
-
-def vosk_init():
-    global VOSK_MODEL, VOSK_REC
-    if not SENSORS_AVAILABLE.get("VOSK", False):
-        set_error("MIC", "vosk not installed. pip install vosk")
-        return False
-    if not os.path.isdir(VOSK_MODEL_PATH):
-        set_error("MIC", f"Vosk model not found: {VOSK_MODEL_PATH}")
-        return False
-
-    with VOSK_LOCK:
-        if VOSK_MODEL is None:
-            VOSK_MODEL = Model(VOSK_MODEL_PATH)
-        VOSK_REC = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
-        try:
-            VOSK_REC.SetWords(False)
-        except Exception:
-            pass
-
-    sensor_data["MIC"]["listening_rate"] = VOSK_TARGET_SR
-    clear_error("MIC")
-    return True
-
-def _mic_worker_loop(src_sr: int):
-    global MIC_WORKER_RUN
-
-    with VOSK_LOCK:
-        if VOSK_MODEL is not None:
-            globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
-
-    while MIC_WORKER_RUN:
-        try:
-            item = MIC_Q.get(timeout=0.25)
-        except queue.Empty:
-            continue
-        if item is None:
-            continue
-
-        try:
-            pcm16_bytes, rms, peak, ts = item
-
-            # push wave sample (RMS)
-            with MIC_WAVE_LOCK:
-                MIC_WAVE.append(float(rms))
-
-            x16 = np.frombuffer(pcm16_bytes, dtype=np.int16)
-            x = (x16.astype(np.float32) / 32768.0)
-
-            y = _fast_resample_mono_float32(x, src_sr, VOSK_TARGET_SR)
-            y16 = np.clip(y * 32767.0, -32768, 32767).astype(np.int16).tobytes()
-
-            partial_txt = ""
-            final_txt = None
-
-            with VOSK_LOCK:
-                if VOSK_REC is not None:
-                    ok = VOSK_REC.AcceptWaveform(y16)
-                    if ok:
-                        res = json.loads(VOSK_REC.Result() or "{}")
-                        final_txt = (res.get("text") or "").strip()
-                    else:
-                        pres = json.loads(VOSK_REC.PartialResult() or "{}")
-                        partial_txt = (pres.get("partial") or "").strip()
-
-            if partial_txt:
-                sensor_data["MIC"]["partial"] = partial_txt
-
-            if final_txt:
-                sensor_data["MIC"]["text"] = final_txt
-                sensor_data["MIC"]["partial"] = ""
-
-                # detect trigger phrase
-                trig = _detect_trigger(final_txt)
-                if trig:
-                    sensor_data["MIC"]["command"] = trig
-                    sensor_data["MIC"]["command_at"] = ts
-                    # small feedback beep (optional)
-                    beep(count=1, on_ms=70, off_ms=60)
-
-            sensor_data["MIC"].update({
-                "rms": round(float(rms), 4),
-                "peak": round(float(peak), 4),
-                "last_update": ts,
-                "error": sensor_data["MIC"].get("error", ""),
-            })
-
-        except Exception as e:
-            set_error("MIC", e)
-
-def mic_stop():
-    global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
-
-    with MIC_LOCK:
-        try:
-            if MIC_STREAM is not None:
-                MIC_STREAM.stop()
-                MIC_STREAM.close()
-        except Exception:
-            pass
-        MIC_STREAM = None
-
-    MIC_WORKER_RUN = False
-    try:
-        while True:
-            MIC_Q.get_nowait()
-    except Exception:
-        pass
-
-    if MIC_WORKER_THREAD and MIC_WORKER_THREAD.is_alive():
-        try:
-            MIC_WORKER_THREAD.join(timeout=1.0)
-        except Exception:
-            pass
-    MIC_WORKER_THREAD = None
-
-    with VOSK_LOCK:
-        try:
-            if VOSK_MODEL is not None:
-                globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
-        except Exception:
-            pass
-
-def mic_start():
-    global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
-
-    if not SENSORS_AVAILABLE.get("MIC", False):
-        set_error("MIC", "sounddevice/numpy not available")
-        return False
-
-    if not vosk_init():
-        return False
-
-    mic_stop()
-    sensor_data["MIC"]["partial"] = ""
-    sensor_data["MIC"]["text"] = ""
-    sensor_data["MIC"]["command"] = ""
-    sensor_data["MIC"]["command_at"] = None
-
-    # callback: enqueue only
-    def _callback(indata, frames, time_info, status):
-        try:
-            if status:
-                # includes input overflow sometimes; not fatal
-                sensor_data["MIC"]["error"] = str(status)
-
-            if indata is None:
-                return
-
-            if hasattr(indata, "tobytes"):
-                pcm16_bytes = indata.tobytes()
-                x16 = indata.reshape(-1).astype(np.int16, copy=False)
-            else:
-                pcm16_bytes = bytes(indata)
-                x16 = np.frombuffer(pcm16_bytes, dtype=np.int16)
-
-            if len(x16):
-                absmax = np.max(np.abs(x16))
-                peak = float(absmax / 32768.0)
-                rms = float(np.sqrt(np.mean((x16.astype(np.float32) / 32768.0) ** 2)))
-            else:
-                peak = 0.0
-                rms = 0.0
-
-            ts = now_iso()
-
-            try:
-                MIC_Q.put_nowait((pcm16_bytes, rms, peak, ts))
-            except queue.Full:
-                # drop oldest to stay realtime
-                try:
-                    MIC_Q.get_nowait()
-                except Exception:
-                    pass
-                try:
-                    MIC_Q.put_nowait((pcm16_bytes, rms, peak, ts))
-                except Exception:
-                    pass
-
-        except Exception as e:
-            set_error("MIC", e)
-
-    last_err = None
-    tried = []
-
-    for sr in MIC_SR_CANDIDATES:
-        if sr in tried:
-            continue
-        tried.append(sr)
-        try:
-            # 100ms reduces overflow risk a lot
-            blocksize = int(sr * 0.10)
-
-            stream = sd.RawInputStream(
-                samplerate=sr,
-                channels=1,
-                dtype="int16",
-                callback=_callback,
-                blocksize=blocksize,
-                latency="low",
-            )
-            stream.start()
-
-            with MIC_LOCK:
-                MIC_STREAM = stream
-
-            MIC_WORKER_RUN = True
-            MIC_WORKER_THREAD = threading.Thread(
-                target=_mic_worker_loop, args=(int(sr),), daemon=True
-            )
-            MIC_WORKER_THREAD.start()
-
-            sensor_data["MIC"]["sample_rate"] = int(sr)
-            clear_error("MIC")
-            print(f"[MIC+VOSK] started device_sr={sr} block={blocksize} model={VOSK_MODEL_PATH}")
-            return True
-
-        except Exception as e:
-            last_err = e
-
-    mic_stop()
-    set_error("MIC", f"mic_start failed (rates tried {tried}): {last_err}")
-    return False
-
-# ────────────────────────────────────────────────
-#   SENSOR THREADS / GPIO
-# ────────────────────────────────────────────────
-threads = {}
-running_flags = {}
-
-dht_device = None
-mpu = None
-bmp = None
-
-pir_pin = None
-motion_count = 0
-
-ultra_trig = None
-ultra_echo = None
-
-mq_pin = None
-relay_pins = {}
-
+SERVO_FREQ = 50
 servo_pwm = None
-SERVO_PIN = board.D12 if SENSORS_AVAILABLE.get("board") else None
-MIN_PULSE = 500
-MAX_PULSE = 2500
-FREQUENCY = 50
 
-def release_all_sensor_gpio():
-    global pir_pin, ultra_trig, ultra_echo, mq_pin, relay_pins, servo_pwm
+def init_servo():
+    global servo_pwm
+    if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board"):
+        set_error("servomotor", "servo/board not available")
+        return False
+    if servo_pwm is not None:
+        return True
+    try:
+        servo_pwm = pwmio.PWMOut(board.D18, frequency=SERVO_FREQ, duty_cycle=0)
+        clear_error("servomotor")
+        print("[SERVO] OK D18")
+        return True
+    except Exception as e:
+        servo_pwm = None
+        set_error("servomotor", f"init failed: {e}")
+        return False
 
-    for k in list(running_flags.keys()):
-        running_flags[k] = False
+def set_servo_angle(angle: int):
+    if not init_servo():
+        return False
+    try:
+        a = max(0, min(180, int(angle)))
+        # map 0..180 to duty cycle (approx 2.5%..12.5%)
+        min_dc = int(65535 * 0.025)
+        max_dc = int(65535 * 0.125)
+        dc = min_dc + (max_dc - min_dc) * a // 180
+        servo_pwm.duty_cycle = int(dc)
+        sensor_data["servomotor"].update({"angle": a, "last_update": now_iso(), "error": ""})
+        clear_error("servomotor")
+        return True
+    except Exception as e:
+        set_error("servomotor", e)
+        return False
 
-    time.sleep(0.15)
-
-    _safe_deinit(pir_pin); pir_pin = None
-    _safe_deinit(ultra_trig); ultra_trig = None
-    _safe_deinit(ultra_echo); ultra_echo = None
-    _safe_deinit(mq_pin); mq_pin = None
-
-    if relay_pins:
-        for ch, io in list(relay_pins.items()):
-            _safe_deinit(io)
-        relay_pins = {}
-
+def stop_servo():
+    global servo_pwm
     try:
         if servo_pwm is not None:
             servo_pwm.duty_cycle = 0
@@ -828,67 +484,66 @@ def release_all_sensor_gpio():
     except Exception:
         pass
     servo_pwm = None
-
-    release_tools_outputs()
-    lcd_release()
-
-    for s in ("MPU6050", "BMP280", "DHT11", "MHMQ", "PIR", "ULTRASONIC", "Relay", "servomotor"):
-        sensor_state[s] = False
+    sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso()})
 
 # ────────────────────────────────────────────────
-# ✅ GLOBAL CLEANUP
+#   RELAY (4ch active-low)
 # ────────────────────────────────────────────────
-def stop_current_exercise():
-    global exercise_proc, exercise_stop_requested
-    with exercise_lock:
-        if exercise_proc is None:
-            return True
-        try:
-            exercise_stop_requested = True
-            exercise_proc.terminate()
-            try:
-                exercise_proc.wait(timeout=2)
-            except Exception:
-                exercise_proc.kill()
-            return True
-        except Exception:
-            return False
+relay_pins = {}
 
-def cleanup_everything():
+def init_relay():
+    global relay_pins
+    if not SENSORS_AVAILABLE.get("board"):
+        set_error("Relay", "board not available")
+        return False
+    if relay_pins:
+        return True
+    RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]  # active-low
     try:
-        stop_current_exercise()
-    except Exception:
-        pass
-    try:
-        release_all_sensor_gpio()
-    except Exception:
-        pass
-    try:
-        mic_stop()
-    except Exception:
-        pass
-    try:
-        if mqtt_client is not None:
-            mqtt_client.loop_stop()
-            mqtt_client.disconnect()
-    except Exception:
-        pass
+        relay_pins = {}
+        for ch, pin in enumerate(RELAY_PINS, 1):
+            io = digitalio.DigitalInOut(pin)
+            io.direction = digitalio.Direction.OUTPUT
+            io.value = True  # OFF (active-low)
+            relay_pins[ch] = io
+        sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
+        clear_error("Relay")
+        print("[RELAY] OK 4ch")
+        return True
+    except Exception as e:
+        relay_pins = {}
+        set_error("Relay", f"init failed: {e}")
+        return False
 
-atexit.register(cleanup_everything)
-
-def _handle_sig(*_):
-    cleanup_everything()
-    raise SystemExit(0)
-
-try:
-    signal.signal(signal.SIGINT, _handle_sig)
-    signal.signal(signal.SIGTERM, _handle_sig)
-except Exception:
-    pass
+def set_all_relays(on: bool):
+    if not init_relay():
+        return False
+    try:
+        for ch, io in relay_pins.items():
+            io.value = (not on)  # active-low
+        sensor_data["Relay"].update({
+            "ch1": bool(on), "ch2": bool(on), "ch3": bool(on), "ch4": bool(on),
+            "last_update": now_iso(), "error": ""
+        })
+        clear_error("Relay")
+        return True
+    except Exception as e:
+        set_error("Relay", e)
+        return False
 
 # ────────────────────────────────────────────────
-#   SENSOR INIT FUNCTIONS (same as your original)
+#   PIR / ULTRASONIC / MQ / DHT / MPU / BMP
 # ────────────────────────────────────────────────
+pir_pin = None
+ultra_trig = None
+ultra_echo = None
+mq_pin = None
+dht_device = None
+mpu = None
+bmp = None
+
+GAS_ALERT_PERCENT = 30
+
 def init_dht():
     global dht_device
     if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
@@ -1047,127 +702,81 @@ def init_mq():
         set_error("MHMQ", f"init failed: {e}")
         return False
 
-def init_relay():
-    global relay_pins
-    if not SENSORS_AVAILABLE.get("board"):
-        set_error("Relay", "board not available")
-        return False
-    if relay_pins:
-        return True
-    RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]  # active-low
-    try:
-        relay_pins = {}
-        for ch, pin in enumerate(RELAY_PINS, 1):
-            io = digitalio.DigitalInOut(pin)
-            io.direction = digitalio.Direction.OUTPUT
-            io.value = True
-            relay_pins[ch] = io
-        sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
-        clear_error("Relay")
-        print("[RELAY] OK 4ch")
-        return True
-    except Exception as e:
-        relay_pins = {}
-        set_error("Relay", f"init failed: {e}")
-        return False
-
-RELAY_ACTIVE_LOW = True
-def _relay_gpio_value(on: bool) -> bool:
-    return (not bool(on)) if RELAY_ACTIVE_LOW else bool(on)
-
-def set_relay(ch: int, on: bool) -> bool:
-    if not init_relay():
-        return False
-    io = relay_pins.get(int(ch))
-    if io is None:
-        set_error("Relay", f"unknown channel {ch}")
-        return False
-    try:
-        io.value = _relay_gpio_value(on)
-        sensor_data["Relay"][f"ch{int(ch)}"] = bool(on)
-        sensor_data["Relay"]["last_update"] = now_iso()
-        clear_error("Relay")
-        return True
-    except Exception as e:
-        set_error("Relay", f"set failed: {e}")
-        return False
-
-def set_all_relays(on: bool) -> bool:
-    if not init_relay():
-        return False
-    ok = True
-    for ch in (1,2,3,4):
-        ok = set_relay(ch, on) and ok
-    return ok
-
-def init_servomotor():
-    if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board") or SERVO_PIN is None:
-        set_error("servomotor", "servo not available")
-        return False
-    clear_error("servomotor")
-    return True
-
-def set_servo_angle(angle):
-    global servo_pwm
-    if not init_servomotor():
-        return False
-    if servo_pwm is None:
-        servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
-
-    angle = max(0, min(180, int(angle)))
-    pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
-    duty = int((pulse_us / 20000.0) * 65535.0)
-    servo_pwm.duty_cycle = duty
-    sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
-    return True
-
-def stop_servo() -> None:
-    global servo_pwm
-    try:
-        if servo_pwm is not None:
-            servo_pwm.duty_cycle = 0
-            servo_pwm.deinit()
-    except Exception:
-        pass
-    servo_pwm = None
-    sensor_data["servomotor"]["last_update"] = now_iso()
-
-# ────────────────────────────────────────────────
-#   GAS LEVEL
-# ────────────────────────────────────────────────
-GAS_SAMPLES = 20
-GAS_SAMPLE_DELAY = 0.02
-GAS_INVERT_DO = True
-GAS_ALERT_PERCENT = 30
-
 def read_gas_level_percent():
+    # Digital MQ style: 1=OK, 0=GAS (or vice versa) depends on module.
+    # Here we fake a "percent" from digital: 0% or 100%.
     if mq_pin is None:
         return None
-    hits = 0
-    for _ in range(GAS_SAMPLES):
-        v = mq_pin.value
-        if GAS_INVERT_DO:
-            v = not v
-        if v:
-            hits += 1
-        time.sleep(GAS_SAMPLE_DELAY)
-    return int(round(100 * hits / GAS_SAMPLES))
+    try:
+        raw = bool(mq_pin.value)
+        # If your sensor is inverted, swap here.
+        return 0 if raw else 100
+    except Exception:
+        return None
 
-def ensure_sensor_init(sensor: str) -> bool:
-    if sensor == "DHT11": return init_dht()
-    if sensor == "MPU6050": return init_mpu()
-    if sensor == "BMP280": return init_bmp()
-    if sensor == "PIR": return init_pir()
-    if sensor == "ULTRASONIC": return init_ultrasonic()
-    if sensor == "MHMQ": return init_mq()
-    if sensor == "Relay": return init_relay()
-    if sensor == "servomotor": return init_servomotor()
-    if sensor == "MIC": return mic_start()
+def ensure_sensor_init(sensor):
+    if sensor == "DHT11":
+        return init_dht()
+    if sensor == "MPU6050":
+        return init_mpu()
+    if sensor == "BMP280":
+        return init_bmp()
+    if sensor == "PIR":
+        return init_pir()
+    if sensor == "ULTRASONIC":
+        return init_ultrasonic()
+    if sensor == "MHMQ":
+        return init_mq()
+    if sensor == "Relay":
+        return init_relay()
+    if sensor == "servomotor":
+        return init_servo()
+    if sensor == "BUZZER":
+        return init_buzzer()
+    if sensor == "LCD_TOOL":
+        return init_lcd()
+    if sensor == "MIC":
+        return True
     return True
 
-def sensor_reader(sensor_name):
-    global motion_count
+def release_all_sensor_gpio():
+    global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device, mpu, bmp
+
+    # Keep I2C lock safe
+    try:
+        _safe_deinit(pir_pin); pir_pin = None
+    except Exception:
+        pass
+    try:
+        _safe_deinit(ultra_trig); ultra_trig = None
+        _safe_deinit(ultra_echo); ultra_echo = None
+    except Exception:
+        pass
+    try:
+        _safe_deinit(mq_pin); mq_pin = None
+    except Exception:
+        pass
+
+    # DHT device
+    try:
+        if dht_device is not None:
+            dht_device.exit()
+    except Exception:
+        pass
+    dht_device = None
+
+    # I2C devices: keep for speed; don’t force deinit
+    # mpu / bmp can stay allocated; they’re protected by i2c_lock.
+
+# ────────────────────────────────────────────────
+#   SENSOR READER THREADS
+# ────────────────────────────────────────────────
+threads = {}
+running_flags = {k: False for k in sensor_state.keys()}
+
+def sensor_reader(sensor_name: str):
     last_pir_state = False
+    motion_count = 0
 
     while running_flags.get(sensor_name, False):
         now = now_iso()
@@ -1290,6 +899,42 @@ def serve_images(filename):
     return send_from_directory(os.path.join(BASE_DIR, "static", "images"), filename)
 
 # ────────────────────────────────────────────────
+#   API: SHARED FOCUS (multi-phone lock)
+# ────────────────────────────────────────────────
+@app.route("/api/focus", methods=["GET", "POST"])
+def api_focus():
+    """Shared focus lock for multi-phone UI.
+
+    POST:
+      - running=true sets global focus to exercise_id
+      - running=false clears focus (only if same exercise_id or exercise_id omitted)
+    """
+    global focus_state
+    if request.method == "POST":
+        data = request.json or {}
+        ex_id = data.get("exercise_id")
+        running = bool(data.get("running"))
+        by = data.get("by")
+
+        with FOCUS_LOCK:
+            if running:
+                focus_state["running"] = True
+                focus_state["exercise_id"] = ex_id
+                focus_state["since"] = now_iso()
+                focus_state["by"] = by
+            else:
+                if (ex_id is None) or (focus_state.get("exercise_id") == ex_id):
+                    focus_state["running"] = False
+                    focus_state["exercise_id"] = None
+                    focus_state["since"] = None
+                    focus_state["by"] = None
+
+        return jsonify({"ok": True, **focus_state})
+
+    with FOCUS_LOCK:
+        return jsonify({**focus_state})
+
+# ────────────────────────────────────────────────
 #   API: SENSORS
 # ────────────────────────────────────────────────
 @app.route("/api/sensors")
@@ -1299,6 +944,250 @@ def get_sensors():
     return jsonify(resp)
 
 # NEW: live wave samples
+MIC_LOCK = threading.Lock()
+MIC_Q = queue.Queue(maxsize=80)
+MIC_WORKER_THREAD = None
+MIC_WORKER_RUN = False
+
+MIC_WAVE = deque(maxlen=250)
+MIC_WAVE_LOCK = threading.Lock()
+
+VOSK_MODEL_PATH = os.environ.get(
+    "VOSK_MODEL_PATH",
+    os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
+)
+VOSK_MODEL = None
+VOSK_REC = None
+VOSK_LOCK = threading.Lock()
+
+MIC_SR_CANDIDATES = [
+    int(os.environ.get("MIC_SAMPLE_RATE", "48000")),
+    48000,
+    44100,
+    16000,
+]
+VOSK_TARGET_SR = 16000
+
+VOICE_TRIGGERS = {"open", "hello", "hey", "hi"}
+
+def _detect_trigger(final_text: str) -> str:
+    t = (final_text or "").strip().lower()
+    if not t:
+        return ""
+    if t in VOICE_TRIGGERS:
+        return t
+    if "hello hello" in t:
+        return "hello hello"
+    if "open open" in t:
+        return "open open"
+    return ""
+
+def _fast_resample_mono_float32(x: "np.ndarray", src_sr: int, dst_sr: int = 16000) -> "np.ndarray":
+    if src_sr == dst_sr:
+        return x
+    if src_sr % dst_sr == 0:
+        step = src_sr // dst_sr
+        if step > 1:
+            return x[::step].astype(np.float32, copy=False)
+    if len(x) < 2:
+        return x.astype(np.float32, copy=False)
+
+    duration = len(x) / float(src_sr)
+    dst_len = int(duration * dst_sr)
+    if dst_len <= 1:
+        return x[:1].astype(np.float32, copy=False)
+
+    src_idx = np.linspace(0, len(x) - 1, num=len(x), dtype=np.float64)
+    dst_idx = np.linspace(0, len(x) - 1, num=dst_len, dtype=np.float64)
+    y = np.interp(dst_idx, src_idx, x).astype(np.float32)
+    return y
+
+def vosk_init():
+    global VOSK_MODEL, VOSK_REC
+    if not SENSORS_AVAILABLE.get("VOSK", False):
+        set_error("MIC", "vosk not installed. pip install vosk")
+        return False
+    if not os.path.isdir(VOSK_MODEL_PATH):
+        set_error("MIC", f"Vosk model not found: {VOSK_MODEL_PATH}")
+        return False
+
+    with VOSK_LOCK:
+        if VOSK_MODEL is None:
+            VOSK_MODEL = Model(VOSK_MODEL_PATH)
+        VOSK_REC = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
+        try:
+            VOSK_REC.SetWords(False)
+        except Exception:
+            pass
+
+    sensor_data["MIC"]["listening_rate"] = VOSK_TARGET_SR
+    clear_error("MIC")
+    return True
+
+MIC_STREAM = None
+
+def _mic_worker_loop(src_sr: int):
+    global MIC_WORKER_RUN
+
+    with VOSK_LOCK:
+        if VOSK_MODEL is not None:
+            globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
+
+    while MIC_WORKER_RUN:
+        try:
+            item = MIC_Q.get(timeout=0.25)
+        except queue.Empty:
+            continue
+        if item is None:
+            continue
+
+        try:
+            pcm16_bytes, rms, peak, ts = item
+
+            with MIC_WAVE_LOCK:
+                MIC_WAVE.append(float(rms))
+
+            x16 = np.frombuffer(pcm16_bytes, dtype=np.int16)
+            x = (x16.astype(np.float32) / 32768.0)
+
+            y = _fast_resample_mono_float32(x, src_sr, VOSK_TARGET_SR)
+            y16 = np.clip(y * 32767.0, -32768, 32767).astype(np.int16).tobytes()
+
+            partial_txt = ""
+            final_txt = None
+
+            with VOSK_LOCK:
+                if VOSK_REC is not None:
+                    ok = VOSK_REC.AcceptWaveform(y16)
+                    if ok:
+                        res = json.loads(VOSK_REC.Result() or "{}")
+                        final_txt = (res.get("text") or "").strip()
+                    else:
+                        pres = json.loads(VOSK_REC.PartialResult() or "{}")
+                        partial_txt = (pres.get("partial") or "").strip()
+
+            if partial_txt:
+                sensor_data["MIC"]["partial"] = partial_txt
+
+            if final_txt:
+                sensor_data["MIC"]["text"] = final_txt
+                sensor_data["MIC"]["partial"] = ""
+
+                trig = _detect_trigger(final_txt)
+                if trig:
+                    sensor_data["MIC"]["command"] = trig
+                    sensor_data["MIC"]["command_at"] = ts
+                    beep(count=1, on_ms=70, off_ms=60)
+
+            sensor_data["MIC"].update({
+                "rms": round(float(rms), 4),
+                "peak": round(float(peak), 4),
+                "last_update": ts,
+                "error": sensor_data["MIC"].get("error", ""),
+            })
+
+        except Exception as e:
+            set_error("MIC", e)
+
+def mic_stop():
+    global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
+
+    with MIC_LOCK:
+        try:
+            if MIC_STREAM is not None:
+                MIC_STREAM.stop()
+                MIC_STREAM.close()
+        except Exception:
+            pass
+        MIC_STREAM = None
+
+    MIC_WORKER_RUN = False
+    try:
+        while True:
+            MIC_Q.get_nowait()
+    except Exception:
+        pass
+
+    if MIC_WORKER_THREAD and MIC_WORKER_THREAD.is_alive():
+        try:
+            MIC_WORKER_THREAD.join(timeout=1.0)
+        except Exception:
+            pass
+    MIC_WORKER_THREAD = None
+
+    with VOSK_LOCK:
+        try:
+            if VOSK_MODEL is not None:
+                globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
+        except Exception:
+            pass
+
+def mic_start():
+    global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
+
+    if not SENSORS_AVAILABLE.get("MIC", False):
+        set_error("MIC", "sounddevice/numpy not installed")
+        return False
+
+    if not vosk_init():
+        return False
+
+    src_sr = None
+    last_err = None
+
+    for sr in MIC_SR_CANDIDATES:
+        try:
+            sd.check_input_settings(samplerate=sr, channels=1, dtype="int16")
+            src_sr = sr
+            break
+        except Exception as e:
+            last_err = e
+
+    if src_sr is None:
+        set_error("MIC", f"No valid sample rate. Last: {last_err}")
+        return False
+
+    def _audio_cb(indata, frames, time_info, status):
+        try:
+            if status:
+                pass
+            x16 = indata[:, 0].astype(np.int16, copy=False)
+            xf = (x16.astype(np.float32) / 32768.0)
+            rms = float(np.sqrt(np.mean(xf * xf)) + 1e-12)
+            peak = float(np.max(np.abs(xf)) + 1e-12)
+            ts = now_iso()
+
+            try:
+                MIC_Q.put_nowait((x16.tobytes(), rms, peak, ts))
+            except queue.Full:
+                pass
+        except Exception:
+            pass
+
+    try:
+        with MIC_LOCK:
+            MIC_STREAM = sd.InputStream(
+                samplerate=src_sr,
+                channels=1,
+                dtype="int16",
+                blocksize=0,
+                callback=_audio_cb,
+            )
+            MIC_STREAM.start()
+
+        sensor_data["MIC"]["sample_rate"] = src_sr
+        clear_error("MIC")
+
+        MIC_WORKER_RUN = True
+        MIC_WORKER_THREAD = threading.Thread(target=_mic_worker_loop, args=(src_sr,), daemon=True)
+        MIC_WORKER_THREAD.start()
+
+        return True
+    except Exception as e:
+        set_error("MIC", e)
+        mic_stop()
+        return False
+
 @app.route("/api/mic_wave")
 def api_mic_wave():
     with MIC_WAVE_LOCK:
@@ -1306,7 +1195,7 @@ def api_mic_wave():
     return jsonify({
         "ok": True,
         "active": bool(sensor_state.get("MIC")),
-        "wave": wave[-200:],  # keep payload small
+        "wave": wave[-200:],
         "rms": sensor_data["MIC"].get("rms"),
         "peak": sensor_data["MIC"].get("peak"),
         "text": sensor_data["MIC"].get("text"),
@@ -1317,11 +1206,8 @@ def api_mic_wave():
         "last_update": sensor_data["MIC"].get("last_update"),
     })
 
-# NEW: read-and-clear last command (so UI can react once)
 @app.route("/api/mic_command", methods=["GET", "POST"])
 def api_mic_command():
-    # GET: returns current command
-    # POST {clear:true}: clears it
     if request.method == "POST":
         data = request.json or {}
         if data.get("clear"):
@@ -1406,6 +1292,47 @@ def toggle_sensor():
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
+@app.route("/api/buzzer", methods=["POST"])
+def api_buzzer():
+    data = request.json or {}
+    mode = data.get("mode", "toggle")
+    if mode == "toggle":
+        desired = not bool(sensor_data["BUZZER"]["on"])
+        ok = set_buzzer(desired)
+        return jsonify({"ok": bool(ok), "on": sensor_data["BUZZER"]["on"], "error": sensor_data["BUZZER"]["error"] if not ok else ""}), (200 if ok else 500)
+    if mode == "beep":
+        ok = beep(count=int(data.get("count", 2)), on_ms=int(data.get("on_ms", 140)), off_ms=int(data.get("off_ms", 140)))
+        return jsonify({"ok": bool(ok), "on": False, "error": sensor_data["BUZZER"]["error"] if not ok else ""}), (200 if ok else 500)
+    return jsonify({"ok": False, "error": "Unknown mode"}), 400
+
+@app.route("/api/lcd", methods=["POST"])
+def api_lcd():
+    data = request.json or {}
+    if data.get("clear"):
+        ok = lcd_clear()
+        return jsonify({"ok": bool(ok), "line1": "", "line2": "", "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
+    line1 = (data.get("line1") or "").strip()
+    line2 = (data.get("line2") or "").strip()
+    ok = lcd_write(line1, line2)
+    return jsonify({"ok": bool(ok), "line1": line1, "line2": line2, "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
+
+# ────────────────────────────────────────────────
+#   API: Activity 5 MQTT endpoints
+# ────────────────────────────────────────────────
+@app.route("/api/a5/latest")
+def api_a5_latest():
+    with latest_a5_lock:
+        return jsonify({"ok": True, **latest_a5})
+
+@app.route("/api/a5/command", methods=["POST"])
+def api_a5_command():
+    try:
+        payload = request.json or {}
+        a5_send_cmd(payload)
+        return jsonify({"ok": True, "sent": payload})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # ────────────────────────────────────────────────
 #   EXERCISE RUNNER
 # ────────────────────────────────────────────────
@@ -1454,6 +1381,21 @@ def _exercise_reader(proc: subprocess.Popen):
                 exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
 
             exercise_proc = None
+
+def stop_current_exercise():
+    global exercise_proc, exercise_stop_requested
+    with exercise_lock:
+        if exercise_proc is None or exercise_proc.poll() is not None:
+            return False
+        exercise_stop_requested = True
+        try:
+            exercise_proc.send_signal(signal.SIGINT)
+        except Exception:
+            try:
+                exercise_proc.terminate()
+            except Exception:
+                pass
+        return True
 
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
