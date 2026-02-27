@@ -94,9 +94,9 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
 
-    "LED_TOOL":   True,
-    "BUZZER":     True,
-    "LCD_TOOL":   True,
+    "LED_TOOL":   False,
+    "BUZZER":     False,
+    "LCD_TOOL":   False,
 }
 
 sensor_data = {
@@ -785,6 +785,38 @@ def init_relay():
         set_error("Relay", f"init failed: {e}")
         return False
 
+# Relay helpers
+RELAY_ACTIVE_LOW = True
+
+def _relay_gpio_value(on: bool) -> bool:
+    return (not bool(on)) if RELAY_ACTIVE_LOW else bool(on)
+
+def set_relay(ch: int, on: bool) -> bool:
+    if not init_relay():
+        return False
+    io = relay_pins.get(int(ch))
+    if io is None:
+        set_error("Relay", f"unknown channel {ch}")
+        return False
+    try:
+        io.value = _relay_gpio_value(on)
+        sensor_data["Relay"][f"ch{int(ch)}"] = bool(on)
+        sensor_data["Relay"]["last_update"] = now_iso()
+        clear_error("Relay")
+        return True
+    except Exception as e:
+        set_error("Relay", f"set failed: {e}")
+        return False
+
+def set_all_relays(on: bool) -> bool:
+    if not init_relay():
+        return False
+    ok = True
+    for ch in (1,2,3,4):
+        ok = set_relay(ch, on) and ok
+    return ok
+
+
 def init_servomotor():
     if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board") or SERVO_PIN is None:
         set_error("servomotor", "servo not available")
@@ -807,6 +839,19 @@ def set_servo_angle(angle):
 
     sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
     return True
+
+def stop_servo() -> None:
+    """Stop PWM to avoid jitter/heat."""
+    global servo_pwm
+    try:
+        if servo_pwm is not None:
+            servo_pwm.duty_cycle = 0
+            servo_pwm.deinit()
+    except Exception:
+        pass
+    servo_pwm = None
+    sensor_data["servomotor"]["last_update"] = now_iso()
+
 
 # ────────────────────────────────────────────────
 #   GAS LEVEL
@@ -987,12 +1032,59 @@ def toggle_sensor():
     if sensor not in sensor_state:
         return jsonify({"ok": False, "error": "Unknown sensor"}), 400
 
-    if sensor in ("LED_TOOL", "BUZZER", "LCD_TOOL"):
-        return jsonify({"ok": True, "sensor": sensor, "active": True})
+    # Toggle state
+    sensor_state[sensor] = not bool(sensor_state[sensor])
+    active = bool(sensor_state[sensor])
 
-    sensor_state[sensor] = not sensor_state[sensor]
-    active = sensor_state[sensor]
+    # --- TOOL OUTPUTS ---
+    # LED_TOOL: when ON => turn ON all LEDs; when OFF => turn OFF all LEDs
+    if sensor == "LED_TOOL":
+        ok = init_tools_outputs()
+        if ok:
+            ok = set_led("red", active) and set_led("orange", active) and set_led("green", active)
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": active, "all": sensor_data["LED_TOOL"],
+                        "error": sensor_data["LED_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
 
+    # BUZZER: simple ON/OFF (use /api/buzzer for beep/toggle)
+    if sensor == "BUZZER":
+        ok = set_buzzer(active)
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": active,
+                        "on": sensor_data["BUZZER"]["on"], "active_low": BUZZER_ACTIVE_LOW,
+                        "error": sensor_data["BUZZER"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # LCD: ON shows READY; OFF clears
+    if sensor == "LCD_TOOL":
+        if active:
+            ok = lcd_write("LCD READY", now_iso()[-8:])
+        else:
+            ok = lcd_clear()
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": active,
+                        "line1": sensor_data["LCD_TOOL"]["line1"], "line2": sensor_data["LCD_TOOL"]["line2"],
+                        "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # --- ACTUATORS ---
+    # Relay: when ON => turn ON all channels; when OFF => turn OFF all channels
+    if sensor == "Relay":
+        ok = set_all_relays(active)
+        if not ok:
+            sensor_state[sensor] = False
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+                        "relay": sensor_data["Relay"], "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # Servo: when ON => move to 90°; when OFF => stop PWM
+    if sensor == "servomotor":
+        if active:
+            ok = set_servo_angle(90)
+            if not ok:
+                sensor_state[sensor] = False
+        else:
+            stop_servo()
+            sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
+            ok = True
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+                        "servo": sensor_data["servomotor"], "error": sensor_data["servomotor"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # --- SENSORS (threads) ---
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
@@ -1006,6 +1098,7 @@ def toggle_sensor():
         running_flags[sensor] = False
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
+
 
 @app.route("/api/led", methods=["POST"])
 def api_led():
@@ -1081,6 +1174,57 @@ def api_a5_command():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+@app.route("/api/relay", methods=["POST"])
+def api_relay():
+    data = request.json or {}
+    # Either {ch: 1-4, action: on/off/toggle} OR {all: true, action: on/off}
+    action = data.get("action")
+    if action not in ("on", "off", "toggle"):
+        return jsonify({"ok": False, "error": "Invalid action"}), 400
+
+    if data.get("all") is True:
+        # toggle based on ch1
+        cur = bool(sensor_data["Relay"].get("ch1", False))
+        target = (not cur) if action == "toggle" else (action == "on")
+        ok = set_all_relays(target)
+        if ok:
+            sensor_state["Relay"] = target
+        return jsonify({"ok": bool(ok), "all": sensor_data["Relay"], "active": bool(sensor_state["Relay"]),
+                        "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    try:
+        ch = int(data.get("ch"))
+    except Exception:
+        return jsonify({"ok": False, "error": "Missing/invalid ch"}), 400
+    if ch not in (1,2,3,4):
+        return jsonify({"ok": False, "error": "ch must be 1-4"}), 400
+
+    cur = bool(sensor_data["Relay"].get(f"ch{ch}", False))
+    target = (not cur) if action == "toggle" else (action == "on")
+    ok = set_relay(ch, target)
+    return jsonify({"ok": bool(ok), "relay": sensor_data["Relay"], "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
+
+@app.route("/api/servo", methods=["POST"])
+def api_servo():
+    data = request.json or {}
+    if data.get("stop"):
+        stop_servo()
+        sensor_state["servomotor"] = False
+        return jsonify({"ok": True, "servo": sensor_data["servomotor"], "active": False})
+
+    try:
+        angle = int(data.get("angle", 90))
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid angle"}), 400
+
+    ok = set_servo_angle(angle)
+    if ok:
+        sensor_state["servomotor"] = True
+    return jsonify({"ok": bool(ok), "servo": sensor_data["servomotor"], "active": bool(sensor_state["servomotor"]),
+                    "error": sensor_data["servomotor"]["error"] if not ok else ""}), (200 if ok else 500)
+
+
 # ────────────────────────────────────────────────
 #   EXERCISE RUNNER
 # ────────────────────────────────────────────────
@@ -1111,7 +1255,7 @@ def _exercise_reader(proc: subprocess.Popen):
                     _append_log(stdout_line=line)
             if proc.stderr:
                 for line in proc.stderr.readlines():
-                    _append_log(stderr_line=line)
+                    _append_log(stderr_line=eline)
         except Exception:
             pass
 
