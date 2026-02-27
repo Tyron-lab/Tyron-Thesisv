@@ -13,7 +13,7 @@
 
     <div class="nav-card">
       <a class="nav-btn" href="/static/template/activityfolder.html">← Back</a>
-      <!-- ✅ Tools now opens the combined multi-user live dashboard (EX21+EX22+EX23) -->
+      <!-- Tools opens combined multi-user live dashboard (EX21+EX22) -->
       <a class="nav-btn" href="#a5-tools" id="openToolsDash">Tools</a>
       <a class="nav-btn" href="/static/template/welcome.html">Home</a>
     </div>
@@ -28,142 +28,98 @@
 
       <div class="cards">
 
-        <!-- A5 EX21 -->
+        <!-- Combined EX 21-22: Multi-user Live Monitoring Dashboard -->
         <article class="exercise-card"
-          data-exercise="a5-ex21"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
+          data-exercise="a5-ex21-22"
+          data-image="/static/images/sensor.png"
+          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 21: Send Sensor Data"
-          data-say-text="Send sensor readings to the dashboard. This popup will show live MQTT telemetry from your ESP32.">
+          data-say-title="Exercises 21-22: ESP32 MQTT Monitoring Dashboard"
+          data-say-text="Combined multi-user live monitoring dashboard for ESP32 MQTT data. Access via Tools button.">
           <div class="ex-card-head">
-            <h3>Exercise 21: Send Sensor Data</h3>
-            <span class="pill">IoT • MQTT</span>
+            <h3>Exercises 21-22: ESP32 MQTT Dashboard</h3>
+            <span class="pill">ESP32 • MQTT • Multi-User</span>
           </div>
-
-          <p class="ex-desc">Live: Temperature, Motion, Noise ➜ appears in the popup dashboard.</p>
-
+          <p class="ex-desc">Live monitoring of ESP32 data via MQTT. Multi-user dashboard opens via Tools button.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Sensor reading</span>
-            <span><b>Output:</b> Live dashboard update</span>
+            <span><b>Input:</b> ESP32 MQTT</span>
+            <span><b>Output:</b> Live Dashboard</span>
           </div>
-
           <div class="ex-actions">
-            <!-- ✅ Run removed -->
-            <button class="stop-btn" type="button" data-stop="a5-ex21">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex21">Speak (Start/Stop)</button>
-            <span class="status" data-status-for="a5-ex21">Ready</span>
+            <button class="stop-btn" type="button" data-stop="a5-ex21-22">Stop</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex21-22">Speak / Stop</button>
+            <span class="status" data-status-for="a5-ex21-22">Ready</span>
           </div>
         </article>
 
-        <!-- A5 EX22 -->
-        <article class="exercise-card"
-          data-exercise="a5-ex22"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
-          tabindex="0" role="button"
-          data-say-title="Exercise 22: Receive Command"
-          data-say-text="Run the MQTT subscriber on the Raspberry Pi. Use the buttons in this popup to send commands like Turn Light ON and Open Gate.">
-          <div class="ex-card-head">
-            <h3>Exercise 22: Receive Command</h3>
-            <span class="pill">Subscribe • Control</span>
-          </div>
-
-          <p class="ex-desc">Use the popup command buttons to control relay/servo/LED via MQTT.</p>
-
-          <div class="ex-meta">
-            <span><b>Input:</b> Dashboard command</span>
-            <span><b>Output:</b> LED / Relay / Servo responds</span>
-          </div>
-
-          <div class="ex-actions">
-            <!-- ✅ Run removed -->
-            <button class="stop-btn" type="button" data-stop="a5-ex22">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex22">Speak (Start/Stop)</button>
-            <span class="status" data-status-for="a5-ex22">Ready</span>
-          </div>
-        </article>
-
-        <!-- A5 EX23 -->
+        <!-- EX 23: Multiple User -->
         <article class="exercise-card"
           data-exercise="a5-ex23"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
+          data-image="/static/images/sensor.png"
+          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 23: Local Data Storage"
-          data-say-text="Save sensor readings locally for later use. Subscribe to telemetry and store events into CSV/JSONL logs on the Raspberry Pi.">
+          data-say-title="Exercise 23: Multiple User Monitoring"
+          data-say-text="Supports multiple users viewing ESP32 MQTT data simultaneously.">
           <div class="ex-card-head">
-            <h3>Exercise 23: Local Data Storage</h3>
-            <span class="pill">Logs • File</span>
+            <h3>Exercise 23: Multiple User</h3>
+            <span class="pill">Multi-User • Monitoring</span>
           </div>
-
-          <p class="ex-desc">Subscribes to telemetry and saves events locally (CSV/JSONL).</p>
-
+          <p class="ex-desc">Real-time shared monitoring for multiple users.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Sensor readings</span>
-            <span><b>Output:</b> Stored to file (logs)</span>
+            <span><b>Input:</b> Multi-User</span>
+            <span><b>Output:</b> Shared View</span>
           </div>
-
           <div class="ex-actions">
-            <!-- ✅ Run removed -->
             <button class="stop-btn" type="button" data-stop="a5-ex23">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex23">Speak (Start/Stop)</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex23">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex23">Ready</span>
           </div>
         </article>
 
-        <!-- A5 EX24 -->
+        <!-- EX 24: Event Logging & History (Terminal Modal) -->
         <article class="exercise-card"
           data-exercise="a5-ex24"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
+          data-image="/static/images/sensor.png"
+          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercise 24: Event Logging & History"
-          data-say-text="Multi-user event logging. Use the popup controls for Buzzer, LED, Servo, Relay. Terminal output shows history in real-time.">
+          data-say-text="Logs BUZZER, LED, Servo, Relay events. Shown in terminal-style modal popup.">
           <div class="ex-card-head">
-            <h3>Exercise 24: Event Logging &amp; History</h3>
-            <span class="pill">Terminal • History</span>
+            <h3>Exercise 24: Event Logging & History</h3>
+            <span class="pill">Logging • Terminal</span>
           </div>
-
-          <p class="ex-desc">Controls + terminal-like event history (Buzzer / LED / Servo / Relay).</p>
-
+          <p class="ex-desc">Records and displays BUZZER, LED, Servo, Relay events in a terminal-like popup.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> User action</span>
-            <span><b>Output:</b> Logged events + device actions</span>
+            <span><b>Input:</b> Device Events</span>
+            <span><b>Output:</b> Terminal Modal</span>
           </div>
-
           <div class="ex-actions">
-            <!-- ✅ Run removed -->
             <button class="stop-btn" type="button" data-stop="a5-ex24">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex24">Speak (Start/Stop)</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex24">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex24">Ready</span>
           </div>
         </article>
 
-        <!-- A5 EX25 -->
+        <!-- EX 25: Simulate All System -->
         <article class="exercise-card"
           data-exercise="a5-ex25"
-          data-image="/images/ex_placeholder.jpg"
-          data-image2="/images/ex_placeholder_2.jpg"
+          data-image="/static/images/sensor.png"
+          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 25: Simulate Full System"
-          data-say-text="Simulate the whole system by user actions. Trigger safe/unsafe sequences and watch terminal output.">
+          data-say-title="Exercise 25: Full System Simulation"
+          data-say-text="User-controlled simulation of the entire system (Buzzer, LED, Servo, Relay, etc.).">
           <div class="ex-card-head">
-            <h3>Exercise 25: Simulate Full System</h3>
-            <span class="pill">Simulate • Demo</span>
+            <h3>Exercise 25: System Simulation</h3>
+            <span class="pill">Simulation • All Outputs</span>
           </div>
-
-          <p class="ex-desc">User simulation: trigger sequences (LED/Relay/Servo/Buzzer) + see terminal output.</p>
-
+          <p class="ex-desc">Simulate full system behavior using user input.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Simulation buttons</span>
-            <span><b>Output:</b> Full-system response</span>
+            <span><b>Input:</b> User Commands</span>
+            <span><b>Output:</b> Simulated Devices</span>
           </div>
-
           <div class="ex-actions">
-            <!-- ✅ Run removed -->
             <button class="stop-btn" type="button" data-stop="a5-ex25">Stop</button>
-            <button class="speak-btn" type="button" data-speak="a5-ex25">Speak (Start/Stop)</button>
+            <button class="speak-btn" type="button" data-speak="a5-ex25">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex25">Ready</span>
           </div>
         </article>
@@ -172,313 +128,53 @@
     </section>
   </div>
 
-  <!-- Exercise Modal -->
-  <div class="modal-overlay" id="exModal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <button class="modal-close" type="button" id="modalClose" aria-label="Close">✕</button>
+  <!-- Combined Multi-User Live Dashboard Modal (EX21+EX22) -->
+  <div class="modal-overlay" id="toolsModal" aria-hidden="true">
+    <div class="modal-card large-modal" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
+      <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="Close">✕</button>
 
-      <div class="modal-grid">
-        <div class="modal-media">
-          <div class="modal-media-split">
-            <img id="modalImg" alt="" />
-            <img id="modalImg2" alt="" />
+      <h2 id="toolsTitle">Multi-User ESP32 MQTT Live Dashboard</h2>
+      <p>Real-time monitoring from multiple users via MQTT</p>
+
+      <div class="live-panel">
+        <div class="live-head">Live Status</div>
+        <div class="live-body">
+          <div class="live-item">
+            <div class="live-k">Connected Users</div>
+            <div class="live-v" id="a5UserCount">—</div>
           </div>
+          <div class="live-item">
+            <div class="live-k">Latest Message</div>
+            <div class="live-v" id="a5LatestMsg">—</div>
+          </div>
+          <div class="live-item">
+            <div class="live-k">Last Update</div>
+            <div class="live-v" id="a5LastUpdate">—</div>
+          </div>
+          <!-- Add more live fields as needed -->
         </div>
+      </div>
 
-        <div class="modal-info">
-          <h2 id="modalTitle">Exercise</h2>
-          <p id="modalDesc" class="modal-desc"></p>
-          <div class="modal-meta" id="modalMeta"></div>
-
-          <!-- ✅ EX21 Live panel -->
-          <div class="live-panel" id="a5LivePanel" hidden>
-            <div class="live-head">
-              <b>📡 Live Telemetry</b>
-              <span class="live-pill">
-                <span class="dot" id="a5Dot"></span>
-                <span id="a5ConnText">Connecting…</span>
-              </span>
-            </div>
-
-            <div class="live-grid">
-              <div class="live-item">
-                <div class="live-k">Temperature</div>
-                <div class="live-v" id="a5Temp">—</div>
-              </div>
-              <div class="live-item">
-                <div class="live-k">Motion</div>
-                <div class="live-v" id="a5Motion">—</div>
-              </div>
-              <div class="live-item">
-                <div class="live-k">Noise</div>
-                <div class="live-v" id="a5Noise">—</div>
-              </div>
-            </div>
-
-            <div class="live-foot">
-              <small id="a5Updated">Last update: —</small>
-              <small class="live-raw" id="a5Raw">raw: —</small>
-            </div>
-          </div>
-
-          <!-- ✅ EX22 Command panel -->
-          <div class="live-panel" id="a5CmdPanel" hidden>
-            <div class="live-head">
-              <b>🕹️ Remote Commands</b>
-              <span class="live-pill">
-                <span class="dot" id="a5CmdDot"></span>
-                <span id="a5CmdText">Ready</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
-              <button class="run-btn" type="button" id="cmdLightOn">Turn Light ON</button>
-              <button class="stop-btn" type="button" id="cmdLightOff">Turn Light OFF</button>
-
-              <button class="run-btn" type="button" id="cmdGateOpen">Open Gate</button>
-              <button class="stop-btn" type="button" id="cmdGateClose">Close Gate</button>
-
-              <button class="run-btn" type="button" id="cmdLedGreen">LED Green</button>
-              <button class="stop-btn" type="button" id="cmdAllOff">ALL OFF</button>
-            </div>
-
-            <div class="live-foot">
-              <small id="a5CmdLast">Last command: —</small>
-              <small class="live-raw" id="a5CmdRaw">payload: —</small>
-            </div>
-          </div>
-
-          <!-- ✅ EX23 Storage panel -->
-          <div class="live-panel" id="a5StorePanel" hidden>
-            <div class="live-head">
-              <b>💾 Local Storage</b>
-              <span class="live-pill">
-                <span class="dot" id="a5StoreDot"></span>
-                <span id="a5StoreText">Ready</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: 1fr;">
-              <div class="live-item">
-                <div class="live-k">Where it saves</div>
-                <div class="live-v" id="a5StorePath">activity5/logs/ex23_events.csv + .jsonl</div>
-              </div>
-
-              <div class="live-item">
-                <div class="live-k">Last saved event</div>
-                <div class="live-v" id="a5StoreLast">—</div>
-              </div>
-
-              <div class="live-item">
-                <div class="live-k">Total records (this run)</div>
-                <div class="live-v" id="a5StoreCount">0</div>
-              </div>
-
-              <div class="live-item">
-                <div class="live-k">Tip</div>
-                <div class="live-v">Leave it on to keep saving; stop anytime. Logs remain on disk.</div>
-              </div>
-            </div>
-
-            <div class="live-foot">
-              <small id="a5StoreUpdated">Last update: —</small>
-              <small class="live-raw" id="a5StoreRaw">raw: —</small>
-            </div>
-          </div>
-
-          <!-- ✅ EX24 Controls -->
-          <div class="live-panel" id="a5Ex24Panel" hidden>
-            <div class="live-head">
-              <b>🧾 Event Logging Controls</b>
-              <span class="live-pill">
-                <span class="dot" id="a5Ex24Dot"></span>
-                <span id="a5Ex24Text">Ready</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
-              <button class="run-btn" type="button" id="ex24RelayOn">Relay ON</button>
-              <button class="stop-btn" type="button" id="ex24RelayOff">Relay OFF</button>
-
-              <button class="run-btn" type="button" id="ex24LedOn">LED ON</button>
-              <button class="stop-btn" type="button" id="ex24LedOff">LED OFF</button>
-
-              <button class="run-btn" type="button" id="ex24ServoOpen">Servo Open</button>
-              <button class="stop-btn" type="button" id="ex24ServoClose">Servo Close</button>
-
-              <button class="run-btn" type="button" id="ex24BuzzerOn">Buzzer ON</button>
-              <button class="stop-btn" type="button" id="ex24BuzzerOff">Buzzer OFF</button>
-            </div>
-
-            <div class="live-foot">
-              <small class="live-raw" id="a5Ex24Hint">Tip: Actions will appear in the terminal below.</small>
-            </div>
-          </div>
-
-          <!-- ✅ EX25 Simulation -->
-          <div class="live-panel" id="a5Ex25Panel" hidden>
-            <div class="live-head">
-              <b>🧪 Full System Simulation</b>
-              <span class="live-pill">
-                <span class="dot" id="a5Ex25Dot"></span>
-                <span id="a5Ex25Text">Ready</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
-              <button class="run-btn" type="button" id="simSafe">Simulate SAFE</button>
-              <button class="stop-btn" type="button" id="simUnsafe">Simulate UNSAFE</button>
-
-              <button class="run-btn" type="button" id="simMotion">Simulate Motion</button>
-              <button class="stop-btn" type="button" id="simNoise">Simulate Loud Noise</button>
-
-              <button class="run-btn" type="button" id="simAllOn">All Devices ON</button>
-              <button class="stop-btn" type="button" id="simAllOff">All Devices OFF</button>
-            </div>
-
-            <div class="live-foot">
-              <small class="live-raw">This is user-driven simulation for presentation/demo.</small>
-            </div>
-          </div>
-
-          <!-- ✅ Terminal output (EX24/EX25) -->
-          <div class="live-panel" id="a5TermPanel" hidden>
-            <div class="live-head">
-              <b>🖥️ Terminal Output</b>
-              <span class="live-pill">
-                <span class="dot" id="a5TermDot"></span>
-                <span id="a5TermText">Waiting…</span>
-              </span>
-            </div>
-
-            <pre id="a5TermOut" style="margin:0; max-height:220px; overflow:auto; background:#0b1020; color:#d7e3ff; padding:12px; border-radius:12px; font-size:12px; line-height:1.35; white-space:pre-wrap;"></pre>
-
-            <div class="live-foot">
-              <small class="live-raw" id="a5TermFilter">filter: —</small>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <!-- ✅ Run removed -->
-            <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
-            <button class="speak-btn" type="button" id="modalSpeakBtn">Speak (Start/Stop)</button>
-          </div>
-        </div>
+      <div class="modal-actions">
+        <button class="stop-btn" type="button" id="toolsStopAll">Stop All Monitoring</button>
       </div>
     </div>
   </div>
 
-  <!-- Tools Dashboard Modal (Combined EX21 + EX22 + EX23, multi-user) -->
-  <div class="modal-overlay" id="toolsModal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
-      <button class="modal-close" type="button" id="toolsClose" aria-label="Close">✕</button>
+  <!-- Event Logging Terminal Modal (EX24) -->
+  <div class="modal-overlay" id="ex24Modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ex24Title">
+      <button class="modal-close" type="button" id="ex24CloseBtn" aria-label="Close">✕</button>
 
-      <div class="modal-grid">
-        <div class="modal-info" style="grid-column: 1 / -1;">
-          <h2 id="toolsTitle">Tools • Live Monitoring Dashboard</h2>
-          <p class="modal-desc">Combined EX21 + EX22 + EX23 for multi-user monitoring. If someone is running an exercise, all other phones will show BUSY (shared lock).</p>
+      <h2 id="ex24Title">Event Logging Terminal</h2>
+      <p>BUZZER • LED • Servo • Relay events</p>
 
-          <div class="live-panel" id="toolsFocusPanel">
-            <div class="live-head">
-              <b>👥 Multi-user Focus</b>
-              <span class="live-pill">
-                <span class="dot" id="toolsFocusDot"></span>
-                <span id="toolsFocusText">Checking…</span>
-              </span>
-            </div>
-            <div class="live-foot">
-              <small class="live-raw" id="toolsFocusRaw">—</small>
-            </div>
-          </div>
+      <div class="terminal-window">
+        <pre id="eventTerminal">[INFO] Waiting for events...\n</pre>
+      </div>
 
-          <!-- Reuse same live panels (always visible here) -->
-          <div class="live-panel" id="toolsLivePanel">
-            <div class="live-head">
-              <b>📡 Live Telemetry (EX21)</b>
-              <span class="live-pill">
-                <span class="dot" id="toolsDot"></span>
-                <span id="toolsConnText">Connecting…</span>
-              </span>
-            </div>
-
-            <div class="live-grid">
-              <div class="live-item">
-                <div class="live-k">Temperature</div>
-                <div class="live-v" id="toolsTemp">—</div>
-              </div>
-              <div class="live-item">
-                <div class="live-k">Motion</div>
-                <div class="live-v" id="toolsMotion">—</div>
-              </div>
-              <div class="live-item">
-                <div class="live-k">Noise</div>
-                <div class="live-v" id="toolsNoise">—</div>
-              </div>
-            </div>
-
-            <div class="live-foot">
-              <small id="toolsUpdated">Last update: —</small>
-              <small class="live-raw" id="toolsRaw">raw: —</small>
-            </div>
-          </div>
-
-          <div class="live-panel" id="toolsCmdPanel">
-            <div class="live-head">
-              <b>🕹️ Remote Commands (EX22)</b>
-              <span class="live-pill">
-                <span class="dot" id="toolsCmdDot"></span>
-                <span id="toolsCmdText">Ready</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
-              <button class="run-btn" type="button" id="tCmdLightOn">Turn Light ON</button>
-              <button class="stop-btn" type="button" id="tCmdLightOff">Turn Light OFF</button>
-
-              <button class="run-btn" type="button" id="tCmdGateOpen">Open Gate</button>
-              <button class="stop-btn" type="button" id="tCmdGateClose">Close Gate</button>
-
-              <button class="run-btn" type="button" id="tCmdLedGreen">LED Green</button>
-              <button class="stop-btn" type="button" id="tCmdAllOff">ALL OFF</button>
-            </div>
-
-            <div class="live-foot">
-              <small id="toolsCmdLast">Last command: —</small>
-              <small class="live-raw" id="toolsCmdRaw">payload: —</small>
-            </div>
-          </div>
-
-          <div class="live-panel" id="toolsStorePanel">
-            <div class="live-head">
-              <b>💾 Local Storage (EX23)</b>
-              <span class="live-pill">
-                <span class="dot" id="toolsStoreDot"></span>
-                <span id="toolsStoreText">Running…</span>
-              </span>
-            </div>
-
-            <div class="live-grid" style="grid-template-columns: 1fr;">
-              <div class="live-item">
-                <div class="live-k">Latest [EX23] line</div>
-                <div class="live-v" id="toolsStoreLast">—</div>
-              </div>
-              <div class="live-item">
-                <div class="live-k">Records seen (this view)</div>
-                <div class="live-v" id="toolsStoreCount">0</div>
-              </div>
-            </div>
-
-            <div class="live-foot">
-              <small id="toolsStoreUpdated">Last update: —</small>
-              <small class="live-raw" id="toolsStoreRaw">raw: —</small>
-            </div>
-          </div>
-
-          <div class="modal-actions">
-            <button class="stop-btn" type="button" id="toolsCloseBtn">Close</button>
-          </div>
-
-        </div>
+      <div class="modal-actions">
+        <button class="stop-btn" type="button" id="ex24StopBtn">Stop Logging</button>
       </div>
     </div>
   </div>
