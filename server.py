@@ -64,13 +64,19 @@ try:
 except Exception:
     SENSORS_AVAILABLE["LCD"] = False
 
-# MIC (sounddevice + numpy)
 try:
     import sounddevice as sd
     import numpy as np
     SENSORS_AVAILABLE["MIC"] = True
 except Exception:
     SENSORS_AVAILABLE["MIC"] = False
+
+# VOSK (speech recognition)
+try:
+    from vosk import Model, KaldiRecognizer
+    SENSORS_AVAILABLE["VOSK"] = True
+except Exception:
+    SENSORS_AVAILABLE["VOSK"] = False
 
 print("Available libraries:", SENSORS_AVAILABLE)
 
@@ -90,7 +96,7 @@ def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 # ────────────────────────────────────────────────
-#   SENSOR DATA/STATE
+#   SENSOR DATA/STATE (must exist before set_error)
 # ────────────────────────────────────────────────
 sensor_state = {
     "MPU6050":    False,
@@ -99,13 +105,11 @@ sensor_state = {
     "MHMQ":       False,
     "PIR":        False,
     "ULTRASONIC": False,
-    "MIC":        False,
-
     "Relay":      False,
     "servomotor": False,
-
     "BUZZER":     False,
     "LCD_TOOL":   False,
+    "MIC":       False,
 }
 
 sensor_data = {
@@ -118,13 +122,11 @@ sensor_data = {
 
     "MHMQ":       {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
 
-    "MIC":        {"rms": None, "peak": None, "sample_rate": None, "last_update": None, "error": ""},
-
     "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
-
     "BUZZER":     {"on": False, "last_update": None, "error": ""},
     "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
+    "MIC":       {"rms": None, "peak": None, "sample_rate": None, "listening_rate": 16000, "partial": "", "text": "", "last_update": None, "error": ""},
 }
 
 def set_error(key: str, msg):
@@ -392,6 +394,7 @@ def lcd_release():
         _lcd = None
 
 # ────────────────────────────────────────────────
+# ────────────────────────────────────────────────
 #   GPIO OUTPUTS (BUZZER ONLY)
 #   (LED_TOOL removed to avoid GPIO BUSY)
 # ────────────────────────────────────────────────
@@ -407,11 +410,13 @@ def make_out(pin, initial=False):
     return io
 
 def release_tools_outputs():
+    """Kept name for compatibility, now releases ONLY buzzer."""
     global buzzer
     _safe_deinit(buzzer)
     buzzer = None
 
 def init_tools_outputs():
+    """Kept name for compatibility, now initializes ONLY buzzer."""
     global buzzer
     if not SENSORS_AVAILABLE.get("board"):
         set_error("BUZZER", "board not available")
@@ -430,9 +435,11 @@ def init_tools_outputs():
         _do_init()
         clear_error("BUZZER")
         return True
-    except Exception:
-        release_tools_outputs()
-        time.sleep(0.05)
+    except Exception as e:
+        mic_stop()
+
+    release_tools_outputs()
+    time.sleep(0.05)
         try:
             _do_init()
             clear_error("BUZZER")
@@ -479,17 +486,25 @@ def beep(count=2, on_ms=120, off_ms=120):
         return False
 
 
-# ────────────────────────────────────────────────
-#   MIC (INMP441) – no clap, WAV loop while MIC is ON
-#   Uses sounddevice (PortAudio) + numpy if available.
-#   - Starts mic capture for peak/rms display
-#   - Plays WAV on loop using aplay while MIC is ON
-# ────────────────────────────────────────────────
 
+# ────────────────────────────────────────────────
+#   MIC + VOSK (no clap, no wav)
+#   - Captures audio with sounddevice
+#   - Resamples to 16k for Vosk if device rate differs
+#   - Updates partial + final recognized text
+# ────────────────────────────────────────────────
 MIC_STREAM = None
 MIC_LOCK = threading.Lock()
 
-# sample-rate fallback (fixes "Invalid sample rate")
+VOSK_MODEL_PATH = os.environ.get(
+    "VOSK_MODEL_PATH",
+    os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
+)
+VOSK_MODEL = None
+VOSK_REC = None
+VOSK_LOCK = threading.Lock()
+
+# Try these device capture rates (fixes "invalid sample rate")
 MIC_SR_CANDIDATES = [
     int(os.environ.get("MIC_SAMPLE_RATE", "48000")),
     48000,
@@ -497,49 +512,51 @@ MIC_SR_CANDIDATES = [
     16000,
 ]
 
-# WAV file to play while MIC is ON
-WAV_PATH = os.environ.get("MIC_WAV_PATH", os.path.join(BASE_DIR, "static", "sounds", "wave.wav"))
+VOSK_TARGET_SR = 16000  # Vosk typically expects 8k or 16k
 
-WAV_PROC = None
-WAV_LOCK = threading.Lock()
+def _resample_to_16k(x: "np.ndarray", src_sr: int, dst_sr: int = 16000) -> "np.ndarray":
+    """Simple resampler using linear interpolation. x must be float32 mono."""
+    if src_sr == dst_sr:
+        return x
+    if len(x) < 2:
+        return x
 
-def wav_stop():
-    global WAV_PROC
-    with WAV_LOCK:
+    duration = len(x) / float(src_sr)
+    dst_len = int(duration * dst_sr)
+    if dst_len <= 1:
+        return x[:1]
+
+    src_idx = np.linspace(0, len(x) - 1, num=len(x), dtype=np.float64)
+    dst_idx = np.linspace(0, len(x) - 1, num=dst_len, dtype=np.float64)
+    y = np.interp(dst_idx, src_idx, x).astype(np.float32)
+    return y
+
+def vosk_init():
+    """Load Vosk model once and create recognizer."""
+    global VOSK_MODEL, VOSK_REC
+
+    if not SENSORS_AVAILABLE.get("VOSK", False):
+        set_error("MIC", "vosk not installed. pip install vosk")
+        return False
+
+    if not os.path.isdir(VOSK_MODEL_PATH):
+        set_error("MIC", f"Vosk model not found: {VOSK_MODEL_PATH}")
+        return False
+
+    with VOSK_LOCK:
+        if VOSK_MODEL is None:
+            VOSK_MODEL = Model(VOSK_MODEL_PATH)
+        VOSK_REC = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
         try:
-            if WAV_PROC is not None and WAV_PROC.poll() is None:
-                WAV_PROC.terminate()
-                try:
-                    WAV_PROC.wait(timeout=1.5)
-                except Exception:
-                    WAV_PROC.kill()
+            VOSK_REC.SetWords(False)
         except Exception:
             pass
-        WAV_PROC = None
 
-def wav_start_loop():
-    """Play WAV in an infinite loop using aplay."""
-    global WAV_PROC
-    if not os.path.exists(WAV_PATH):
-        set_error("MIC", f"WAV not found: {WAV_PATH}")
-        return False
-    wav_stop()
-    try:
-        p = subprocess.Popen(
-            ["aplay", "-q", "--loop=0", WAV_PATH],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        with WAV_LOCK:
-            WAV_PROC = p
-        return True
-    except Exception as e:
-        set_error("MIC", f"aplay failed: {e}")
-        wav_stop()
-        return False
+    sensor_data["MIC"]["listening_rate"] = VOSK_TARGET_SR
+    clear_error("MIC")
+    return True
 
 def mic_stop():
-    """Stop mic capture and WAV loop."""
     global MIC_STREAM
     with MIC_LOCK:
         try:
@@ -549,15 +566,29 @@ def mic_stop():
         except Exception:
             pass
         MIC_STREAM = None
-    wav_stop()
+
+    # Reset recognizer (keep model cached)
+    with VOSK_LOCK:
+        try:
+            if VOSK_MODEL is not None:
+                globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
+        except Exception:
+            pass
 
 def mic_start():
-    """Start mic capture and start WAV loop."""
     global MIC_STREAM
 
-    if not SENSORS_AVAILABLE.get("MIC"):
+    if not SENSORS_AVAILABLE.get("MIC", False):
         set_error("MIC", "sounddevice/numpy not available")
         return False
+
+    if not vosk_init():
+        return False
+
+    mic_stop()
+
+    sensor_data["MIC"]["partial"] = ""
+    sensor_data["MIC"]["text"] = ""
 
     def _callback(indata, frames, time_info, status):
         try:
@@ -570,20 +601,44 @@ def mic_start():
             if hasattr(x, "shape") and len(x.shape) == 2:
                 x = x[:, 0]
 
+            x = x.astype(np.float32, copy=False)
+
             peak = float(np.max(np.abs(x))) if len(x) else 0.0
             rms  = float(np.sqrt(np.mean(np.square(x)))) if len(x) else 0.0
+
+            src_sr = int(sensor_data["MIC"].get("sample_rate") or VOSK_TARGET_SR)
+            y = _resample_to_16k(x, src_sr, VOSK_TARGET_SR)
+
+            pcm16 = np.clip(y * 32767.0, -32768, 32767).astype(np.int16).tobytes()
+
+            partial_txt = ""
+            final_txt = None
+
+            with VOSK_LOCK:
+                if VOSK_REC is not None:
+                    ok = VOSK_REC.AcceptWaveform(pcm16)
+                    if ok:
+                        res = json.loads(VOSK_REC.Result() or "{}")
+                        final_txt = (res.get("text") or "").strip()
+                    else:
+                        pres = json.loads(VOSK_REC.PartialResult() or "{}")
+                        partial_txt = (pres.get("partial") or "").strip()
+
+            if partial_txt:
+                sensor_data["MIC"]["partial"] = partial_txt
+            if final_txt is not None and final_txt != "":
+                sensor_data["MIC"]["text"] = final_txt
+                sensor_data["MIC"]["partial"] = ""
 
             sensor_data["MIC"].update({
                 "rms": round(rms, 4),
                 "peak": round(peak, 4),
-                "sample_rate": sensor_data["MIC"].get("sample_rate"),
                 "last_update": now_iso(),
                 "error": sensor_data["MIC"].get("error", ""),
             })
+
         except Exception as e:
             set_error("MIC", e)
-
-    mic_stop()  # ensure clean start
 
     last_err = None
     tried = []
@@ -606,11 +661,7 @@ def mic_start():
 
             sensor_data["MIC"]["sample_rate"] = int(sr)
             clear_error("MIC")
-
-            # start wav after mic stream is running
-            wav_start_loop()
-
-            print(f"[MIC] started sr={sr} wav={WAV_PATH}")
+            print(f"[MIC+VOSK] started device_sr={sr} model={VOSK_MODEL_PATH}")
             return True
         except Exception as e:
             last_err = e
@@ -618,7 +669,6 @@ def mic_start():
     mic_stop()
     set_error("MIC", f"mic_start failed (rates tried {tried}): {last_err}")
     return False
-
 
 #   SENSOR THREADS / GPIO
 # ────────────────────────────────────────────────
@@ -670,11 +720,10 @@ def release_all_sensor_gpio():
         pass
     servo_pwm = None
 
-    mic_stop()
     release_tools_outputs()
     lcd_release()
 
-    for s in ("MPU6050", "BMP280", "DHT11", "MHMQ", "PIR", "ULTRASONIC", "Relay", "servomotor", "MIC"):
+    for s in ("MPU6050", "BMP280", "DHT11", "MHMQ", "PIR", "ULTRASONIC", "Relay", "servomotor"):
         sensor_state[s] = False
 
 # ────────────────────────────────────────────────
@@ -940,6 +989,7 @@ def set_all_relays(on: bool) -> bool:
         ok = set_relay(ch, on) and ok
     return ok
 
+
 def init_servomotor():
     if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board") or SERVO_PIN is None:
         set_error("servomotor", "servo not available")
@@ -964,6 +1014,7 @@ def set_servo_angle(angle):
     return True
 
 def stop_servo() -> None:
+    """Stop PWM to avoid jitter/heat."""
     global servo_pwm
     try:
         if servo_pwm is not None:
@@ -973,6 +1024,7 @@ def stop_servo() -> None:
         pass
     servo_pwm = None
     sensor_data["servomotor"]["last_update"] = now_iso()
+
 
 # ────────────────────────────────────────────────
 #   GAS LEVEL
@@ -1012,6 +1064,8 @@ def ensure_sensor_init(sensor: str) -> bool:
         return init_relay()
     if sensor == "servomotor":
         return init_servomotor()
+    if sensor == "MIC":
+        return mic_start()
     return True
 
 def sensor_reader(sensor_name):
@@ -1153,39 +1207,64 @@ def toggle_sensor():
     if sensor not in sensor_state:
         return jsonify({"ok": False, "error": "Unknown sensor"}), 400
 
-    # MIC = special (not a thread sensor)
-    if sensor == "MIC":
-        sensor_state[sensor] = not bool(sensor_state[sensor])
-        active = bool(sensor_state[sensor])
-        if active:
-            ok = mic_start()
-            if not ok:
-                sensor_state[sensor] = False
-                return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data["MIC"]["error"]}), 500
-        else:
-            mic_stop()
-        return jsonify({"ok": True, "sensor": sensor, "active": bool(sensor_state[sensor]), "mic": sensor_data["MIC"]})
-
+    # Toggle state
     sensor_state[sensor] = not bool(sensor_state[sensor])
     active = bool(sensor_state[sensor])
 
+    # --- TOOL OUTPUTS ---
+    # BUZZER: simple ON/OFF (use /api/buzzer for beep/toggle)
+    if sensor == "BUZZER":
+        ok = set_buzzer(active)
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": active,
+                        "on": sensor_data["BUZZER"]["on"], "active_low": BUZZER_ACTIVE_LOW,
+                        "error": sensor_data["BUZZER"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # LCD: ON shows READY; OFF clears
+    if sensor == "LCD_TOOL":
+        if active:
+            ok = lcd_write("LCD READY", now_iso()[-8:])
+        else:
+            ok = lcd_clear()
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": active,
+                        "line1": sensor_data["LCD_TOOL"]["line1"], "line2": sensor_data["LCD_TOOL"]["line2"],
+                        "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # --- ACTUATORS ---
+    # Relay: when ON => turn ON all channels; when OFF => turn OFF all channels
     if sensor == "Relay":
         ok = set_all_relays(active)
         if not ok:
             sensor_state[sensor] = False
-            return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data["Relay"]["error"]}), 500
-        return jsonify({"ok": True, "sensor": sensor, "active": True, "relay": sensor_data["Relay"]})
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+                        "relay": sensor_data["Relay"], "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
 
+    # Servo: when ON => move to 90°; when OFF => stop PWM
     if sensor == "servomotor":
         if active:
             ok = set_servo_angle(90)
             if not ok:
                 sensor_state[sensor] = False
-                return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data["servomotor"]["error"]}), 500
         else:
             stop_servo()
-        return jsonify({"ok": True, "sensor": sensor, "active": bool(sensor_state[sensor]), "servo": sensor_data["servomotor"]})
+            sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
+            ok = True
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+                        "servo": sensor_data["servomotor"], "error": sensor_data["servomotor"]["error"] if not ok else ""}), (200 if ok else 500)
 
+    
+    # MIC: start/stop stream (no sensor_reader thread)
+    if sensor == "MIC":
+        if active:
+            ok = mic_start()
+            if not ok:
+                sensor_state[sensor] = False
+        else:
+            mic_stop()
+            ok = True
+        return jsonify({"ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+                        "mic": sensor_data["MIC"], "error": sensor_data["MIC"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    # --- SENSORS (threads) ---
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
@@ -1199,6 +1278,7 @@ def toggle_sensor():
         running_flags[sensor] = False
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
+
 
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
@@ -1257,8 +1337,59 @@ def api_a5_command():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+@app.route("/api/relay", methods=["POST"])
+def api_relay():
+    data = request.json or {}
+    # Either {ch: 1-4, action: on/off/toggle} OR {all: true, action: on/off}
+    action = data.get("action")
+    if action not in ("on", "off", "toggle"):
+        return jsonify({"ok": False, "error": "Invalid action"}), 400
+
+    if data.get("all") is True:
+        # toggle based on ch1
+        cur = bool(sensor_data["Relay"].get("ch1", False))
+        target = (not cur) if action == "toggle" else (action == "on")
+        ok = set_all_relays(target)
+        if ok:
+            sensor_state["Relay"] = target
+        return jsonify({"ok": bool(ok), "all": sensor_data["Relay"], "active": bool(sensor_state["Relay"]),
+                        "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
+
+    try:
+        ch = int(data.get("ch"))
+    except Exception:
+        return jsonify({"ok": False, "error": "Missing/invalid ch"}), 400
+    if ch not in (1,2,3,4):
+        return jsonify({"ok": False, "error": "ch must be 1-4"}), 400
+
+    cur = bool(sensor_data["Relay"].get(f"ch{ch}", False))
+    target = (not cur) if action == "toggle" else (action == "on")
+    ok = set_relay(ch, target)
+    return jsonify({"ok": bool(ok), "relay": sensor_data["Relay"], "error": sensor_data["Relay"]["error"] if not ok else ""}), (200 if ok else 500)
+
+@app.route("/api/servo", methods=["POST"])
+def api_servo():
+    data = request.json or {}
+    if data.get("stop"):
+        stop_servo()
+        sensor_state["servomotor"] = False
+        return jsonify({"ok": True, "servo": sensor_data["servomotor"], "active": False})
+
+    try:
+        angle = int(data.get("angle", 90))
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid angle"}), 400
+
+    ok = set_servo_angle(angle)
+    if ok:
+        sensor_state["servomotor"] = True
+    return jsonify({"ok": bool(ok), "servo": sensor_data["servomotor"], "active": bool(sensor_state["servomotor"]),
+                    "error": sensor_data["servomotor"]["error"] if not ok else ""}), (200 if ok else 500)
+
+
 # ────────────────────────────────────────────────
-#   EXERCISE RUNNER (unchanged)
+#   EXERCISE RUNNER
 # ────────────────────────────────────────────────
 def _append_log(stdout_line=None, stderr_line=None):
     with exercise_log_lock:
@@ -1316,7 +1447,7 @@ def api_exercise_run():
     if not ex_id:
         return jsonify({"ok": False, "error": "Missing exercise_id"}), 400
 
-    # ✅ SPECIAL CASE: A5 EX21 = ESP32 streaming control (NO local Python)
+    # ✅ SPECIAL CASE: A5 EX21 = ESP32 streaming control (no local Python)
     if ex_id == "a5-ex21":
         try:
             a5_send_cmd({"stream": "on"})
@@ -1456,7 +1587,6 @@ if __name__ == "__main__":
     print("I2C Mux:", "Enabled" if USE_MUX else "Disabled")
     print("LCD MUX CH:", LCD_MUX_CH, "MPU CH:", MPU_MUX_CH, "BMP CH:", BMP_MUX_CH)
     print("BUZZER_ACTIVE_LOW:", BUZZER_ACTIVE_LOW)
-    print("WAV_PATH:", WAV_PATH)
     print("=" * 80)
 
     # ✅ Start MQTT bridge so Flask can read ESP32 data
