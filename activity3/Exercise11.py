@@ -3,6 +3,8 @@
 # Output: LCD shows temperature + pressure
 
 import time
+import signal
+import sys               # ← added for sys.exit()
 
 # ---- I2C mux (TCA9548A) ----
 from smbus2 import SMBus
@@ -36,6 +38,20 @@ BMP_ADDR = None
 LCD_COLS = 16
 LCD_ROWS = 2
 # =========================
+
+
+# ────────────────────────────────────────────────
+# Added: SIGTERM + SIGINT handling (Stop button / Ctrl+C)
+# ────────────────────────────────────────────────
+_should_exit = False
+
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT, _handle_term)
+# ────────────────────────────────────────────────
 
 
 def mux_select(channel: int):
@@ -129,6 +145,9 @@ last_display = None
 
 try:
     while True:
+        if _should_exit:
+            break
+
         try:
             mux_select(BMP_CH)
             temp_c = float(bmp.temperature)
@@ -159,3 +178,19 @@ except KeyboardInterrupt:
             lcd.clear()
         except Exception:
             pass
+
+# ────────────────────────────────────────────────
+# Added: final cleanup on SIGTERM / SIGINT exit
+# ────────────────────────────────────────────────
+finally:
+    if lcd:
+        try:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.8)
+            mux_select(LCD_CH)
+            lcd.clear()
+        except Exception:
+            pass
+
+    print("Exercise 11 exited cleanly.")
+    sys.exit(0)
