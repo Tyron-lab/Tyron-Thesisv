@@ -1,29 +1,20 @@
-/* activity1.js — FULL UPDATED
-   MODE A (default): Activities behave like Tools (use /api/toggle + live status across phones)
-   MODE B (optional): SHIFT + click "Run" to run the actual Exercise#.py via /api/exercise
-   Multi-phone lock: /api/focus
-
-   Requires server.py:
-     - /api/focus
-     - /api/toggle
-     - /api/sensors
-     - /api/exercise /api/exercise_stop /api/exercise_status /api/exercise_logs
-     - /api/a5/latest /api/a5/command
+/* activity1.js — Exercise-only + Multi-phone BUSY lock (NO live indicators)
+   Behavior:
+   - Run => POST /api/exercise {exercise_id}
+   - Stop => POST /api/exercise_stop
+   - Multi-phone busy: uses /api/focus (shared)
+   - Removes sensor values on cards; relies on Exercise scripts + LCD output
 */
 
 (() => {
-  const API_TOGGLE = "/api/toggle";
-  const API_SENSORS = "/api/sensors";
-
   const API_RUN = "/api/exercise";
   const API_STOP = "/api/exercise_stop";
   const API_STATUS = "/api/exercise_status";
-  const API_LOGS = "/api/exercise_logs";
+  const API_LOGS = "/api/exercise_logs"; // optional (used only for ex23 panel)
+  const API_FOCUS = "/api/focus";
 
   const API_A5_LATEST = "/api/a5/latest";
   const API_A5_COMMAND = "/api/a5/command";
-
-  const API_FOCUS = "/api/focus";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -48,36 +39,6 @@
     return { ok: res.ok, status: res.status, data, text };
   }
 
-  // Activity 1–4 mapping to Tools sensors (MODE A)
-  const EX_TOGGLE_MAP = {
-    "a1-ex1": ["PIR"],
-    "a1-ex2": ["MHMQ"],
-    "a1-ex3": ["DHT11", "LCD_TOOL"],
-    "a1-ex4": ["ULTRASONIC", "BUZZER"],
-    "a1-ex5": ["BMP280", "LCD_TOOL"],
-
-    "a2-ex6": ["DHT11", "PIR", "MHMQ"],
-    "a2-ex7": ["MHMQ"],
-    "a2-ex8": ["PIR"],
-    "a2-ex9": ["DHT11", "BUZZER"],
-    "a2-ex10": ["DHT11", "PIR", "MHMQ", "BMP280"],
-
-    "a3-ex11": ["BMP280", "LCD_TOOL"],
-    "a3-ex12": ["MPU6050"],
-    "a3-ex13": ["LCD_TOOL"],
-    "a3-ex14": ["BMP280", "MPU6050", "LCD_TOOL"],
-    "a3-ex15": ["BMP280", "MPU6050", "LCD_TOOL"],
-
-    "a4-ex16": ["Relay"],
-    "a4-ex17": ["Relay"],
-    "a4-ex18": ["BUZZER"],
-    "a4-ex19": ["Relay"],
-    "a4-ex20": ["Relay"],
-  };
-
-  // Activity 5 still uses runner/MQTT
-  const EX_RUNNER_SET = new Set(["a5-ex21", "a5-ex22", "a5-ex23", "a5-ex24", "a5-ex25"]);
-
   function setStatus(exId, text, state = "") {
     const el = qs(`[data-status-for="${CSS.escape(exId)}"]`);
     if (el) el.textContent = text;
@@ -89,68 +50,9 @@
     }
   }
 
-  // ---------- speech ----------
-  function speak(text) {
-    try {
-      if (!("speechSynthesis" in window)) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1;
-      u.pitch = 1;
-      u.lang = "en-US";
-      window.speechSynthesis.speak(u);
-    } catch {}
-  }
-
-  // ---------- modal ----------
-  const modal = qs("#exModal");
-  const modalClose = qs("#modalClose");
-  const modalTitle = qs("#modalTitle");
-  const modalDesc = qs("#modalDesc");
-  const modalMeta = qs("#modalMeta");
-  const modalImg = qs("#modalImg");
-  const modalImg2 = qs("#modalImg2");
-  const modalRunBtn = qs("#modalRunBtn");
-  const modalStopBtn = qs("#modalStopBtn");
-  const modalSpeakBtn = qs("#modalSpeakBtn");
-
-  // A5 EX21 live panel
-  const a5LivePanel = qs("#a5LivePanel");
-  const a5Dot = qs("#a5Dot");
-  const a5ConnText = qs("#a5ConnText");
-  const a5Temp = qs("#a5Temp");
-  const a5Motion = qs("#a5Motion");
-  const a5Noise = qs("#a5Noise");
-  const a5Updated = qs("#a5Updated");
-  const a5Raw = qs("#a5Raw");
-
-  // A5 EX22 commands panel
-  const a5CmdPanel = qs("#a5CmdPanel");
-  const a5CmdDot = qs("#a5CmdDot");
-  const a5CmdText = qs("#a5CmdText");
-  const a5CmdLast = qs("#a5CmdLast");
-  const a5CmdRaw = qs("#a5CmdRaw");
-
-  const cmdLightOn  = qs("#cmdLightOn");
-  const cmdLightOff = qs("#cmdLightOff");
-  const cmdGateOpen = qs("#cmdGateOpen");
-  const cmdGateClose= qs("#cmdGateClose");
-  const cmdLedGreen = qs("#cmdLedGreen");
-  const cmdAllOff   = qs("#cmdAllOff");
-
-  // A5 EX23 storage
-  const a5StorePanel   = qs("#a5StorePanel");
-  const a5StoreDot     = qs("#a5StoreDot");
-  const a5StoreText    = qs("#a5StoreText");
-  const a5StorePath    = qs("#a5StorePath");
-  const a5StoreLast    = qs("#a5StoreLast");
-  const a5StoreCount   = qs("#a5StoreCount");
-  const a5StoreUpdated = qs("#a5StoreUpdated");
-  const a5StoreRaw     = qs("#a5StoreRaw");
-
-  let modalExerciseId = null;
-
-  // ---------- busy/lock UI (multi-phone focus) ----------
+  // ────────────────────────────────────────────────
+  // Multi-phone focus lock
+  // ────────────────────────────────────────────────
   let currentRunningEx = null;
 
   function setBusyUI(runningExId) {
@@ -182,6 +84,7 @@
         card.style.filter = "";
       }
 
+      // Disable buttons in other cards; allow Stop only on running card
       const btns = qsa("button", card);
       btns.forEach((btn) => {
         const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
@@ -201,6 +104,7 @@
       });
     });
 
+    // Modal buttons lock if modal is on a different exercise
     if (hasRunning && modalExerciseId && modalExerciseId !== runningExId) {
       if (modalRunBtn) modalRunBtn.disabled = true;
       if (modalSpeakBtn) modalSpeakBtn.disabled = true;
@@ -233,11 +137,82 @@
     if (exId && exId !== currentRunningEx) {
       currentRunningEx = exId;
       setBusyUI(currentRunningEx);
-      setStatus(currentRunningEx, "Running...", "state-running");
+
+      // Show "Running..." only on the focused exercise; others show Busy
+      qsa(".exercise-card[data-exercise]").forEach((card) => {
+        const id = card.dataset.exercise;
+        if (id === currentRunningEx) setStatus(id, "Running...", "state-running");
+        else setStatus(id, `BUSY (running: ${currentRunningEx})`);
+      });
     }
   }
 
-  // ---------- A5 helpers ----------
+  // ────────────────────────────────────────────────
+  // Speech
+  // ────────────────────────────────────────────────
+  function speak(text) {
+    try {
+      if (!("speechSynthesis" in window)) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1;
+      u.pitch = 1;
+      u.lang = "en-US";
+      window.speechSynthesis.speak(u);
+    } catch {}
+  }
+
+  // ────────────────────────────────────────────────
+  // Modal
+  // ────────────────────────────────────────────────
+  const modal = qs("#exModal");
+  const modalClose = qs("#modalClose");
+  const modalTitle = qs("#modalTitle");
+  const modalDesc = qs("#modalDesc");
+  const modalMeta = qs("#modalMeta");
+  const modalImg = qs("#modalImg");
+  const modalImg2 = qs("#modalImg2");
+  const modalRunBtn = qs("#modalRunBtn");
+  const modalStopBtn = qs("#modalStopBtn");
+  const modalSpeakBtn = qs("#modalSpeakBtn");
+
+  // A5 EX21 live panel (still allowed in popup only)
+  const a5LivePanel = qs("#a5LivePanel");
+  const a5Dot = qs("#a5Dot");
+  const a5ConnText = qs("#a5ConnText");
+  const a5Temp = qs("#a5Temp");
+  const a5Motion = qs("#a5Motion");
+  const a5Noise = qs("#a5Noise");
+  const a5Updated = qs("#a5Updated");
+  const a5Raw = qs("#a5Raw");
+
+  // A5 EX22 command panel
+  const a5CmdPanel = qs("#a5CmdPanel");
+  const a5CmdDot = qs("#a5CmdDot");
+  const a5CmdText = qs("#a5CmdText");
+  const a5CmdLast = qs("#a5CmdLast");
+  const a5CmdRaw = qs("#a5CmdRaw");
+
+  const cmdLightOn  = qs("#cmdLightOn");
+  const cmdLightOff = qs("#cmdLightOff");
+  const cmdGateOpen = qs("#cmdGateOpen");
+  const cmdGateClose= qs("#cmdGateClose");
+  const cmdLedGreen = qs("#cmdLedGreen");
+  const cmdAllOff   = qs("#cmdAllOff");
+
+  // A5 EX23 storage panel (optional)
+  const a5StorePanel   = qs("#a5StorePanel");
+  const a5StoreDot     = qs("#a5StoreDot");
+  const a5StoreText    = qs("#a5StoreText");
+  const a5StorePath    = qs("#a5StorePath");
+  const a5StoreLast    = qs("#a5StoreLast");
+  const a5StoreCount   = qs("#a5StoreCount");
+  const a5StoreUpdated = qs("#a5StoreUpdated");
+  const a5StoreRaw     = qs("#a5StoreRaw");
+
+  let modalExerciseId = null;
+
+  // A5 helpers (popup only; doesn’t affect card indicators)
   let a5Timer = null;
 
   function setA5Conn(state, text) {
@@ -358,7 +333,7 @@
   }
   bindCmdButtons();
 
-  // A5 EX23 storage polling
+  // Ex23 storage panel (optional)
   let a5StoreTimer = null;
   let a5StoreLastLine = "";
 
@@ -373,7 +348,7 @@
   function startA5StoragePanel() {
     if (!a5StorePanel) return;
     a5StorePanel.hidden = false;
-    setStoreState("ok", "Running / Waiting for data…");
+    setStoreState("ok", "Running…");
     a5StoreLastLine = "";
 
     if (a5StorePath) a5StorePath.textContent = "activity5/logs/ex23_events.csv + ex23_events.jsonl";
@@ -408,12 +383,12 @@
           if (a5StoreRaw) a5StoreRaw.textContent = "raw: " + last;
           setStoreState("ok", "Saving ✅");
         } else {
-          setStoreState("ok", "Running / Waiting for data…");
+          setStoreState("ok", "Running…");
         }
       } catch {
         setStoreState("bad", "Offline");
       }
-    }, 800);
+    }, 900);
   }
 
   function stopA5StoragePanel() {
@@ -422,7 +397,6 @@
     if (a5StorePanel) a5StorePanel.hidden = true;
   }
 
-  // ---------- modal open/close ----------
   function openModalFromCard(card) {
     if (!modal) return;
     const exId = card.dataset.exercise || "";
@@ -450,10 +424,11 @@
       });
     }
 
-    if (modalRunBtn)  modalRunBtn.onclick  = () => startExercise(exId, false);
+    if (modalRunBtn)  modalRunBtn.onclick  = () => startExercise(exId);
     if (modalStopBtn) modalStopBtn.onclick = () => stopExercise(exId);
     if (modalSpeakBtn) modalSpeakBtn.onclick = () => speak(`${title}. ${desc}`);
 
+    // A5 popup-only panels
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
     if (exId === "a5-ex22") startA5Commands();  else stopA5Commands();
     if (exId === "a5-ex23") startA5StoragePanel(); else stopA5StoragePanel();
@@ -478,22 +453,13 @@
   }
 
   if (modalClose) modalClose.addEventListener("click", closeModal);
-  if (modal) {
-    modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
-  }
+  if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
-  // ---------- MODE A: toggle helper ----------
-  async function toggleOnce(sensor) {
-    const { ok, data, text } = await postJSON(API_TOGGLE, { sensor });
-    if (!ok || !data || data.ok === false) {
-      throw new Error((data && (data.error || data.message)) || text || "Toggle failed");
-    }
-    return data;
-  }
-
-  // ---------- START/STOP ----------
-  async function startExercise(exId, forceScriptMode) {
+  // ────────────────────────────────────────────────
+  // Exercise-only start/stop
+  // ────────────────────────────────────────────────
+  async function startExercise(exId) {
     if (!exId) return;
 
     await syncFocusFromServer();
@@ -508,42 +474,14 @@
     setBusyUI(currentRunningEx);
     setStatus(exId, "Running...", "state-running");
 
-    // MODE B: SHIFT run => run python script
-    if (forceScriptMode) {
-      const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
-      if (!ok) {
-        await setFocus(exId, false);
-        currentRunningEx = null;
-        setBusyUI(null);
-        setStatus(exId, "Error", "state-error");
-        throw new Error((data && (data.error || data.message)) || text || "Run failed");
-      }
-      return;
-    }
-
-    // Activity 5 always uses runner/MQTT (even in mode A)
-    if (EX_RUNNER_SET.has(exId)) {
-      const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
-      if (!ok) {
-        await setFocus(exId, false);
-        currentRunningEx = null;
-        setBusyUI(null);
-        setStatus(exId, "Error", "state-error");
-        throw new Error((data && (data.error || data.message)) || text || "Run failed");
-      }
-      return;
-    }
-
-    // MODE A: Activities 1–4 behave like Tools => toggle sensors
-    const sensors = EX_TOGGLE_MAP[exId] || [];
-    try {
-      for (const s of sensors) await toggleOnce(s);
-    } catch (e) {
+    const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
+    if (!ok) {
+      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || "Run failed");
+      setStatus(exId, "Error", "state-error");
       await setFocus(exId, false);
       currentRunningEx = null;
       setBusyUI(null);
-      setStatus(exId, "Error", "state-error");
-      throw e;
+      throw new Error(msg);
     }
   }
 
@@ -565,91 +503,43 @@
     const exId = currentRunningEx;
     setStatus(exId, "Stopping...");
 
-    // Stop runner scripts (covers Activity5 and ModeB scripts)
-    const { ok } = await postJSON(API_STOP, {});
-    // ok can be false when nothing is running on backend; that’s fine for Mode A toggles
-
-    if (!EX_RUNNER_SET.has(exId) && !ok) {
-      // MODE A only: toggle mapped sensors OFF (best-effort: toggle once each)
-      const sensors = EX_TOGGLE_MAP[exId] || [];
-      for (const s of sensors) {
-        try { await toggleOnce(s); } catch {}
-      }
-    }
-
+    await postJSON(API_STOP, {}).catch(() => {});
     await setFocus(exId, false);
+
     setStatus(exId, "Stopped");
     currentRunningEx = null;
     setBusyUI(null);
+
+    // reset others to Ready (no indicators)
+    qsa(".exercise-card[data-exercise]").forEach((card) => {
+      const id = card.dataset.exercise;
+      if (id !== exId) setStatus(id, "Ready");
+    });
   }
 
-  // Runner watcher: if script ends, clear focus
-  async function refreshRunnerStatusIfNeeded() {
+  // If backend finishes naturally, clear focus across phones
+  async function refreshRunnerStatus() {
     if (!currentRunningEx) return;
-
     const r = await getJSON(API_STATUS);
     if (!r.ok || !r.data) return;
 
     const running = !!r.data.running;
     if (!running) {
-      const finishedId = currentRunningEx;
-      await setFocus(finishedId, false);
+      const doneId = currentRunningEx;
+      await setFocus(doneId, false);
       currentRunningEx = null;
       setBusyUI(null);
-      setStatus(finishedId, "Finished");
+      setStatus(doneId, "Finished");
+      qsa(".exercise-card[data-exercise]").forEach((card) => {
+        const id = card.dataset.exercise;
+        if (id !== doneId) setStatus(id, "Ready");
+      });
     }
   }
 
-  // ---------- LIVE STATUS TEXT (all activities) ----------
-  function fmt(n, digits = 1) {
-    if (n === null || n === undefined) return "—";
-    if (typeof n !== "number") return String(n);
-    return n.toFixed(digits);
-  }
-
-  function computeExStatus(exId, sensorsResp) {
-    const data = sensorsResp?.data || {};
-
-    if (exId === "a1-ex1") {
-      const pir = data.PIR || {};
-      return `PIR: ${pir.motion ? "MOTION" : "NO"} • Count: ${pir.count ?? 0}`;
-    }
-    if (exId === "a1-ex2") {
-      const mq = data.MHMQ || {};
-      return `Gas: ${mq.gas_detected ? "DETECTED" : "OK"} • Level: ${fmt(mq.level_percent, 0)}%`;
-    }
-    if (exId === "a1-ex3") {
-      const dht = data.DHT11 || {};
-      return `Temp: ${fmt(dht.temperature)}°C • Hum: ${fmt(dht.humidity)}%`;
-    }
-    if (exId === "a1-ex4") {
-      const u = data.ULTRASONIC || {};
-      const bz = (data.BUZZER || {}).on;
-      return `Dist: ${fmt(u.distance_cm)}cm • Buzzer: ${bz ? "ON" : "OFF"}`;
-    }
-    if (exId === "a1-ex5") {
-      const b = data.BMP280 || {};
-      return `Temp: ${fmt(b.temperature)}°C • Press: ${fmt(b.pressure, 0)}`;
-    }
-
-    if (EX_RUNNER_SET.has(exId)) return "Use Run/Stop";
-
-    return "Ready";
-  }
-
-  async function refreshLiveCards() {
-    const sensors = await getJSON(API_SENSORS);
-    if (!sensors.ok || !sensors.data) return;
-
-    qsa(".exercise-card[data-exercise]").forEach((card) => {
-      const exId = card.dataset.exercise;
-      if (currentRunningEx && exId === currentRunningEx) return;
-      const txt = computeExStatus(exId, sensors.data);
-      setStatus(exId, txt);
-    });
-  }
-
-  // ---------- bind cards ----------
+  // ────────────────────────────────────────────────
+  // Bind cards + buttons
+  // ────────────────────────────────────────────────
   qsa(".exercise-card").forEach((card) => {
     card.addEventListener("click", (e) => {
       const target = e.target;
@@ -665,24 +555,14 @@
     });
   });
 
-  // Run buttons
   qsa("button.run-btn[data-run]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      const exId = btn.dataset.run;
-
-      // ✅ SHIFT => Mode B script
-      const useScript = !!e.shiftKey;
-
-      try {
-        await startExercise(exId, useScript);
-      } catch (err) {
-        alert(String(err.message || err));
-      }
+      try { await startExercise(btn.dataset.run); }
+      catch (err) { alert(String(err.message || err)); }
     });
   });
 
-  // Stop buttons
   qsa("button.stop-btn[data-stop]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -691,7 +571,6 @@
     });
   });
 
-  // Speak buttons
   qsa("button.speak-btn[data-speak]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -704,15 +583,16 @@
     });
   });
 
-  // ---------- init ----------
+  // ────────────────────────────────────────────────
+  // Init: no indicators, just Ready
+  // ────────────────────────────────────────────────
   qsa(".exercise-card[data-exercise]").forEach((card) => {
-    const exId = card.dataset.exercise;
-    setStatus(exId, "Ready");
+    setStatus(card.dataset.exercise, "Ready");
   });
 
   setBusyUI(null);
 
+  // Multi-phone syncing
   setInterval(() => { syncFocusFromServer().catch(() => {}); }, 500);
-  setInterval(() => { refreshLiveCards().catch(() => {}); }, 800);
-  setInterval(() => { refreshRunnerStatusIfNeeded().catch(() => {}); }, 900);
+  setInterval(() => { refreshRunnerStatus().catch(() => {}); }, 900);
 })();
