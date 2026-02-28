@@ -281,10 +281,7 @@ EXERCISE_MAP = {
     "a4-ex19": os.path.join(BASE_DIR, "activity4", "Exercise19.py"),
     "a4-ex20": os.path.join(BASE_DIR, "activity4", "Exercise20.py"),
 
-    "a5-ex22": os.path.join(BASE_DIR, "activity5", "Exercise22.py"),
-    "a5-ex23": os.path.join(BASE_DIR, "activity5", "Exercise23.py"),
     "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
-    "a5-ex25": os.path.join(BASE_DIR, "activity5", "Exercise25.py"),
 }
 
 # ✅ Check if your map paths are correct

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Group 5 Activity • TrainerKit</title>
 
+  <link rel="stylesheet" href="/static/css/activity5.css" />
   <link rel="stylesheet" href="/static/css/activity1.css" />
 </head>
 
@@ -13,7 +14,6 @@
 
     <div class="nav-card">
       <a class="nav-btn" href="/static/template/activityfolder.html">← Back</a>
-      <!-- Tools opens combined multi-user live dashboard (EX21+EX22) -->
       <a class="nav-btn" href="#a5-tools" id="openToolsDash">Tools</a>
       <a class="nav-btn" href="/static/template/welcome.html">Home</a>
     </div>
@@ -28,7 +28,7 @@
 
       <div class="cards">
 
-        <!-- Combined EX 21-22: Multi-user Live Monitoring Dashboard -->
+        <!-- EX 21-22 -->
         <article class="exercise-card"
           data-exercise="a5-ex21-22"
           data-image="/static/images/sensor.png"
@@ -46,13 +46,12 @@
             <span><b>Output:</b> Live Dashboard</span>
           </div>
           <div class="ex-actions">
-            <button class="stop-btn" type="button" data-stop="a5-ex21-22">Stop</button>
             <button class="speak-btn" type="button" data-speak="a5-ex21-22">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex21-22">Ready</span>
           </div>
         </article>
 
-        <!-- EX 23: Multiple User -->
+        <!-- EX 23 -->
         <article class="exercise-card"
           data-exercise="a5-ex23"
           data-image="/static/images/sensor.png"
@@ -70,37 +69,37 @@
             <span><b>Output:</b> Shared View</span>
           </div>
           <div class="ex-actions">
-            <button class="stop-btn" type="button" data-stop="a5-ex23">Stop</button>
             <button class="speak-btn" type="button" data-speak="a5-ex23">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex23">Ready</span>
           </div>
         </article>
 
-        <!-- EX 24: Event Logging & History (Terminal Modal) -->
+        <!-- EX 24: Full controls -->
         <article class="exercise-card"
           data-exercise="a5-ex24"
           data-image="/static/images/sensor.png"
           data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercise 24: Event Logging & History"
-          data-say-text="Logs BUZZER, LED, Servo, Relay events. Shown in terminal-style modal popup.">
+          data-say-text="Control BUZZER, LED, Servo, Relay and log events in real-time terminal.">
           <div class="ex-card-head">
             <h3>Exercise 24: Event Logging & History</h3>
-            <span class="pill">Logging • Terminal</span>
+            <span class="pill">Logging • Terminal • Control</span>
           </div>
-          <p class="ex-desc">Records and displays BUZZER, LED, Servo, Relay events in a terminal-like popup.</p>
+          <p class="ex-desc">Interact with devices and view logs in terminal. Export as CSV.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> Device Events</span>
-            <span><b>Output:</b> Terminal Modal</span>
+            <span><b>Input:</b> Manual Controls</span>
+            <span><b>Output:</b> Terminal + CSV</span>
           </div>
           <div class="ex-actions">
+            <button class="run-btn" type="button" data-run="a5-ex24">Execute</button>
             <button class="stop-btn" type="button" data-stop="a5-ex24">Stop</button>
             <button class="speak-btn" type="button" data-speak="a5-ex24">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex24">Ready</span>
           </div>
         </article>
 
-        <!-- EX 25: Simulate All System -->
+        <!-- EX 25 -->
         <article class="exercise-card"
           data-exercise="a5-ex25"
           data-image="/static/images/sensor.png"
@@ -118,7 +117,6 @@
             <span><b>Output:</b> Simulated Devices</span>
           </div>
           <div class="ex-actions">
-            <button class="stop-btn" type="button" data-stop="a5-ex25">Stop</button>
             <button class="speak-btn" type="button" data-speak="a5-ex25">Speak / Stop</button>
             <span class="status" data-status-for="a5-ex25">Ready</span>
           </div>
@@ -128,9 +126,9 @@
     </section>
   </div>
 
-  <!-- Combined Multi-User Live Dashboard Modal (EX21+EX22) -->
+  <!-- Tools Dashboard Modal (EX21+EX22) -->
   <div class="modal-overlay" id="toolsModal" aria-hidden="true">
-    <div class="modal-card large-modal" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
       <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="Close">✕</button>
 
       <h2 id="toolsTitle">Multi-User ESP32 MQTT Live Dashboard</h2>
@@ -141,17 +139,16 @@
         <div class="live-body">
           <div class="live-item">
             <div class="live-k">Connected Users</div>
-            <div class="live-v" id="a5UserCount">—</div>
+            <div class="live-v" id="userCount">—</div>
           </div>
           <div class="live-item">
             <div class="live-k">Latest Message</div>
-            <div class="live-v" id="a5LatestMsg">—</div>
+            <div class="live-v" id="latestEvent">—</div>
           </div>
           <div class="live-item">
             <div class="live-k">Last Update</div>
-            <div class="live-v" id="a5LastUpdate">—</div>
+            <div class="live-v" id="lastUpdate">—</div>
           </div>
-          <!-- Add more live fields as needed -->
         </div>
       </div>
 
@@ -161,24 +158,69 @@
     </div>
   </div>
 
-  <!-- Event Logging Terminal Modal (EX24) -->
+  <!-- EX24 Event Logging Terminal Modal -->
   <div class="modal-overlay" id="ex24Modal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ex24Title">
+    <div class="modal-card large-modal" role="dialog" aria-modal="true" aria-labelledby="ex24Title">
       <button class="modal-close" type="button" id="ex24CloseBtn" aria-label="Close">✕</button>
 
       <h2 id="ex24Title">Event Logging Terminal</h2>
-      <p>BUZZER • LED • Servo • Relay events</p>
+      <p>Control and log BUZZER • LED • Servo • Relay events</p>
 
-      <div class="terminal-window">
-        <pre id="eventTerminal">[INFO] Waiting for events...\n</pre>
-      </div>
+      <div class="ex24-layout">
+        <!-- LEFT: Controls -->
+        <div class="ex24-left">
+          <div class="control-section">
+            <h3>Buzzer</h3>
+            <div class="btn-row">
+              <button class="control-btn buzzer-on" id="ctrlBuzzerOn">BUZZER ON</button>
+              <button class="control-btn buzzer-off" id="ctrlBuzzerOff">BUZZER OFF</button>
+            </div>
+          </div>
 
-      <div class="modal-actions">
-        <button class="stop-btn" type="button" id="ex24StopBtn">Stop Logging</button>
+          <div class="control-section">
+            <h3>LED</h3>
+            <div class="btn-row">
+              <button class="control-btn led-red" id="ctrlLedRed">RED</button>
+              <button class="control-btn led-green" id="ctrlLedGreen">GREEN</button>
+              <button class="control-btn led-orange" id="ctrlLedOrange">ORANGE</button>
+              <button class="control-btn led-off" id="ctrlLedOff">OFF</button>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h3>Servo</h3>
+            <div class="btn-row">
+              <button class="control-btn servo" id="ctrlServo0">0°</button>
+              <button class="control-btn servo" id="ctrlServo90">90°</button>
+              <button class="control-btn servo" id="ctrlServo180">180°</button>
+            </div>
+          </div>
+
+          <div class="control-section">
+            <h3>Relay</h3>
+            <div class="btn-row">
+              <button class="control-btn relay-on" id="ctrlRelay1On">CH1 ON</button>
+              <button class="control-btn relay-off" id="ctrlRelay1Off">CH1 OFF</button>
+              <button class="control-btn relay-all-off" id="ctrlRelayAllOff">ALL OFF</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Terminal + Actions -->
+        <div class="ex24-right">
+          <div class="terminal-box">
+            <pre id="eventTerminal">[INFO] Waiting for events...\n</pre>
+          </div>
+
+          <div class="terminal-footer">
+            <button class="export-btn" id="exportCsvBtn">Export to CSV</button>
+            <button class="stop-btn" id="ex24StopBtn">Stop Logging</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <script src="/static/js/activity1.js" defer></script>
+  <script src="/static/js/activity5.js" defer></script>
 </body>
 </html>
