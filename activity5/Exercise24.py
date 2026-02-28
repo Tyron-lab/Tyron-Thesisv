@@ -87,7 +87,6 @@ def set_output(dev, on: bool, active_high: bool = True):
         dev.value = not bool(on)
 
 def buzzer_on(buzzer):
-    # ON depends on active-low
     buzzer.value = False if BUZZER_ACTIVE_LOW else True
 
 def buzzer_off(buzzer):
