@@ -1,4 +1,4 @@
-/* activity5.css — Group 5 Activity styles (uploaded) */
+/* activity5.css — Group 5 Activity styles */
 
 :root{
   --bg: #0b1220;
@@ -122,7 +122,7 @@ body{
   flex-wrap: wrap;
 }
 
-.run-btn, .stop-btn, .speak-btn{
+.run-btn, .stop-btn, .speak-btn, .stop-speak-btn{
   border: 0;
   padding: 10px 14px;
   border-radius: 12px;
@@ -140,6 +140,11 @@ body{
 }
 .speak-btn{
   background: linear-gradient(180deg, rgba(245,165,36,.95), rgba(245,165,36,.75));
+}
+
+/* ✅ new stop-speak button (gray) */
+.stop-speak-btn{
+  background: rgba(255,255,255,.12);
 }
 
 .status{
@@ -335,7 +340,7 @@ body{
 }
 
 /* ────────────────────────────────────────────────
-   NEW: EX24 success glow / speaking glow
+   EX24 success glow / speaking glow
    ──────────────────────────────────────────────── */
 @keyframes exGlowPulse {
   0%   { box-shadow: 0 0 0 rgba(63,185,80,0); }

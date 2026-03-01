@@ -1,28 +1,18 @@
-/* activity5.js — Group 5 (ESP32 + MQTT) + EX24 runner + EX24 controls
-   Works with your activity5.html (uploaded):
-   - Tools modal: #toolsModal, #toolsCloseBtn, #userCount, #latestEvent, #lastUpdate, #toolsStopAll
-   - EX24 modal: #ex24Modal, #ex24CloseBtn, #eventTerminal, #exportCsvBtn, #ex24StopBtn
-   - EX24 control buttons:
-       #ctrlBuzzerOn #ctrlBuzzerOff
-       #ctrlLedRed #ctrlLedGreen #ctrlLedOrange #ctrlLedOff
-       #ctrlServo0 #ctrlServo90 #ctrlServo180
-       #ctrlRelay1On #ctrlRelay1Off #ctrlRelayAllOff
-   - EX24 card: data-exercise="a5-ex24" + Execute/Stop/Speak buttons
-   - Multi-phone busy lock: /api/focus
-   - Exercise runner: /api/exercise , /api/exercise_stop , /api/exercise_status , /api/exercise_logs
-   - MQTT latest: /api/a5/latest
-   - Command channel: /api/a5/command
+/* activity5.js — Group 5 (ESP32 + MQTT) + EX24 controls + EX24 server log terminal
+   - Speak / Stop are separate buttons
+   - EX24 does NOT run a python script anymore (Execute removed)
 */
 
 (() => {
-  const API_RUN = "/api/exercise";
-  const API_STOP = "/api/exercise_stop";
   const API_STATUS = "/api/exercise_status";
-  const API_LOGS = "/api/exercise_logs";
   const API_FOCUS = "/api/focus";
 
   const API_A5_LATEST = "/api/a5/latest";
   const API_A5_COMMAND = "/api/a5/command";
+
+  // ✅ new EX24 log endpoints (server.py updated below)
+  const API_EX24_LOGS = "/api/ex24/logs";
+  const API_EX24_CLEAR = "/api/ex24/clear";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -69,7 +59,7 @@
     const card = getCard(exId);
     if (!card) return;
     card.classList.remove("pulse-ok");
-    void card.offsetWidth; // reflow to restart animation
+    void card.offsetWidth;
     card.classList.add("pulse-ok");
     setTimeout(() => card.classList.remove("pulse-ok"), 750);
   }
@@ -77,6 +67,12 @@
   // ────────────────────────────────────────────────
   // Terminal helper
   // ────────────────────────────────────────────────
+  const ex24Modal = qs("#ex24Modal");
+  const ex24CloseBtn = qs("#ex24CloseBtn");
+  const eventTerminal = qs("#eventTerminal");
+  const exportCsvBtn = qs("#exportCsvBtn");
+  const ex24StopBtn = qs("#ex24StopBtn");
+
   function terminalAppend(line) {
     if (!eventTerminal) return;
     const cur = eventTerminal.textContent || "";
@@ -89,13 +85,11 @@
   // Send command to backend
   // ────────────────────────────────────────────────
   async function sendA5Command(cmd) {
-    // You implement the meaning of this payload inside Flask: /api/a5/command
-    // Return should ideally be: { ok: true } on success
     return await postJSON(API_A5_COMMAND, cmd);
   }
 
   // ────────────────────────────────────────────────
-  // Multi-phone focus lock
+  // Multi-phone focus lock (still used for consistency)
   // ────────────────────────────────────────────────
   let currentRunningEx = null;
 
@@ -106,7 +100,6 @@
       const exId = card.dataset.exercise;
       const isThis = hasRunning && exId === runningExId;
 
-      // Lock other cards
       if (hasRunning && !isThis) {
         if (card.dataset.prevTabindex === undefined) {
           card.dataset.prevTabindex = card.getAttribute("tabindex") ?? "";
@@ -128,25 +121,6 @@
         card.style.opacity = "";
         card.style.filter = "";
       }
-
-      // Lock buttons in other cards
-      const btns = qsa("button", card);
-      btns.forEach((btn) => {
-        const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
-        const allow = !hasRunning || isThis || (isThis && isStop);
-
-        if (!allow) {
-          btn.disabled = true;
-          btn.setAttribute("aria-disabled", "true");
-          btn.style.pointerEvents = "none";
-          btn.style.opacity = "0.6";
-        } else {
-          btn.disabled = false;
-          btn.removeAttribute("aria-disabled");
-          btn.style.pointerEvents = "";
-          btn.style.opacity = "";
-        }
-      });
     });
   }
 
@@ -184,31 +158,22 @@
   }
 
   // ────────────────────────────────────────────────
-  // Speak / Stop with card glow while speaking
+  // Speak (start) / Stop (cancel) — separate buttons
   // ────────────────────────────────────────────────
   let speakingExId = null;
-  let currentUtterance = null;
 
-  function stopSpeaking() {
+  function stopSpeakingOnly() {
     try { window.speechSynthesis?.cancel(); } catch {}
     speakingExId = null;
-    currentUtterance = null;
     qsa(".exercise-card.state-speaking").forEach(c => c.classList.remove("state-speaking"));
   }
 
-  function toggleSpeak(exId, text) {
+  function startSpeak(exId, text) {
     try {
       if (!("speechSynthesis" in window)) return;
 
-      // If currently speaking this same exercise -> stop
-      if (speakingExId === exId) {
-        stopSpeaking();
-        setStatus(exId, "Ready");
-        return;
-      }
-
-      // Stop any previous speech
-      stopSpeaking();
+      // stop anything else first
+      stopSpeakingOnly();
 
       speakingExId = exId;
       const card = getCard(exId);
@@ -225,9 +190,8 @@
         c?.classList.remove("state-speaking");
         if (speakingExId === exId) {
           speakingExId = null;
-          currentUtterance = null;
           setStatus(exId, "Ready");
-          pulseOk(exId); // glow when completed
+          pulseOk(exId);
         }
       };
 
@@ -236,18 +200,23 @@
         c?.classList.remove("state-speaking");
         if (speakingExId === exId) {
           speakingExId = null;
-          currentUtterance = null;
           setStatus(exId, "Ready");
         }
       };
 
-      currentUtterance = u;
       window.speechSynthesis.speak(u);
     } catch {}
   }
 
+  function stopSpeakFor(exId) {
+    // stop even if another exercise is speaking
+    stopSpeakingOnly();
+    setStatus(exId, "Ready");
+    pulseOk(exId);
+  }
+
   // ────────────────────────────────────────────────
-  // Modals
+  // Tools modal
   // ────────────────────────────────────────────────
   const toolsModal = qs("#toolsModal");
   const toolsCloseBtn = qs("#toolsCloseBtn");
@@ -255,12 +224,6 @@
   const latestEventEl = qs("#latestEvent");
   const lastUpdateEl = qs("#lastUpdate");
   const toolsStopAll = qs("#toolsStopAll");
-
-  const ex24Modal = qs("#ex24Modal");
-  const ex24CloseBtn = qs("#ex24CloseBtn");
-  const eventTerminal = qs("#eventTerminal");
-  const exportCsvBtn = qs("#exportCsvBtn");
-  const ex24StopBtn = qs("#ex24StopBtn");
 
   function openToolsModal() {
     toolsModal?.classList.add("open");
@@ -276,52 +239,6 @@
     stopToolsPoll();
   }
 
-  function openEx24Modal() {
-    ex24Modal?.classList.add("open");
-    ex24Modal?.setAttribute("aria-hidden", "false");
-    document.body.classList.add("modal-open");
-    startEx24Logs();
-  }
-
-  function closeEx24Modal() {
-    ex24Modal?.classList.remove("open");
-    ex24Modal?.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
-    stopEx24Logs();
-  }
-
-  // ✅ FIX: X buttons
-  toolsCloseBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    closeToolsModal();
-  });
-
-  ex24CloseBtn?.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    closeEx24Modal();
-  });
-
-  // click outside modal card closes
-  toolsModal?.addEventListener("click", (e) => {
-    if (e.target === toolsModal) closeToolsModal();
-  });
-
-  ex24Modal?.addEventListener("click", (e) => {
-    if (e.target === ex24Modal) closeEx24Modal();
-  });
-
-  // ESC closes
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (ex24Modal?.classList.contains("open")) closeEx24Modal();
-    if (toolsModal?.classList.contains("open")) closeToolsModal();
-  });
-
-  // ────────────────────────────────────────────────
-  // Tools Modal poll (MQTT latest)
-  // ────────────────────────────────────────────────
   let toolsTimer = null;
 
   function renderToolsLatest(latest) {
@@ -351,104 +268,62 @@
     toolsTimer = null;
   }
 
+  toolsCloseBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeToolsModal();
+  });
+
+  toolsModal?.addEventListener("click", (e) => {
+    if (e.target === toolsModal) closeToolsModal();
+  });
+
   toolsStopAll?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
     await sendA5Command({ action: "stop" }).catch(() => {});
-    terminalAppend("[CMD] Stop all monitoring");
     pulseOk("a5-ex21-22");
   });
 
   // ────────────────────────────────────────────────
-  // Exercise runner for EX24
+  // EX24 modal open/close + log polling from server
   // ────────────────────────────────────────────────
-  async function startExercise(exId) {
-    await syncFocusFromServer();
-
-    if (currentRunningEx && currentRunningEx !== exId) {
-      setStatus(exId, `BUSY (running: ${currentRunningEx})`);
-      setBusyUI(currentRunningEx);
-      return;
-    }
-
-    await setFocus(exId, true);
-    currentRunningEx = exId;
-    setBusyUI(currentRunningEx);
-    setStatus(exId, "Running...", "state-running");
-
-    const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
-    if (!ok) {
-      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || "Run failed");
-      setStatus(exId, "Error", "state-error");
-      await setFocus(exId, false);
-      currentRunningEx = null;
-      setBusyUI(null);
-      throw new Error(msg);
-    }
+  function openEx24Modal() {
+    ex24Modal?.classList.add("open");
+    ex24Modal?.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    startEx24Logs();
   }
 
-  async function stopExercise(requestedExId = null) {
-    await syncFocusFromServer();
-
-    if (!currentRunningEx) {
-      if (requestedExId) setStatus(requestedExId, "Ready");
-      setBusyUI(null);
-      return;
-    }
-
-    if (requestedExId && requestedExId !== currentRunningEx) {
-      setStatus(requestedExId, `BUSY (running: ${currentRunningEx})`);
-      setBusyUI(currentRunningEx);
-      return;
-    }
-
-    const exId = currentRunningEx;
-    setStatus(exId, "Stopping...");
-
-    await postJSON(API_STOP, {}).catch(() => {});
-    await setFocus(exId, false);
-
-    setStatus(exId, "Stopped");
-    currentRunningEx = null;
-    setBusyUI(null);
-
-    qsa(".exercise-card[data-exercise]").forEach((card) => {
-      const id = card.dataset.exercise;
-      if (id !== exId) setStatus(id, "Ready");
-    });
+  function closeEx24Modal() {
+    ex24Modal?.classList.remove("open");
+    ex24Modal?.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+    stopEx24Logs();
   }
 
-  async function refreshRunnerStatus() {
-    if (!currentRunningEx) return;
-    const r = await getJSON(API_STATUS);
-    if (!r.ok || !r.data) return;
+  ex24CloseBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeEx24Modal();
+  });
 
-    const running = !!r.data.running;
-    if (!running) {
-      const doneId = currentRunningEx;
-      await setFocus(doneId, false);
-      currentRunningEx = null;
-      setBusyUI(null);
-      setStatus(doneId, "Finished");
-      pulseOk(doneId);
+  ex24Modal?.addEventListener("click", (e) => {
+    if (e.target === ex24Modal) closeEx24Modal();
+  });
 
-      qsa(".exercise-card[data-exercise]").forEach((card) => {
-        const id = card.dataset.exercise;
-        if (id !== doneId) setStatus(id, "Ready");
-      });
-    }
-  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (ex24Modal?.classList.contains("open")) closeEx24Modal();
+    if (toolsModal?.classList.contains("open")) closeToolsModal();
+  });
 
-  // ────────────────────────────────────────────────
-  // EX24 terminal logs from server
-  // ────────────────────────────────────────────────
   let ex24LogsTimer = null;
   let lastRenderedLen = 0;
 
   function startEx24Logs() {
     stopEx24Logs();
     lastRenderedLen = 0;
-    if (eventTerminal) eventTerminal.textContent = "[INFO] Waiting for events...\n";
     pullEx24Logs().catch(() => {});
     ex24LogsTimer = setInterval(() => pullEx24Logs().catch(() => {}), 400);
   }
@@ -459,21 +334,13 @@
   }
 
   async function pullEx24Logs() {
-    const r = await getJSON(API_LOGS);
+    const r = await getJSON(API_EX24_LOGS);
     if (!r.ok || !r.data || !eventTerminal) return;
 
-    const out = (r.data.stdout || "").trimEnd();
-    const err = (r.data.stderr || "").trimEnd();
-
-    let combined = "";
-    if (out) combined += out + "\n";
-    if (err) combined += (out ? "\n" : "") + "[STDERR]\n" + err + "\n";
-
-    if (!combined) combined = "[INFO] Waiting for events...\n";
-
-    if (combined.length !== lastRenderedLen) {
-      eventTerminal.textContent = combined;
-      lastRenderedLen = combined.length;
+    const text = (r.data.text || "").trimEnd() + "\n";
+    if (text.length !== lastRenderedLen) {
+      eventTerminal.textContent = text || "[INFO] Waiting for events...\n";
+      lastRenderedLen = text.length;
       eventTerminal.scrollTop = eventTerminal.scrollHeight;
     }
   }
@@ -507,102 +374,55 @@
     a.remove();
   });
 
-  // Stop logging button in EX24 modal (also stops the running exercise)
+  // Stop Logging = clear server log + keep modal open
   ex24StopBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    await stopExercise("a5-ex24").catch(() => {});
-    stopSpeaking();
+    await postJSON(API_EX24_CLEAR, {}).catch(() => {});
     pulseOk("a5-ex24");
+    setStatus("a5-ex24", "Ready");
   });
 
   // ────────────────────────────────────────────────
-  // EX24 Control command wrapper
+  // EX24 command wrapper (still sends MQTT + glows)
   // ────────────────────────────────────────────────
   async function ex24Cmd(payload, pretty) {
-    openEx24Modal(); // show terminal while controlling
-    terminalAppend(`[CMD] ${pretty}`);
+    openEx24Modal();
+    terminalAppend(`[${new Date().toISOString().slice(0,19)}] INFO: [CMD] ${pretty}`);
 
     const r = await sendA5Command({ exercise_id: "a5-ex24", ...payload }).catch(() => null);
 
     if (r && r.ok) {
-      terminalAppend(`[OK] ${pretty}`);
       pulseOk("a5-ex24");
-      setStatus("a5-ex24", "Executing...");
+      setStatus("a5-ex24", "OK");
       return true;
     } else {
       const msg = r?.data?.error || r?.data?.message || r?.text || "Command failed";
-      terminalAppend(`[ERR] ${pretty} -> ${String(msg).trim()}`);
+      terminalAppend(`[${new Date().toISOString().slice(0,19)}] ERR: ${pretty} -> ${String(msg).trim()}`);
       setStatus("a5-ex24", "Error", "state-error");
       return false;
     }
   }
 
-  // ────────────────────────────────────────────────
-  // Bind EX24 control buttons (IDs come from your HTML)
-  // ────────────────────────────────────────────────
-  qs("#ctrlBuzzerOn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "buzzer", state: "on" }, "BUZZER ON");
-  });
+  // Bind EX24 control buttons
+  qs("#ctrlBuzzerOn")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "buzzer", state: "on" }, "BUZZER ON"); });
+  qs("#ctrlBuzzerOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "buzzer", state: "off" }, "BUZZER OFF"); });
 
-  qs("#ctrlBuzzerOff")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "buzzer", state: "off" }, "BUZZER OFF");
-  });
+  qs("#ctrlLedRed")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "red" }, "LED RED"); });
+  qs("#ctrlLedGreen")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "green" }, "LED GREEN"); });
+  qs("#ctrlLedOrange")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "orange" }, "LED ORANGE"); });
+  qs("#ctrlLedOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "off" }, "LED OFF"); });
 
-  qs("#ctrlLedRed")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "led", color: "red" }, "LED RED");
-  });
+  qs("#ctrlServo0")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 0 }, "SERVO 0°"); });
+  qs("#ctrlServo90")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 90 }, "SERVO 90°"); });
+  qs("#ctrlServo180")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 180 }, "SERVO 180°"); });
 
-  qs("#ctrlLedGreen")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "led", color: "green" }, "LED GREEN");
-  });
-
-  qs("#ctrlLedOrange")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "led", color: "orange" }, "LED ORANGE");
-  });
-
-  qs("#ctrlLedOff")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "led", color: "off" }, "LED OFF");
-  });
-
-  qs("#ctrlServo0")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "servo", angle: 0 }, "SERVO 0°");
-  });
-
-  qs("#ctrlServo90")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "servo", angle: 90 }, "SERVO 90°");
-  });
-
-  qs("#ctrlServo180")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "servo", angle: 180 }, "SERVO 180°");
-  });
-
-  qs("#ctrlRelay1On")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "relay", ch: 1, state: "on" }, "RELAY CH1 ON");
-  });
-
-  qs("#ctrlRelay1Off")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "relay", ch: 1, state: "off" }, "RELAY CH1 OFF");
-  });
-
-  qs("#ctrlRelayAllOff")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "relay", ch: "all", state: "off" }, "RELAY ALL OFF");
-  });
+  qs("#ctrlRelay1On")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "on" }, "RELAY CH1 ON"); });
+  qs("#ctrlRelay1Off")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "off" }, "RELAY CH1 OFF"); });
+  qs("#ctrlRelayAllOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: "all", state: "off" }, "RELAY ALL OFF"); });
 
   // ────────────────────────────────────────────────
-  // Bind cards + buttons
+  // Card click opens correct modal
   // ────────────────────────────────────────────────
   qsa(".exercise-card").forEach((card) => {
     card.addEventListener("click", (e) => {
@@ -610,11 +430,8 @@
       if (target && (target.closest("button") || target.closest("a"))) return;
 
       const exId = card.dataset.exercise || "";
-      if (exId === "a5-ex24") {
-        openEx24Modal();
-      } else {
-        if (exId === "a5-ex21-22") openToolsModal();
-      }
+      if (exId === "a5-ex24") openEx24Modal();
+      else if (exId === "a5-ex21-22") openToolsModal();
     });
 
     card.addEventListener("keydown", (e) => {
@@ -625,37 +442,7 @@
     });
   });
 
-  // Execute EX24 (run script) + open terminal
-  qsa('button.run-btn[data-run="a5-ex24"]').forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        openEx24Modal();
-        await startExercise("a5-ex24");
-        pulseOk("a5-ex24");
-      } catch (err) {
-        alert(String(err?.message || err));
-      }
-    });
-  });
-
-  // Stop buttons (works for EX24)
-  qsa("button.stop-btn[data-stop]").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        await stopExercise(btn.dataset.stop);
-        stopSpeaking();
-        pulseOk(btn.dataset.stop);
-      } catch (err) {
-        alert(String(err?.message || err));
-      }
-    });
-  });
-
-  // Speak / Stop button (glows while speaking)
+  // Speak buttons
   qsa("button.speak-btn[data-speak]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -664,7 +451,17 @@
       const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
       const title = card?.dataset.sayTitle || qs("h3", card || document)?.textContent || "Exercise";
       const text = card?.dataset.sayText || qs(".ex-desc", card || document)?.textContent || "";
-      toggleSpeak(exId, `${title}. ${text}`);
+      startSpeak(exId, `${title}. ${text}`);
+    });
+  });
+
+  // Stop-speak buttons
+  qsa("button.stop-speak-btn[data-stop-speak]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const exId = btn.dataset.stopSpeak || btn.dataset.stopSpeak === "" ? "" : (btn.getAttribute("data-stop-speak") || "");
+      stopSpeakFor(exId);
     });
   });
 
@@ -678,6 +475,6 @@
   qsa(".exercise-card[data-exercise]").forEach((card) => setStatus(card.dataset.exercise, "Ready"));
   setBusyUI(null);
 
-  setInterval(() => syncFocusFromServer().catch(() => {}), 500);
-  setInterval(() => refreshRunnerStatus().catch(() => {}), 900);
+  setInterval(() => syncFocusFromServer().catch(() => {}), 700);
+  setInterval(() => getJSON(API_STATUS).catch(() => {}), 1200);
 })();
