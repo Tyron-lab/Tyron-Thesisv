@@ -1,11 +1,17 @@
-/* activity5.js — Group 5 (ESP32 + MQTT) + EX24 runner
+/* activity5.js — Group 5 (ESP32 + MQTT) + EX24 runner + EX24 controls
    Works with your activity5.html (uploaded):
    - Tools modal: #toolsModal, #toolsCloseBtn, #userCount, #latestEvent, #lastUpdate, #toolsStopAll
    - EX24 modal: #ex24Modal, #ex24CloseBtn, #eventTerminal, #exportCsvBtn, #ex24StopBtn
+   - EX24 control buttons:
+       #ctrlBuzzerOn #ctrlBuzzerOff
+       #ctrlLedRed #ctrlLedGreen #ctrlLedOrange #ctrlLedOff
+       #ctrlServo0 #ctrlServo90 #ctrlServo180
+       #ctrlRelay1On #ctrlRelay1Off #ctrlRelayAllOff
    - EX24 card: data-exercise="a5-ex24" + Execute/Stop/Speak buttons
    - Multi-phone busy lock: /api/focus
    - Exercise runner: /api/exercise , /api/exercise_stop , /api/exercise_status , /api/exercise_logs
    - MQTT latest: /api/a5/latest
+   - Command channel: /api/a5/command
 */
 
 (() => {
@@ -50,6 +56,42 @@
       card.classList.remove("state-running", "state-error", "state-missing");
       if (state) card.classList.add(state);
     }
+  }
+
+  // ────────────────────────────────────────────────
+  // Glow helpers (success pulse + speaking glow)
+  // ────────────────────────────────────────────────
+  function getCard(exId) {
+    return qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
+  }
+
+  function pulseOk(exId) {
+    const card = getCard(exId);
+    if (!card) return;
+    card.classList.remove("pulse-ok");
+    void card.offsetWidth; // reflow to restart animation
+    card.classList.add("pulse-ok");
+    setTimeout(() => card.classList.remove("pulse-ok"), 750);
+  }
+
+  // ────────────────────────────────────────────────
+  // Terminal helper
+  // ────────────────────────────────────────────────
+  function terminalAppend(line) {
+    if (!eventTerminal) return;
+    const cur = eventTerminal.textContent || "";
+    const next = cur.endsWith("\n") ? (cur + line + "\n") : (cur + "\n" + line + "\n");
+    eventTerminal.textContent = next;
+    eventTerminal.scrollTop = eventTerminal.scrollHeight;
+  }
+
+  // ────────────────────────────────────────────────
+  // Send command to backend
+  // ────────────────────────────────────────────────
+  async function sendA5Command(cmd) {
+    // You implement the meaning of this payload inside Flask: /api/a5/command
+    // Return should ideally be: { ok: true } on success
+    return await postJSON(API_A5_COMMAND, cmd);
   }
 
   // ────────────────────────────────────────────────
@@ -142,16 +184,64 @@
   }
 
   // ────────────────────────────────────────────────
-  // Speech (optional)
+  // Speak / Stop with card glow while speaking
   // ────────────────────────────────────────────────
-  function speak(text) {
+  let speakingExId = null;
+  let currentUtterance = null;
+
+  function stopSpeaking() {
+    try { window.speechSynthesis?.cancel(); } catch {}
+    speakingExId = null;
+    currentUtterance = null;
+    qsa(".exercise-card.state-speaking").forEach(c => c.classList.remove("state-speaking"));
+  }
+
+  function toggleSpeak(exId, text) {
     try {
       if (!("speechSynthesis" in window)) return;
-      window.speechSynthesis.cancel();
+
+      // If currently speaking this same exercise -> stop
+      if (speakingExId === exId) {
+        stopSpeaking();
+        setStatus(exId, "Ready");
+        return;
+      }
+
+      // Stop any previous speech
+      stopSpeaking();
+
+      speakingExId = exId;
+      const card = getCard(exId);
+      card?.classList.add("state-speaking");
+      setStatus(exId, "Speaking...");
+
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1;
       u.pitch = 1;
       u.lang = "en-US";
+
+      u.onend = () => {
+        const c = getCard(exId);
+        c?.classList.remove("state-speaking");
+        if (speakingExId === exId) {
+          speakingExId = null;
+          currentUtterance = null;
+          setStatus(exId, "Ready");
+          pulseOk(exId); // glow when completed
+        }
+      };
+
+      u.onerror = () => {
+        const c = getCard(exId);
+        c?.classList.remove("state-speaking");
+        if (speakingExId === exId) {
+          speakingExId = null;
+          currentUtterance = null;
+          setStatus(exId, "Ready");
+        }
+      };
+
+      currentUtterance = u;
       window.speechSynthesis.speak(u);
     } catch {}
   }
@@ -235,7 +325,6 @@
   let toolsTimer = null;
 
   function renderToolsLatest(latest) {
-    // latest: {connected,last_update,payload,raw}
     if (userCountEl) userCountEl.textContent = latest?.connected ? "Online" : "Offline";
     if (latestEventEl) {
       const p = latest?.payload;
@@ -265,9 +354,9 @@
   toolsStopAll?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    // Optional: send a stop command to ESP32 side (if you handle it there)
-    await postJSON(API_A5_COMMAND, { action: "stop" }).catch(() => {});
-    speak("Stop all monitoring.");
+    await sendA5Command({ action: "stop" }).catch(() => {});
+    terminalAppend("[CMD] Stop all monitoring");
+    pulseOk("a5-ex21-22");
   });
 
   // ────────────────────────────────────────────────
@@ -341,6 +430,7 @@
       currentRunningEx = null;
       setBusyUI(null);
       setStatus(doneId, "Finished");
+      pulseOk(doneId);
 
       qsa(".exercise-card[data-exercise]").forEach((card) => {
         const id = card.dataset.exercise;
@@ -381,7 +471,6 @@
 
     if (!combined) combined = "[INFO] Waiting for events...\n";
 
-    // only update if changed a bit
     if (combined.length !== lastRenderedLen) {
       eventTerminal.textContent = combined;
       lastRenderedLen = combined.length;
@@ -399,7 +488,6 @@
     const rows = [["timestamp", "level", "message"]];
 
     for (const line of lines) {
-      // Format from Exercise24.py: [YYYY-MM-DDTHH:MM:SS] LEVEL: msg
       const m = line.match(/^\[(.+?)\]\s+([A-Z]+):\s+(.*)$/);
       if (m) rows.push([m[1], m[2], m[3]]);
       else rows.push(["", "", line]);
@@ -424,6 +512,93 @@
     e.preventDefault();
     e.stopPropagation();
     await stopExercise("a5-ex24").catch(() => {});
+    stopSpeaking();
+    pulseOk("a5-ex24");
+  });
+
+  // ────────────────────────────────────────────────
+  // EX24 Control command wrapper
+  // ────────────────────────────────────────────────
+  async function ex24Cmd(payload, pretty) {
+    openEx24Modal(); // show terminal while controlling
+    terminalAppend(`[CMD] ${pretty}`);
+
+    const r = await sendA5Command({ exercise_id: "a5-ex24", ...payload }).catch(() => null);
+
+    if (r && r.ok) {
+      terminalAppend(`[OK] ${pretty}`);
+      pulseOk("a5-ex24");
+      setStatus("a5-ex24", "Executing...");
+      return true;
+    } else {
+      const msg = r?.data?.error || r?.data?.message || r?.text || "Command failed";
+      terminalAppend(`[ERR] ${pretty} -> ${String(msg).trim()}`);
+      setStatus("a5-ex24", "Error", "state-error");
+      return false;
+    }
+  }
+
+  // ────────────────────────────────────────────────
+  // Bind EX24 control buttons (IDs come from your HTML)
+  // ────────────────────────────────────────────────
+  qs("#ctrlBuzzerOn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "buzzer", state: "on" }, "BUZZER ON");
+  });
+
+  qs("#ctrlBuzzerOff")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "buzzer", state: "off" }, "BUZZER OFF");
+  });
+
+  qs("#ctrlLedRed")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "led", color: "red" }, "LED RED");
+  });
+
+  qs("#ctrlLedGreen")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "led", color: "green" }, "LED GREEN");
+  });
+
+  qs("#ctrlLedOrange")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "led", color: "orange" }, "LED ORANGE");
+  });
+
+  qs("#ctrlLedOff")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "led", color: "off" }, "LED OFF");
+  });
+
+  qs("#ctrlServo0")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "servo", angle: 0 }, "SERVO 0°");
+  });
+
+  qs("#ctrlServo90")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "servo", angle: 90 }, "SERVO 90°");
+  });
+
+  qs("#ctrlServo180")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "servo", angle: 180 }, "SERVO 180°");
+  });
+
+  qs("#ctrlRelay1On")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "relay", ch: 1, state: "on" }, "RELAY CH1 ON");
+  });
+
+  qs("#ctrlRelay1Off")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "relay", ch: 1, state: "off" }, "RELAY CH1 OFF");
+  });
+
+  qs("#ctrlRelayAllOff")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "relay", ch: "all", state: "off" }, "RELAY ALL OFF");
   });
 
   // ────────────────────────────────────────────────
@@ -438,8 +613,6 @@
       if (exId === "a5-ex24") {
         openEx24Modal();
       } else {
-        // For other cards in Activity 5, just open Tools (since you combine 21-22 there)
-        // You can change this behavior if you want different modals later.
         if (exId === "a5-ex21-22") openToolsModal();
       }
     });
@@ -460,6 +633,7 @@
       try {
         openEx24Modal();
         await startExercise("a5-ex24");
+        pulseOk("a5-ex24");
       } catch (err) {
         alert(String(err?.message || err));
       }
@@ -473,13 +647,15 @@
       e.stopPropagation();
       try {
         await stopExercise(btn.dataset.stop);
+        stopSpeaking();
+        pulseOk(btn.dataset.stop);
       } catch (err) {
         alert(String(err?.message || err));
       }
     });
   });
 
-  // Speak button (for Activity 5 we keep it simple)
+  // Speak / Stop button (glows while speaking)
   qsa("button.speak-btn[data-speak]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -488,7 +664,7 @@
       const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
       const title = card?.dataset.sayTitle || qs("h3", card || document)?.textContent || "Exercise";
       const text = card?.dataset.sayText || qs(".ex-desc", card || document)?.textContent || "";
-      speak(`${title}. ${text}`);
+      toggleSpeak(exId, `${title}. ${text}`);
     });
   });
 
