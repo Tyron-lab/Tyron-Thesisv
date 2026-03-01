@@ -1,5 +1,5 @@
-/* activity5.js — Group 5 (ESP32 + MQTT) + EX24 controls + EX24 server log terminal
-   - Speak / Stop are separate buttons
+/* activity5.js — Group 5 + EX24 controls + EX24 terminal
+   - Speak/Stop are separate buttons
    - EX24 does NOT run a python script anymore (Execute removed)
 */
 
@@ -10,7 +10,6 @@
   const API_A5_LATEST = "/api/a5/latest";
   const API_A5_COMMAND = "/api/a5/command";
 
-  // ✅ new EX24 log endpoints (server.py updated below)
   const API_EX24_LOGS = "/api/ex24/logs";
   const API_EX24_CLEAR = "/api/ex24/clear";
 
@@ -48,9 +47,6 @@
     }
   }
 
-  // ────────────────────────────────────────────────
-  // Glow helpers (success pulse + speaking glow)
-  // ────────────────────────────────────────────────
   function getCard(exId) {
     return qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
   }
@@ -81,15 +77,12 @@
     eventTerminal.scrollTop = eventTerminal.scrollHeight;
   }
 
-  // ────────────────────────────────────────────────
-  // Send command to backend
-  // ────────────────────────────────────────────────
   async function sendA5Command(cmd) {
     return await postJSON(API_A5_COMMAND, cmd);
   }
 
   // ────────────────────────────────────────────────
-  // Multi-phone focus lock (still used for consistency)
+  // Multi-phone focus lock (kept)
   // ────────────────────────────────────────────────
   let currentRunningEx = null;
 
@@ -124,11 +117,6 @@
     });
   }
 
-  async function setFocus(exId, running) {
-    const by = (navigator.userAgent || "phone").slice(0, 40);
-    await postJSON(API_FOCUS, { exercise_id: exId, running: !!running, by }).catch(() => {});
-  }
-
   async function syncFocusFromServer() {
     const r = await getJSON(API_FOCUS);
     if (!r.ok || !r.data) return;
@@ -158,7 +146,7 @@
   }
 
   // ────────────────────────────────────────────────
-  // Speak (start) / Stop (cancel) — separate buttons
+  // Speak (start) / Stop (cancel)
   // ────────────────────────────────────────────────
   let speakingExId = null;
 
@@ -172,7 +160,6 @@
     try {
       if (!("speechSynthesis" in window)) return;
 
-      // stop anything else first
       stopSpeakingOnly();
 
       speakingExId = exId;
@@ -209,7 +196,6 @@
   }
 
   function stopSpeakFor(exId) {
-    // stop even if another exercise is speaking
     stopSpeakingOnly();
     setStatus(exId, "Ready");
     pulseOk(exId);
@@ -286,7 +272,7 @@
   });
 
   // ────────────────────────────────────────────────
-  // EX24 modal open/close + log polling from server
+  // EX24 modal open/close + log polling
   // ────────────────────────────────────────────────
   function openEx24Modal() {
     ex24Modal?.classList.add("open");
@@ -345,7 +331,6 @@
     }
   }
 
-  // Export CSV from current terminal text
   exportCsvBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -374,7 +359,6 @@
     a.remove();
   });
 
-  // Stop Logging = clear server log + keep modal open
   ex24StopBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -384,21 +368,21 @@
   });
 
   // ────────────────────────────────────────────────
-  // EX24 command wrapper (still sends MQTT + glows)
+  // EX24 command wrapper
   // ────────────────────────────────────────────────
   async function ex24Cmd(payload, pretty) {
     openEx24Modal();
-    terminalAppend(`[${new Date().toISOString().slice(0,19)}] INFO: [CMD] ${pretty}`);
+    terminalAppend(`[CMD] ${pretty}`);
 
     const r = await sendA5Command({ exercise_id: "a5-ex24", ...payload }).catch(() => null);
 
-    if (r && r.ok) {
+    if (r && r.ok && r.data && r.data.ok) {
       pulseOk("a5-ex24");
       setStatus("a5-ex24", "OK");
       return true;
     } else {
-      const msg = r?.data?.error || r?.data?.message || r?.text || "Command failed";
-      terminalAppend(`[${new Date().toISOString().slice(0,19)}] ERR: ${pretty} -> ${String(msg).trim()}`);
+      const msg = r?.data?.error || r?.text || "Command failed";
+      terminalAppend(`[ERR] ${pretty} -> ${String(msg).trim()}`);
       setStatus("a5-ex24", "Error", "state-error");
       return false;
     }
@@ -419,11 +403,16 @@
 
   qs("#ctrlRelay1On")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "on" }, "RELAY CH1 ON"); });
   qs("#ctrlRelay1Off")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "off" }, "RELAY CH1 OFF"); });
+
+  // ✅ NEW: ALL ON
+  qs("#ctrlRelayAllOn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    ex24Cmd({ action: "relay", ch: "all", state: "on" }, "RELAY ALL ON");
+  });
+
   qs("#ctrlRelayAllOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: "all", state: "off" }, "RELAY ALL OFF"); });
 
-  // ────────────────────────────────────────────────
-  // Card click opens correct modal
-  // ────────────────────────────────────────────────
+  // Card click opens modals
   qsa(".exercise-card").forEach((card) => {
     card.addEventListener("click", (e) => {
       const target = e.target;
@@ -447,7 +436,7 @@
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const exId = btn.dataset.speak || "";
+      const exId = btn.getAttribute("data-speak") || "";
       const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
       const title = card?.dataset.sayTitle || qs("h3", card || document)?.textContent || "Exercise";
       const text = card?.dataset.sayText || qs(".ex-desc", card || document)?.textContent || "";
@@ -460,7 +449,7 @@
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const exId = btn.dataset.stopSpeak || btn.dataset.stopSpeak === "" ? "" : (btn.getAttribute("data-stop-speak") || "");
+      const exId = btn.getAttribute("data-stop-speak") || "";
       stopSpeakFor(exId);
     });
   });
@@ -471,7 +460,7 @@
     openToolsModal();
   });
 
-  // Init statuses
+  // Init
   qsa(".exercise-card[data-exercise]").forEach((card) => setStatus(card.dataset.exercise, "Ready"));
   setBusyUI(null);
 

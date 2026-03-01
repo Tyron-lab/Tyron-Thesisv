@@ -7,6 +7,8 @@
 # - ✅ Exercise map checker: /api/exercise_map_check
 # - ✅ /api/exercise supports ALL ids in EXERCISE_MAP (a1..a5), plus a5-ex21 special
 # - ✅ EX24: Event Logging Terminal endpoints + Local GPIO control via /api/a5/command
+# - ✅ EX24: Servo move-then-release (fully stops holding)
+# - ✅ EX24: Relay ALL ON + ALL OFF
 
 from flask import Flask, request, jsonify, send_from_directory
 import threading
@@ -175,7 +177,7 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
     "BUZZER":     False,
-    "LED":        False,     # ✅ added for EX24
+    "LED":        False,     # ✅ EX24
     "LCD_TOOL":   False,
     "MIC":        False,
 }
@@ -193,7 +195,7 @@ sensor_data = {
     "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
     "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ added
+    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ EX24
     "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
 
     "MIC": {
@@ -275,15 +277,93 @@ def api_a5_latest():
         return jsonify({"ok": True, **latest_a5})
 
 # ────────────────────────────────────────────────
+#   SUBPROCESS EXERCISE RUNNER
+# ────────────────────────────────────────────────
+exercise_proc = None
+exercise_lock = threading.Lock()
+
+exercise_status = {
+    "exercise_id": None,
+    "running": False,
+    "ended": False,
+    "end_reason": "",
+    "exit_code": None,
+    "started_at": None,
+    "ended_at": None,
+}
+exercise_stdout = deque(maxlen=600)
+exercise_stderr = deque(maxlen=600)
+exercise_log_lock = threading.Lock()
+exercise_reader_thread = None
+exercise_stop_requested = False
+
+def _append_log(stdout_line=None, stderr_line=None):
+    with exercise_log_lock:
+        if stdout_line is not None:
+            exercise_stdout.append(stdout_line.rstrip("\n"))
+        if stderr_line is not None:
+            exercise_stderr.append(stderr_line.rstrip("\n"))
+
+def _exercise_reader(proc: subprocess.Popen):
+    global exercise_proc
+    try:
+        while proc.poll() is None:
+            line = proc.stdout.readline() if proc.stdout else ""
+            if line:
+                _append_log(stdout_line=line)
+
+            eline = proc.stderr.readline() if proc.stderr else ""
+            if eline:
+                _append_log(stderr_line=eline)
+
+            time.sleep(0.01)
+
+        try:
+            if proc.stdout:
+                for line in proc.stdout.readlines():
+                    _append_log(stdout_line=line)
+            if proc.stderr:
+                for eline in proc.stderr.readlines():
+                    _append_log(stderr_line=eline)
+        except Exception:
+            pass
+
+    finally:
+        with exercise_lock:
+            exit_code = proc.poll()
+            exercise_status["running"] = False
+            exercise_status["ended"] = True
+            exercise_status["exit_code"] = exit_code
+            exercise_status["ended_at"] = now_iso()
+            if exercise_stop_requested:
+                exercise_status["end_reason"] = "stopped"
+            else:
+                exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
+            exercise_proc = None
+
+def stop_current_exercise():
+    global exercise_proc, exercise_stop_requested
+    with exercise_lock:
+        if exercise_proc is None or exercise_proc.poll() is not None:
+            return False
+        exercise_stop_requested = True
+        try:
+            exercise_proc.send_signal(signal.SIGINT)
+        except Exception:
+            try:
+                exercise_proc.terminate()
+            except Exception:
+                pass
+        return True
+
+# ────────────────────────────────────────────────
 #   MUX (TCA9548A)
 # ────────────────────────────────────────────────
 USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
 MUX_ADDRESS = 0x70
-
 LCD_MUX_CH = 0
 MPU_MUX_CH = 1
 BMP_MUX_CH = 2
-
 tca = None
 
 def init_mux():
@@ -312,7 +392,6 @@ LCD_I2C_BUS = 1
 LCD_ADDRS = [0x27, 0x3F]
 LCD_COLS = 16
 LCD_ROWS = 2
-
 _lcd = None
 _lcd_addr = None
 
@@ -487,15 +566,26 @@ def set_servo_angle(angle):
     return True
 
 def stop_servo() -> None:
+    """Hard stop: remove PWM so servo stops holding/buzzing."""
     global servo_pwm
     try:
         if servo_pwm is not None:
             servo_pwm.duty_cycle = 0
+            time.sleep(0.03)
             servo_pwm.deinit()
     except Exception:
         pass
     servo_pwm = None
     sensor_data["servomotor"]["last_update"] = now_iso()
+
+def servo_move_then_release(angle: int, hold_ms: int = 250) -> bool:
+    """Move servo then stop PWM so it won't keep buzzing/holding."""
+    ok = set_servo_angle(angle)
+    if not ok:
+        return False
+    time.sleep(max(0, hold_ms) / 1000.0)
+    stop_servo()
+    return True
 
 # ────────────────────────────────────────────────
 #   BUZZER
@@ -569,8 +659,6 @@ def init_leds():
         led_orange = digitalio.DigitalInOut(board.D13)
         for led in (led_red, led_green, led_orange):
             led.direction = digitalio.Direction.OUTPUT
-
-        # start off
         _set_led_pin(led_red, False)
         _set_led_pin(led_green, False)
         _set_led_pin(led_orange, False)
@@ -592,7 +680,6 @@ def set_led_color(color: str) -> bool:
         return False
     c = (color or "").strip().lower()
     try:
-        # turn all off
         _set_led_pin(led_red, False)
         _set_led_pin(led_green, False)
         _set_led_pin(led_orange, False)
@@ -646,7 +733,7 @@ def leds_deinit():
     sensor_state["LED"] = False
 
 # ────────────────────────────────────────────────
-#   ✅ /api/a5/command (NOW: EX24 LOCAL GPIO + MQTT optional)
+#   ✅ /api/a5/command (EX24 LOCAL GPIO + MQTT optional)
 # ────────────────────────────────────────────────
 @app.route("/api/a5/command", methods=["POST"])
 def api_a5_command():
@@ -671,15 +758,16 @@ def api_a5_command():
 
             elif action == "servo":
                 ang = int(payload.get("angle", 0))
-                ok_local = set_servo_angle(ang)
-                ex24_log("INFO", f"SERVO -> angle={ang}")
+                ok_local = servo_move_then_release(ang, hold_ms=250)  # ✅ full stop
+                ex24_log("INFO", f"SERVO -> angle={ang} (released)")
 
             elif action == "relay":
                 ch = payload.get("ch")
                 st = (payload.get("state") == "on")
+
                 if ch == "all":
-                    ok_local = set_all_relays(False)
-                    ex24_log("INFO", "RELAY -> all off")
+                    ok_local = set_all_relays(st)  # ✅ ALL ON and ALL OFF
+                    ex24_log("INFO", f"RELAY -> ALL {'on' if st else 'off'}")
                 else:
                     ok_local = set_relay(int(ch), st)
                     ex24_log("INFO", f"RELAY -> ch={ch} {'on' if st else 'off'}")
@@ -739,93 +827,12 @@ EXERCISE_MAP = {
     "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
 }
 
-# ✅ Check if your map paths are correct
 @app.route("/api/exercise_map_check")
 def api_exercise_map_check():
     out = {}
     for ex_id, path in EXERCISE_MAP.items():
         out[ex_id] = {"path": path, "exists": os.path.exists(path)}
     return jsonify({"ok": True, "base_dir": BASE_DIR, "map": out})
-
-# ────────────────────────────────────────────────
-#   SUBPROCESS EXERCISE RUNNER
-# ────────────────────────────────────────────────
-exercise_proc = None
-exercise_lock = threading.Lock()
-
-exercise_status = {
-    "exercise_id": None,
-    "running": False,
-    "ended": False,
-    "end_reason": "",
-    "exit_code": None,
-    "started_at": None,
-    "ended_at": None,
-}
-exercise_stdout = deque(maxlen=600)
-exercise_stderr = deque(maxlen=600)
-exercise_log_lock = threading.Lock()
-exercise_reader_thread = None
-exercise_stop_requested = False
-
-def _append_log(stdout_line=None, stderr_line=None):
-    with exercise_log_lock:
-        if stdout_line is not None:
-            exercise_stdout.append(stdout_line.rstrip("\n"))
-        if stderr_line is not None:
-            exercise_stderr.append(stderr_line.rstrip("\n"))
-
-def _exercise_reader(proc: subprocess.Popen):
-    global exercise_proc
-    try:
-        while proc.poll() is None:
-            line = proc.stdout.readline() if proc.stdout else ""
-            if line:
-                _append_log(stdout_line=line)
-
-            eline = proc.stderr.readline() if proc.stderr else ""
-            if eline:
-                _append_log(stderr_line=eline)
-
-            time.sleep(0.01)
-
-        try:
-            if proc.stdout:
-                for line in proc.stdout.readlines():
-                    _append_log(stdout_line=line)
-            if proc.stderr:
-                for eline in proc.stderr.readlines():
-                    _append_log(stderr_line=eline)
-        except Exception:
-            pass
-
-    finally:
-        with exercise_lock:
-            exit_code = proc.poll()
-            exercise_status["running"] = False
-            exercise_status["ended"] = True
-            exercise_status["exit_code"] = exit_code
-            exercise_status["ended_at"] = now_iso()
-            if exercise_stop_requested:
-                exercise_status["end_reason"] = "stopped"
-            else:
-                exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
-            exercise_proc = None
-
-def stop_current_exercise():
-    global exercise_proc, exercise_stop_requested
-    with exercise_lock:
-        if exercise_proc is None or exercise_proc.poll() is not None:
-            return False
-        exercise_stop_requested = True
-        try:
-            exercise_proc.send_signal(signal.SIGINT)
-        except Exception:
-            try:
-                exercise_proc.terminate()
-            except Exception:
-                pass
-        return True
 
 # ────────────────────────────────────────────────
 #   DHT / MPU / BMP / PIR / ULTRASONIC / GAS
@@ -1505,7 +1512,7 @@ def toggle_sensor():
 
     if sensor == "servomotor":
         if active:
-            ok = set_servo_angle(90)
+            ok = servo_move_then_release(90, hold_ms=250)
             if not ok:
                 sensor_state[sensor] = False
         else:

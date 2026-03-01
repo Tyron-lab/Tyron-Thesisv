@@ -31,8 +31,6 @@
         <!-- EX 21-22 -->
         <article class="exercise-card"
           data-exercise="a5-ex21-22"
-          data-image="/static/images/sensor.png"
-          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercises 21-22: ESP32 MQTT Monitoring Dashboard"
           data-say-text="Combined multi-user live monitoring dashboard for ESP32 MQTT data. Access via Tools button.">
@@ -55,8 +53,6 @@
         <!-- EX 23 -->
         <article class="exercise-card"
           data-exercise="a5-ex23"
-          data-image="/static/images/sensor.png"
-          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercise 23: Multiple User Monitoring"
           data-say-text="Supports multiple users viewing ESP32 MQTT data simultaneously.">
@@ -76,11 +72,9 @@
           </div>
         </article>
 
-        <!-- EX 24: Full controls -->
+        <!-- EX 24 -->
         <article class="exercise-card"
           data-exercise="a5-ex24"
-          data-image="/static/images/sensor.png"
-          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercise 24: Event Logging & History"
           data-say-text="Control BUZZER, LED, Servo, Relay and log events in real-time terminal.">
@@ -94,7 +88,6 @@
             <span><b>Output:</b> Terminal + CSV</span>
           </div>
           <div class="ex-actions">
-            <!-- ✅ Execute removed -->
             <button class="speak-btn" type="button" data-speak="a5-ex24">Speak</button>
             <button class="stop-speak-btn" type="button" data-stop-speak="a5-ex24">Stop</button>
             <span class="status" data-status-for="a5-ex24">Ready</span>
@@ -104,8 +97,6 @@
         <!-- EX 25 -->
         <article class="exercise-card"
           data-exercise="a5-ex25"
-          data-image="/static/images/sensor.png"
-          data-image2="/static/images/sensor.png"
           tabindex="0" role="button"
           data-say-title="Exercise 25: Full System Simulation"
           data-say-text="User-controlled simulation of the entire system (Buzzer, LED, Servo, Relay, etc.).">
@@ -129,7 +120,7 @@
     </section>
   </div>
 
-  <!-- Tools Dashboard Modal (EX21+EX22) -->
+  <!-- Tools Dashboard Modal -->
   <div class="modal-overlay" id="toolsModal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
       <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="Close">✕</button>
@@ -161,7 +152,7 @@
     </div>
   </div>
 
-  <!-- EX24 Event Logging Terminal Modal -->
+  <!-- EX24 Terminal Modal -->
   <div class="modal-overlay" id="ex24Modal" aria-hidden="true">
     <div class="modal-card large-modal" role="dialog" aria-modal="true" aria-labelledby="ex24Title">
       <button class="modal-close" type="button" id="ex24CloseBtn" aria-label="Close">✕</button>
@@ -170,7 +161,6 @@
       <p>Control and log BUZZER • LED • Servo • Relay events</p>
 
       <div class="ex24-layout">
-        <!-- LEFT: Controls -->
         <div class="ex24-left">
           <div class="control-section">
             <h3>Buzzer</h3>
@@ -204,12 +194,15 @@
             <div class="btn-row">
               <button class="control-btn relay-on" id="ctrlRelay1On">CH1 ON</button>
               <button class="control-btn relay-off" id="ctrlRelay1Off">CH1 OFF</button>
+
+              <!-- ✅ NEW -->
+              <button class="control-btn relay-on" id="ctrlRelayAllOn">ALL ON</button>
+
               <button class="control-btn relay-all-off" id="ctrlRelayAllOff">ALL OFF</button>
             </div>
           </div>
         </div>
 
-        <!-- RIGHT: Terminal + Actions -->
         <div class="ex24-right">
           <div class="terminal-box">
             <pre id="eventTerminal">[INFO] Waiting for events...\n</pre>
