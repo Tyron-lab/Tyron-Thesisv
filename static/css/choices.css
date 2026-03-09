@@ -276,3 +276,73 @@ body{
 .nav-btn.primary:hover, .nav-pill.primary:hover{
   box-shadow: 0 14px 30px rgba(59,130,246,0.25), 0 12px 26px rgba(0,0,0,0.45);
 }
+
+/* ============================= */
+/* RESPONSIVE DESIGN FOR PHONE   */
+/* ============================= */
+
+@media screen and (max-width: 768px) {
+
+  body {
+    padding: 10px;
+  }
+
+  .container,
+  .wrapper,
+  .grid,
+  .cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card,
+  .exercise-card,
+  .tool-card {
+    width: 100%;
+    padding: 14px;
+  }
+
+  .buttons,
+  .controls,
+  .actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  button {
+    width: 100%;
+    font-size: 15px;
+    padding: 12px;
+  }
+
+  .topbar,
+  .navbar,
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .modal {
+    width: 95%;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  .terminal {
+    font-size: 12px;
+    overflow-x: auto;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+}
