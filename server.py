@@ -1510,7 +1510,7 @@ def mic_start():
 # ────────────────────────────────────────────────
 @app.route("/")
 def root():
-    return send_from_directory(TEMPLATE_DIR, "index.html")
+    return send_from_directory(TEMPLATE_DIR, "welcome.html")
 
 @app.route("/<path:path>")
 def static_proxy(path):
