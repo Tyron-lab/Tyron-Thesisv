@@ -1,14 +1,10 @@
-# server.py — TrainerKit Tools Dashboard (FULL UPDATE)
-# - Tools (toggle sensors)
-# - MIC VOSK + live wave
-# - Activity 5 MQTT bridge
-# - Exercise runner (subprocess) for Exercise scripts
-# - ✅ Multi-phone focus lock: /api/focus
-# - ✅ Exercise map checker: /api/exercise_map_check
-# - ✅ /api/exercise supports ALL ids in EXERCISE_MAP (a1..a5), plus a5-ex21 special
-# - ✅ EX24: Event Logging Terminal endpoints + Local GPIO control via /api/a5/command
-# - ✅ EX24: Servo move-then-release (fully stops holding)
-# - ✅ EX24: Relay ALL ON + ALL OFF
+# server.py — TrainerKit Tools Dashboard (FLOW FIXED)
+# - Keeps your current page flow
+# - Adds tool cleanup before exercises
+# - Adds SIGINT / SIGTERM cleanup
+# - Keeps /api/toggle + /api/sensors for tools.js
+# - Keeps /api/exercise + /api/exercise_stop for activity pages
+# - Adds /static/template/<file> route so old hrefs still work
 
 from flask import Flask, request, jsonify, send_from_directory
 import threading
@@ -27,7 +23,7 @@ import queue
 import paho.mqtt.client as mqtt
 
 # ────────────────────────────────────────────────
-#   Conditional imports – only load what we can
+#   Conditional imports
 # ────────────────────────────────────────────────
 SENSORS_AVAILABLE = {}
 
@@ -68,7 +64,6 @@ try:
 except Exception:
     SENSORS_AVAILABLE["tca9548a"] = False
 
-# LCD via smbus2 + RPLCD (optional)
 try:
     from smbus2 import SMBus
     from RPLCD.i2c import CharLCD
@@ -76,7 +71,6 @@ try:
 except Exception:
     SENSORS_AVAILABLE["LCD"] = False
 
-# MIC
 try:
     import sounddevice as sd
     import numpy as np
@@ -84,7 +78,6 @@ try:
 except Exception:
     SENSORS_AVAILABLE["MIC"] = False
 
-# VOSK
 try:
     from vosk import Model, KaldiRecognizer
     SENSORS_AVAILABLE["VOSK"] = True
@@ -100,7 +93,8 @@ app = Flask(__name__)
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+TEMPLATE_DIR = os.path.join(STATIC_DIR, "template")
 
 i2c_lock = threading.Lock()
 
@@ -108,7 +102,7 @@ def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 # ────────────────────────────────────────────────
-#   ✅ MULTI-PHONE FOCUS LOCK
+#   FOCUS LOCK
 # ────────────────────────────────────────────────
 FOCUS_LOCK = threading.Lock()
 focus_state = {"running": False, "exercise_id": None, "since": None, "by": None}
@@ -138,7 +132,7 @@ def api_focus():
         return jsonify({**focus_state})
 
 # ────────────────────────────────────────────────
-#   ✅ EX24: SERVER-SIDE EVENT LOG (Terminal)
+#   EX24 TERMINAL LOG
 # ────────────────────────────────────────────────
 EX24_LOG_LOCK = threading.Lock()
 EX24_LOG = deque(maxlen=900)
@@ -165,39 +159,35 @@ def api_ex24_clear():
     return jsonify({"ok": True})
 
 # ────────────────────────────────────────────────
-#   SENSOR DATA/STATE
+#   SENSOR STATE / DATA
 # ────────────────────────────────────────────────
 sensor_state = {
-    "MPU6050":    False,
-    "BMP280":     False,
-    "DHT11":      False,
-    "MHMQ":       False,
-    "PIR":        False,
+    "MPU6050": False,
+    "BMP280": False,
+    "DHT11": False,
+    "MHMQ": False,
+    "PIR": False,
     "ULTRASONIC": False,
-    "Relay":      False,
+    "Relay": False,
     "servomotor": False,
-    "BUZZER":     False,
-    "LED":        False,     # ✅ EX24
-    "LCD_TOOL":   False,
-    "MIC":        False,
+    "BUZZER": False,
+    "LED": False,
+    "LCD_TOOL": False,
+    "MIC": False,
 }
 
 sensor_data = {
-    "DHT11":      {"temperature": None, "humidity": None, "last_update": None, "error": ""},
-    "MPU6050":    {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None, "error": ""},
-    "BMP280":     {"temperature": None, "pressure": None, "altitude": None, "last_update": None, "error": ""},
-
-    "PIR":        {"motion": False, "count": 0, "last_update": None, "error": ""},
+    "DHT11": {"temperature": None, "humidity": None, "last_update": None, "error": ""},
+    "MPU6050": {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None, "error": ""},
+    "BMP280": {"temperature": None, "pressure": None, "altitude": None, "last_update": None, "error": ""},
+    "PIR": {"motion": False, "count": 0, "last_update": None, "error": ""},
     "ULTRASONIC": {"distance_cm": None, "last_update": None, "error": ""},
-
-    "MHMQ":       {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
-
-    "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
+    "MHMQ": {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
+    "Relay": {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
-    "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ EX24
-    "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
-
+    "BUZZER": {"on": False, "last_update": None, "error": ""},
+    "LED": {"color": "off", "last_update": None, "error": ""},
+    "LCD_TOOL": {"line1": "", "line2": "", "last_update": None, "error": ""},
     "MIC": {
         "rms": None, "peak": None, "sample_rate": None, "listening_rate": 16000,
         "partial": "", "text": "", "command": "", "command_at": None,
@@ -215,144 +205,72 @@ def clear_error(key: str):
         sensor_data[key]["error"] = ""
 
 # ────────────────────────────────────────────────
-#   ✅ ACTIVITY 5 MQTT BRIDGE (ESP32)
+#   MQTT A5
 # ────────────────────────────────────────────────
 MQTT_HOST = "192.168.4.1"
 MQTT_PORT = 1883
-MQTT_CMD_TOPIC = "trainerkit/a5/cmd"
-MQTT_TELE_TOPIC = "trainerkit/a5/telemetry"
 
+A5_TOPIC_TELE = "trainerkit/a5/telemetry"
+A5_TOPIC_CMD  = "trainerkit/a5/command"
+A5_TOPIC_STAT = "trainerkit/a5/status"
+
+latest_a5 = {"connected": False, "last_update": None, "payload": None, "raw": None}
+latest_a5_lock = threading.Lock()
 mqtt_client = None
-a5_latest = {
-    "topic": MQTT_TELE_TOPIC,
-    "connected": False,
-    "last_message_at": None,
-    "payload": None,
-    "json": None,
-    "error": "",
-}
 
-def on_mqtt_connect(client, userdata, flags, rc):
-    a5_latest["connected"] = (rc == 0)
+def _a5_on_connect(client, userdata, flags, rc):
+    print("[A5 MQTT] connected rc=", rc)
+    with latest_a5_lock:
+        latest_a5["connected"] = (rc == 0)
     if rc == 0:
-        try:
-            client.subscribe(MQTT_TELE_TOPIC)
-            print(f"[MQTT] Connected -> subscribed {MQTT_TELE_TOPIC}")
-        except Exception as e:
-            a5_latest["error"] = str(e)
-    else:
-        a5_latest["error"] = f"connect rc={rc}"
+        client.subscribe(A5_TOPIC_TELE)
+        client.subscribe(A5_TOPIC_STAT)
 
-def on_mqtt_message(client, userdata, msg):
+def _a5_on_message(client, userdata, msg):
     try:
-        raw = msg.payload.decode("utf-8", errors="ignore")
-        a5_latest["last_message_at"] = now_iso()
-        a5_latest["payload"] = raw
+        raw = msg.payload.decode("utf-8", errors="replace")
+        payload = None
         try:
-            a5_latest["json"] = json.loads(raw)
+            payload = json.loads(raw)
         except Exception:
-            a5_latest["json"] = None
+            payload = None
+
+        with latest_a5_lock:
+            latest_a5["last_update"] = now_iso()
+            latest_a5["raw"] = raw
+            latest_a5["payload"] = payload
     except Exception as e:
-        a5_latest["error"] = str(e)
+        print("[A5 MQTT] message error:", e)
 
 def start_a5_mqtt():
     global mqtt_client
     try:
-        mqtt_client = mqtt.Client()
-        mqtt_client.on_connect = on_mqtt_connect
-        mqtt_client.on_message = on_mqtt_message
-        mqtt_client.connect_async(MQTT_HOST, MQTT_PORT, keepalive=30)
-        mqtt_client.loop_start()
-        print(f"[MQTT] bridge starting -> {MQTT_HOST}:{MQTT_PORT}")
+        c = mqtt.Client()
+        c.on_connect = _a5_on_connect
+        c.on_message = _a5_on_message
+        c.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+        c.loop_start()
+        mqtt_client = c
+        print("[A5 MQTT] loop started")
     except Exception as e:
-        a5_latest["error"] = str(e)
-        print("[MQTT] start failed:", e)
+        print("[A5 MQTT] start failed:", e)
+        mqtt_client = None
 
 def a5_send_cmd(payload: dict):
-    global mqtt_client
     if mqtt_client is None:
-        raise RuntimeError("MQTT client not ready")
-    msg = json.dumps(payload)
-    info = mqtt_client.publish(MQTT_CMD_TOPIC, msg, qos=0, retain=False)
-    return {"topic": MQTT_CMD_TOPIC, "payload": payload, "rc": int(info.rc)}
+        raise RuntimeError("MQTT not started")
+    mqtt_client.publish(A5_TOPIC_CMD, json.dumps(payload))
 
-@app.route("/api/a5/latest", methods=["GET"])
+@app.route("/api/a5/latest")
 def api_a5_latest():
-    return jsonify({"ok": True, **a5_latest})
-
-@app.route("/api/a5/command", methods=["POST"])
-def api_a5_command():
-    data = request.json or {}
-    cmd = data.get("cmd")
-    if not cmd:
-        return jsonify({"ok": False, "error": "Missing cmd"}), 400
-
-    # normalize common commands
-    payload = {}
-
-    if cmd == "stream_on":
-        payload = {"stream": "on"}
-    elif cmd == "stream_off":
-        payload = {"stream": "off"}
-
-    # ✅ EX24 relay commands
-    elif cmd == "relay1_on":
-        payload = {"relay1": 1}
-    elif cmd == "relay1_off":
-        payload = {"relay1": 0}
-    elif cmd == "relay2_on":
-        payload = {"relay2": 1}
-    elif cmd == "relay2_off":
-        payload = {"relay2": 0}
-    elif cmd == "relay_all_on":
-        payload = {"relay1": 1, "relay2": 1}
-    elif cmd == "relay_all_off":
-        payload = {"relay1": 0, "relay2": 0}
-
-    # ✅ EX24 buzzer
-    elif cmd == "buzzer_on":
-        payload = {"buzzer": 1}
-    elif cmd == "buzzer_off":
-        payload = {"buzzer": 0}
-
-    # ✅ EX24 LED
-    elif cmd == "led_red_on":
-        payload = {"led": "red_on"}
-    elif cmd == "led_red_off":
-        payload = {"led": "red_off"}
-    elif cmd == "led_green_on":
-        payload = {"led": "green_on"}
-    elif cmd == "led_green_off":
-        payload = {"led": "green_off"}
-    elif cmd == "led_blue_on":
-        payload = {"led": "blue_on"}
-    elif cmd == "led_blue_off":
-        payload = {"led": "blue_off"}
-    elif cmd == "led_all_off":
-        payload = {"led": "all_off"}
-
-    # ✅ EX24 servo
-    elif cmd == "servo_open":
-        payload = {"servo": "open"}
-    elif cmd == "servo_close":
-        payload = {"servo": "close"}
-
-    else:
-        return jsonify({"ok": False, "error": f"Unknown cmd: {cmd}"}), 400
-
-    try:
-        sent = a5_send_cmd(payload)
-        ex24_log("CMD", f"{cmd} -> {json.dumps(payload)}")
-        return jsonify({"ok": True, "sent": sent})
-    except Exception as e:
-        ex24_log("ERROR", f"{cmd} failed: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+    with latest_a5_lock:
+        return jsonify({"ok": True, **latest_a5})
 
 # ────────────────────────────────────────────────
-#   EXERCISE RUNNER (Mode B)
+#   EXERCISE RUNNER
 # ────────────────────────────────────────────────
-exercise_lock = threading.Lock()
 exercise_proc = None
+exercise_lock = threading.Lock()
 exercise_reader_thread = None
 exercise_stop_requested = False
 
@@ -366,66 +284,9 @@ exercise_status = {
     "ended_at": None,
 }
 
+exercise_stdout = deque(maxlen=600)
+exercise_stderr = deque(maxlen=600)
 exercise_log_lock = threading.Lock()
-exercise_stdout = deque(maxlen=800)
-exercise_stderr = deque(maxlen=400)
-
-EXERCISE_MAP = {
-    # Activity 1
-    "a1-ex1": os.path.join(BASE_DIR, "activity1", "Exercise1.py"),
-    "a1-ex2": os.path.join(BASE_DIR, "activity1", "Exercise2.py"),
-    "a1-ex3": os.path.join(BASE_DIR, "activity1", "Exercise3.py"),
-    "a1-ex4": os.path.join(BASE_DIR, "activity1", "Exercise4.py"),
-    "a1-ex5": os.path.join(BASE_DIR, "activity1", "Exercise5.py"),
-    "a1-ex6": os.path.join(BASE_DIR, "activity1", "Exercise6.py"),
-    "a1-ex7": os.path.join(BASE_DIR, "activity1", "Exercise7.py"),
-    "a1-ex8": os.path.join(BASE_DIR, "activity1", "Exercise8.py"),
-    "a1-ex9": os.path.join(BASE_DIR, "activity1", "Exercise9.py"),
-    "a1-ex10": os.path.join(BASE_DIR, "activity1", "Exercise10.py"),
-
-    # Activity 2
-    "a2-ex11": os.path.join(BASE_DIR, "activity2", "Exercise11.py"),
-    "a2-ex12": os.path.join(BASE_DIR, "activity2", "Exercise12.py"),
-    "a2-ex13": os.path.join(BASE_DIR, "activity2", "Exercise13.py"),
-    "a2-ex14": os.path.join(BASE_DIR, "activity2", "Exercise14.py"),
-    "a2-ex15": os.path.join(BASE_DIR, "activity2", "Exercise15.py"),
-    "a2-ex16": os.path.join(BASE_DIR, "activity2", "Exercise16.py"),
-    "a2-ex17": os.path.join(BASE_DIR, "activity2", "Exercise17.py"),
-    "a2-ex18": os.path.join(BASE_DIR, "activity2", "Exercise18.py"),
-    "a2-ex19": os.path.join(BASE_DIR, "activity2", "Exercise19.py"),
-    "a2-ex20": os.path.join(BASE_DIR, "activity2", "Exercise20.py"),
-
-    # Activity 3
-    "a3-ex11": os.path.join(BASE_DIR, "activity3", "Exercise11.py"),
-    "a3-ex12": os.path.join(BASE_DIR, "activity3", "Exercise12.py"),
-    "a3-ex13": os.path.join(BASE_DIR, "activity3", "Exercise13.py"),
-    "a3-ex14": os.path.join(BASE_DIR, "activity3", "Exercise14.py"),
-    "a3-ex15": os.path.join(BASE_DIR, "activity3", "Exercise15.py"),
-    "a3-ex16": os.path.join(BASE_DIR, "activity3", "Exercise16.py"),
-    "a3-ex17": os.path.join(BASE_DIR, "activity3", "Exercise17.py"),
-    "a3-ex18": os.path.join(BASE_DIR, "activity3", "Exercise18.py"),
-    "a3-ex19": os.path.join(BASE_DIR, "activity3", "Exercise19.py"),
-    "a3-ex20": os.path.join(BASE_DIR, "activity3", "Exercise20.py"),
-
-    # Activity 4
-    "a4-ex11": os.path.join(BASE_DIR, "activity4", "Exercise11.py"),
-    "a4-ex12": os.path.join(BASE_DIR, "activity4", "Exercise12.py"),
-    "a4-ex13": os.path.join(BASE_DIR, "activity4", "Exercise13.py"),
-    "a4-ex14": os.path.join(BASE_DIR, "activity4", "Exercise14.py"),
-    "a4-ex15": os.path.join(BASE_DIR, "activity4", "Exercise15.py"),
-    "a4-ex16": os.path.join(BASE_DIR, "activity4", "Exercise16.py"),
-    "a4-ex17": os.path.join(BASE_DIR, "activity4", "Exercise17.py"),
-    "a4-ex18": os.path.join(BASE_DIR, "activity4", "Exercise18.py"),
-    "a4-ex19": os.path.join(BASE_DIR, "activity4", "Exercise19.py"),
-    "a4-ex20": os.path.join(BASE_DIR, "activity4", "Exercise20.py"),
-
-    # Activity 5
-    "a5-ex21": os.path.join(BASE_DIR, "activity5", "Exercise21.py"),  # special MQTT mode
-    "a5-ex22": os.path.join(BASE_DIR, "activity5", "Exercise22.py"),
-    "a5-ex23": os.path.join(BASE_DIR, "activity5", "Exercise23.py"),
-    "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
-    "a5-ex25": os.path.join(BASE_DIR, "activity5", "Exercise25.py"),
-}
 
 def _append_log(stdout_line=None, stderr_line=None):
     with exercise_log_lock:
@@ -434,21 +295,20 @@ def _append_log(stdout_line=None, stderr_line=None):
         if stderr_line is not None:
             exercise_stderr.append(stderr_line.rstrip("\n"))
 
-def _exercise_reader(proc):
+def _exercise_reader(proc: subprocess.Popen):
     global exercise_proc
     try:
         while proc.poll() is None:
-            if proc.stdout:
-                line = proc.stdout.readline()
-                if line:
-                    _append_log(stdout_line=line)
-            if proc.stderr:
-                eline = proc.stderr.readline()
-                if eline:
-                    _append_log(stderr_line=eline)
+            line = proc.stdout.readline() if proc.stdout else ""
+            if line:
+                _append_log(stdout_line=line)
+
+            eline = proc.stderr.readline() if proc.stderr else ""
+            if eline:
+                _append_log(stderr_line=eline)
+
             time.sleep(0.01)
 
-        # flush remaining
         try:
             if proc.stdout:
                 for line in proc.stdout.readlines():
@@ -458,7 +318,6 @@ def _exercise_reader(proc):
                     _append_log(stderr_line=eline)
         except Exception:
             pass
-
     finally:
         with exercise_lock:
             exit_code = proc.poll()
@@ -466,10 +325,7 @@ def _exercise_reader(proc):
             exercise_status["ended"] = True
             exercise_status["exit_code"] = exit_code
             exercise_status["ended_at"] = now_iso()
-            if exercise_stop_requested:
-                exercise_status["end_reason"] = "stopped"
-            else:
-                exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
+            exercise_status["end_reason"] = "stopped" if exercise_stop_requested else ("finished" if exit_code == 0 else "error")
             exercise_proc = None
 
 def stop_current_exercise():
@@ -487,8 +343,43 @@ def stop_current_exercise():
                 pass
         return True
 
+EXERCISE_MAP = {
+    "a1-ex1": os.path.join(BASE_DIR, "activity1", "Exercise1.py"),
+    "a1-ex2": os.path.join(BASE_DIR, "activity1", "Exercise2.py"),
+    "a1-ex3": os.path.join(BASE_DIR, "activity1", "Exercise3.py"),
+    "a1-ex4": os.path.join(BASE_DIR, "activity1", "Exercise4.py"),
+    "a1-ex5": os.path.join(BASE_DIR, "activity1", "Exercise5.py"),
+
+    "a2-ex6":  os.path.join(BASE_DIR, "activity2", "Exercise6.py"),
+    "a2-ex7":  os.path.join(BASE_DIR, "activity2", "Exercise7.py"),
+    "a2-ex8":  os.path.join(BASE_DIR, "activity2", "Exercise8.py"),
+    "a2-ex9":  os.path.join(BASE_DIR, "activity2", "Exercise9.py"),
+    "a2-ex10": os.path.join(BASE_DIR, "activity2", "Exercise10.py"),
+
+    "a3-ex11": os.path.join(BASE_DIR, "activity3", "Exercise11.py"),
+    "a3-ex12": os.path.join(BASE_DIR, "activity3", "Exercise12.py"),
+    "a3-ex13": os.path.join(BASE_DIR, "activity3", "Exercise13.py"),
+    "a3-ex14": os.path.join(BASE_DIR, "activity3", "Exercise14.py"),
+    "a3-ex15": os.path.join(BASE_DIR, "activity3", "Exercise15.py"),
+
+    "a4-ex16": os.path.join(BASE_DIR, "activity4", "Exercise16.py"),
+    "a4-ex17": os.path.join(BASE_DIR, "activity4", "Exercise17.py"),
+    "a4-ex18": os.path.join(BASE_DIR, "activity4", "Exercise18.py"),
+    "a4-ex19": os.path.join(BASE_DIR, "activity4", "Exercise19.py"),
+    "a4-ex20": os.path.join(BASE_DIR, "activity4", "Exercise20.py"),
+
+    "a5-ex24": os.path.join(BASE_DIR, "activity5", "Exercise24.py"),
+}
+
+@app.route("/api/exercise_map_check")
+def api_exercise_map_check():
+    out = {}
+    for ex_id, path in EXERCISE_MAP.items():
+        out[ex_id] = {"path": path, "exists": os.path.exists(path)}
+    return jsonify({"ok": True, "base_dir": BASE_DIR, "map": out})
+
 # ────────────────────────────────────────────────
-#   MUX (TCA9548A)
+#   MUX + LCD
 # ────────────────────────────────────────────────
 USE_MUX = SENSORS_AVAILABLE.get("tca9548a", False) and SENSORS_AVAILABLE.get("board", False)
 MUX_ADDRESS = 0x70
@@ -516,9 +407,6 @@ def init_mux():
 if SENSORS_AVAILABLE.get("board") and SENSORS_AVAILABLE.get("tca9548a"):
     init_mux()
 
-# ────────────────────────────────────────────────
-#   LCD (with MUX select)
-# ────────────────────────────────────────────────
 LCD_I2C_BUS = 1
 LCD_ADDRS = [0x27, 0x3F]
 LCD_COLS = 16
@@ -566,7 +454,7 @@ def lcd_get():
                 _lcd.clear()
             _lcd_addr = addr
             clear_error("LCD_TOOL")
-            print(f"[LCD] OK addr=0x{addr:02X} mux_ch={LCD_MUX_CH if USE_MUX else 'direct'}")
+            print(f"[LCD] OK addr=0x{addr:02X}")
             return _lcd
         except Exception as e:
             _lcd = None
@@ -608,313 +496,82 @@ def lcd_clear():
         set_error("LCD_TOOL", f"clear failed: {e}")
         return False
 
-# ────────────────────────────────────────────────
-#   RELAY
-# ────────────────────────────────────────────────
-relay_pins = {}
-
-def init_relay():
-    global relay_pins
-    if not SENSORS_AVAILABLE.get("board"):
-        set_error("Relay", "board not available")
-        return False
-    if relay_pins:
-        return True
-    RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]  # active-low
+def lcd_tool_release():
+    global _lcd, _lcd_addr
     try:
-        relay_pins = {}
-        for ch, pin in enumerate(RELAY_PINS, 1):
-            io = digitalio.DigitalInOut(pin)
-            io.direction = digitalio.Direction.OUTPUT
-            io.value = True  # OFF if active-low
-            relay_pins[ch] = io
-        sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
-        clear_error("Relay")
-        print("[RELAY] OK 4ch")
-        return True
-    except Exception as e:
-        relay_pins = {}
-        set_error("Relay", f"init failed: {e}")
-        return False
-
-RELAY_ACTIVE_LOW = True
-def _relay_gpio_value(on: bool) -> bool:
-    return (not bool(on)) if RELAY_ACTIVE_LOW else bool(on)
-
-def set_relay(ch: int, on: bool) -> bool:
-    if not init_relay():
-        return False
-    io = relay_pins.get(int(ch))
-    if io is None:
-        set_error("Relay", f"unknown channel {ch}")
-        return False
-    try:
-        io.value = _relay_gpio_value(on)
-        data = {
-            "ch1": bool(relay_pins.get(1) and relay_pins[1].value == _relay_gpio_value(True)),
-            "ch2": bool(relay_pins.get(2) and relay_pins[2].value == _relay_gpio_value(True)),
-            "ch3": bool(relay_pins.get(3) and relay_pins[3].value == _relay_gpio_value(True)),
-            "ch4": bool(relay_pins.get(4) and relay_pins[4].value == _relay_gpio_value(True)),
-            "last_update": now_iso(),
-            "error": "",
-        }
-        sensor_data["Relay"].update(data)
-        clear_error("Relay")
-        return True
-    except Exception as e:
-        set_error("Relay", e)
-        return False
-
-def set_all_relays(on: bool) -> bool:
-    if not init_relay():
-        return False
-    ok = True
-    for ch in [1, 2, 3, 4]:
-        ok = set_relay(ch, on) and ok
-    return ok
+        if _lcd is not None:
+            try:
+                if mux_select_for_lcd():
+                    _lcd.clear()
+            except Exception:
+                pass
+    finally:
+        _lcd = None
+        _lcd_addr = None
+        sensor_data["LCD_TOOL"].update({"line1": "", "line2": "", "last_update": now_iso(), "error": ""})
 
 # ────────────────────────────────────────────────
-#   BUZZER
+#   DHT / MPU / BMP / PIR / ULTRASONIC / GAS
 # ────────────────────────────────────────────────
-buzzer = None
-BUZZER_PIN = "D21"
-BUZZER_ACTIVE_LOW = True
-
-def _get_board_pin(name: str):
-    return getattr(board, name)
-
-def init_buzzer():
-    global buzzer
-    if not SENSORS_AVAILABLE.get("board"):
-        set_error("BUZZER", "board not available")
-        return False
-    if buzzer is not None:
-        return True
-    try:
-        buzzer = digitalio.DigitalInOut(_get_board_pin(BUZZER_PIN))
-        buzzer.direction = digitalio.Direction.OUTPUT
-        buzzer.value = True if BUZZER_ACTIVE_LOW else False  # OFF
-        sensor_data["BUZZER"].update({"on": False, "last_update": now_iso(), "error": ""})
-        clear_error("BUZZER")
-        print(f"[BUZZER] OK pin={BUZZER_PIN} active_low={BUZZER_ACTIVE_LOW}")
-        return True
-    except Exception as e:
-        buzzer = None
-        set_error("BUZZER", f"init failed: {e}")
-        return False
-
-def _buzzer_gpio_value(on: bool) -> bool:
-    return (not bool(on)) if BUZZER_ACTIVE_LOW else bool(on)
-
-def set_buzzer(on: bool) -> bool:
-    if not init_buzzer():
-        return False
-    try:
-        buzzer.value = _buzzer_gpio_value(on)
-        sensor_data["BUZZER"].update({"on": bool(on), "last_update": now_iso(), "error": ""})
-        clear_error("BUZZER")
-        return True
-    except Exception as e:
-        set_error("BUZZER", e)
-        return False
-
-def beep(count=2, on_ms=140, off_ms=140):
-    if not init_buzzer():
-        return False
-    for _ in range(int(count)):
-        set_buzzer(True)
-        time.sleep(max(0.01, on_ms / 1000))
-        set_buzzer(False)
-        time.sleep(max(0.01, off_ms / 1000))
-    return True
-
-# ────────────────────────────────────────────────
-#   LED (D5 red, D6 green, D13 orange)
-# ────────────────────────────────────────────────
-led_red = None
-led_green = None
-led_orange = None
-
-def init_leds():
-    global led_red, led_green, led_orange
-    if not SENSORS_AVAILABLE.get("board"):
-        set_error("LED", "board not available")
-        return False
-    if led_red and led_green and led_orange:
-        return True
-    try:
-        led_red = digitalio.DigitalInOut(board.D5)
-        led_green = digitalio.DigitalInOut(board.D6)
-        led_orange = digitalio.DigitalInOut(board.D13)
-        for io in (led_red, led_green, led_orange):
-            io.direction = digitalio.Direction.OUTPUT
-            io.value = False
-        sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
-        clear_error("LED")
-        print("[LED] OK pins RED=D5 GREEN=D6 ORANGE=D13")
-        return True
-    except Exception as e:
-        led_red = None
-        led_green = None
-        led_orange = None
-        set_error("LED", f"init failed: {e}")
-        return False
-
-def leds_off():
-    if not init_leds():
-        return False
-    try:
-        led_red.value = False
-        led_green.value = False
-        led_orange.value = False
-        sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
-        clear_error("LED")
-        return True
-    except Exception as e:
-        set_error("LED", e)
-        return False
-
-def led_set(color: str, on: bool) -> bool:
-    if not init_leds():
-        return False
-    color = (color or "").strip().lower()
-    mp = {
-        "red": led_red,
-        "green": led_green,
-        "orange": led_orange,
-    }
-    io = mp.get(color)
-    if io is None:
-        set_error("LED", f"unknown color: {color}")
-        return False
-    try:
-        if on:
-            led_red.value = False
-            led_green.value = False
-            led_orange.value = False
-        io.value = bool(on)
-        sensor_data["LED"].update({"color": color if on else "off", "last_update": now_iso(), "error": ""})
-        clear_error("LED")
-        return True
-    except Exception as e:
-        set_error("LED", e)
-        return False
-
-def leds_deinit():
-    global led_red, led_green, led_orange
-    for io in (led_red, led_green, led_orange):
-        try:
-            if io is not None:
-                io.value = False
-        except Exception:
-            pass
-        try:
-            if io is not None:
-                io.deinit()
-        except Exception:
-            pass
-    led_red = None
-    led_green = None
-    led_orange = None
-    sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
-
-# ────────────────────────────────────────────────
-#   SERVO
-# ────────────────────────────────────────────────
-servo_pwm = None
-SERVO_PIN = "D19"
-SERVO_FREQ = 50
-
-def init_servomotor():
-    global servo_pwm
-    if not SENSORS_AVAILABLE.get("servomotor"):
-        set_error("servomotor", "pwmio not available")
-        return False
-    if servo_pwm is not None:
-        return True
-    try:
-        servo_pwm = pwmio.PWMOut(_get_board_pin(SERVO_PIN), duty_cycle=0, frequency=SERVO_FREQ)
-        sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
-        clear_error("servomotor")
-        print(f"[SERVO] OK pin={SERVO_PIN}")
-        return True
-    except Exception as e:
-        servo_pwm = None
-        set_error("servomotor", f"init failed: {e}")
-        return False
-
-def _angle_to_duty_u16(angle: int) -> int:
-    angle = max(0, min(180, int(angle)))
-    us = 500 + (angle / 180.0) * 2000
-    period_us = 1000000 / SERVO_FREQ
-    return int((us / period_us) * 65535)
-
-def move_servo(angle: int) -> bool:
-    if not init_servomotor():
-        return False
-    try:
-        servo_pwm.duty_cycle = _angle_to_duty_u16(angle)
-        sensor_data["servomotor"].update({"angle": int(angle), "last_update": now_iso(), "error": ""})
-        clear_error("servomotor")
-        return True
-    except Exception as e:
-        set_error("servomotor", e)
-        return False
-
-def stop_servo():
-    global servo_pwm
-    if servo_pwm is None:
-        return True
-    try:
-        servo_pwm.duty_cycle = 0
-        time.sleep(0.05)
-    except Exception:
-        pass
-    try:
-        servo_pwm.deinit()
-    except Exception:
-        pass
-    servo_pwm = None
-    sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
-    clear_error("servomotor")
-    return True
-
-# ────────────────────────────────────────────────
-#   I2C SENSORS
-# ────────────────────────────────────────────────
-i2c_bus = None
+dht_device = None
 mpu = None
 bmp = None
-dht_device = None
+pir_pin = None
+ultra_trig = None
+ultra_echo = None
+mq_pin = None
 
-def init_i2c_bus():
-    global i2c_bus
-    if not SENSORS_AVAILABLE.get("board"):
+GAS_SAMPLES = 20
+GAS_SAMPLE_DELAY = 0.02
+GAS_INVERT_DO = True
+GAS_ALERT_PERCENT = 30
+
+def read_gas_level_percent():
+    if mq_pin is None:
         return None
-    if i2c_bus is not None:
-        return i2c_bus
+    hits = 0
+    for _ in range(GAS_SAMPLES):
+        v = mq_pin.value
+        if GAS_INVERT_DO:
+            v = not v
+        if v:
+            hits += 1
+        time.sleep(GAS_SAMPLE_DELAY)
+    return int(round(100 * hits / GAS_SAMPLES))
+
+def init_dht():
+    global dht_device
+    if not SENSORS_AVAILABLE.get("DHT11") or not SENSORS_AVAILABLE.get("board"):
+        set_error("DHT11", "DHT11/board not available")
+        return False
+    if dht_device is not None:
+        return True
     try:
-        i2c_bus = board.I2C()
-        return i2c_bus
-    except Exception:
-        return None
+        dht_device = adafruit_dht.DHT11(board.D4, use_pulseio=False)
+        clear_error("DHT11")
+        print("[DHT11] OK D4")
+        return True
+    except Exception as e:
+        dht_device = None
+        set_error("DHT11", f"init failed: {e}")
+        return False
 
 def init_mpu():
     global mpu
-    if not SENSORS_AVAILABLE.get("MPU6050"):
-        set_error("MPU6050", "library not installed")
+    if not SENSORS_AVAILABLE.get("MPU6050") or not SENSORS_AVAILABLE.get("board"):
+        set_error("MPU6050", "MPU6050/board not available")
         return False
     if mpu is not None:
         return True
     try:
         with i2c_lock:
-            bus = init_i2c_bus()
-            if bus is None:
-                raise RuntimeError("I2C bus init failed")
-            if USE_MUX and tca is not None:
+            if USE_MUX:
+                if tca is None and not init_mux():
+                    raise RuntimeError("MUX init failed")
                 mpu = adafruit_mpu6050.MPU6050(tca[MPU_MUX_CH])
             else:
-                mpu = adafruit_mpu6050.MPU6050(bus)
+                i2c = board.I2C()
+                mpu = adafruit_mpu6050.MPU6050(i2c)
         clear_error("MPU6050")
         print("[MPU6050] OK")
         return True
@@ -925,52 +582,33 @@ def init_mpu():
 
 def init_bmp():
     global bmp
-    if not SENSORS_AVAILABLE.get("BMP280"):
-        set_error("BMP280", "library not installed")
+    if not SENSORS_AVAILABLE.get("BMP280") or not SENSORS_AVAILABLE.get("board"):
+        set_error("BMP280", "BMP280/board not available")
         return False
     if bmp is not None:
         return True
-    try:
-        with i2c_lock:
-            bus = init_i2c_bus()
-            if bus is None:
-                raise RuntimeError("I2C bus init failed")
-            if USE_MUX and tca is not None:
-                bmp = adafruit_bmp280.Adafruit_BMP280_I2C(tca[BMP_MUX_CH])
-            else:
-                bmp = adafruit_bmp280.Adafruit_BMP280_I2C(bus)
-        clear_error("BMP280")
-        print("[BMP280] OK")
-        return True
-    except Exception as e:
-        bmp = None
-        set_error("BMP280", f"init failed: {e}")
-        return False
 
-def init_dht():
-    global dht_device
-    if not SENSORS_AVAILABLE.get("DHT11"):
-        set_error("DHT11", "library not installed")
-        return False
-    if dht_device is not None:
-        return True
-    try:
-        dht_device = adafruit_dht.DHT11(board.D4, use_pulseio=False)
-        clear_error("DHT11")
-        print("[DHT11] OK pin=D4")
-        return True
-    except Exception as e:
-        dht_device = None
-        set_error("DHT11", f"init failed: {e}")
-        return False
+    last = None
+    for addr in (0x76, 0x77):
+        try:
+            with i2c_lock:
+                if USE_MUX:
+                    if tca is None and not init_mux():
+                        raise RuntimeError("MUX init failed")
+                    bmp = adafruit_bmp280.Adafruit_BMP280_I2C(tca[BMP_MUX_CH], address=addr)
+                else:
+                    i2c = board.I2C()
+                    bmp = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=addr)
+                bmp.sea_level_pressure = 1013.25
+            clear_error("BMP280")
+            print(f"[BMP280] OK addr=0x{addr:02X}")
+            return True
+        except Exception as e:
+            bmp = None
+            last = e
 
-# ────────────────────────────────────────────────
-#   DIGITAL INPUT SENSORS
-# ────────────────────────────────────────────────
-pir_pin = None
-ultra_trig = None
-ultra_echo = None
-mq_pin = None
+    set_error("BMP280", f"init failed: {last}")
+    return False
 
 def init_pir():
     global pir_pin
@@ -1057,37 +695,28 @@ def init_mq():
         set_error("MHMQ", f"init failed: {e}")
         return False
 
-def ensure_sensor_init(sensor: str) -> bool:
-    if sensor == "DHT11": return init_dht()
-    if sensor == "MPU6050": return init_mpu()
-    if sensor == "BMP280": return init_bmp()
-    if sensor == "PIR": return init_pir()
-    if sensor == "ULTRASONIC": return init_ultrasonic()
-    if sensor == "MHMQ": return init_mq()
-    if sensor == "Relay": return init_relay()
-    if sensor == "servomotor": return init_servomotor()
-    if sensor == "MIC": return mic_start()
-    if sensor == "LED": return init_leds()
-    return True
-
 def release_all_sensor_gpio():
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
     try:
-        if pir_pin: pir_pin.deinit()
+        if pir_pin:
+            pir_pin.deinit()
     except Exception:
         pass
     pir_pin = None
 
     try:
-        if ultra_trig: ultra_trig.deinit()
-        if ultra_echo: ultra_echo.deinit()
+        if ultra_trig:
+            ultra_trig.deinit()
+        if ultra_echo:
+            ultra_echo.deinit()
     except Exception:
         pass
     ultra_trig = None
     ultra_echo = None
 
     try:
-        if mq_pin: mq_pin.deinit()
+        if mq_pin:
+            mq_pin.deinit()
     except Exception:
         pass
     mq_pin = None
@@ -1099,6 +728,62 @@ def release_all_sensor_gpio():
         pass
     dht_device = None
 
+# ────────────────────────────────────────────────
+#   RELAY
+# ────────────────────────────────────────────────
+relay_pins = {}
+RELAY_ACTIVE_LOW = True
+
+def _relay_gpio_value(on: bool) -> bool:
+    return (not bool(on)) if RELAY_ACTIVE_LOW else bool(on)
+
+def init_relay():
+    global relay_pins
+    if not SENSORS_AVAILABLE.get("board"):
+        set_error("Relay", "board not available")
+        return False
+    if relay_pins:
+        return True
+    relay_list = [board.D27, board.D10, board.D26, board.D25]
+    try:
+        relay_pins = {}
+        for ch, pin in enumerate(relay_list, 1):
+            io = digitalio.DigitalInOut(pin)
+            io.direction = digitalio.Direction.OUTPUT
+            io.value = _relay_gpio_value(False)
+            relay_pins[ch] = io
+        sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
+        clear_error("Relay")
+        return True
+    except Exception as e:
+        relay_pins = {}
+        set_error("Relay", f"init failed: {e}")
+        return False
+
+def set_relay(ch: int, on: bool) -> bool:
+    if not init_relay():
+        return False
+    io = relay_pins.get(int(ch))
+    if io is None:
+        set_error("Relay", f"unknown channel {ch}")
+        return False
+    try:
+        io.value = _relay_gpio_value(on)
+        sensor_data["Relay"][f"ch{int(ch)}"] = bool(on)
+        sensor_data["Relay"]["last_update"] = now_iso()
+        clear_error("Relay")
+        return True
+    except Exception as e:
+        set_error("Relay", f"set failed: {e}")
+        return False
+
+def set_all_relays(on: bool) -> bool:
+    if not init_relay():
+        return False
+    ok = True
+    for ch in (1, 2, 3, 4):
+        ok = set_relay(ch, on) and ok
+    return ok
 
 def deinit_relay_gpio():
     global relay_pins
@@ -1117,6 +802,105 @@ def deinit_relay_gpio():
     relay_pins = {}
     sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
 
+# ────────────────────────────────────────────────
+#   SERVO
+# ────────────────────────────────────────────────
+SERVO_PIN = getattr(board, "D12", None) if SENSORS_AVAILABLE.get("board") else None
+FREQUENCY = 50
+MIN_PULSE = 500
+MAX_PULSE = 2500
+servo_pwm = None
+
+def init_servomotor():
+    if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board") or SERVO_PIN is None:
+        set_error("servomotor", "servo not available")
+        return False
+    clear_error("servomotor")
+    return True
+
+def set_servo_angle(angle):
+    global servo_pwm
+    if not init_servomotor():
+        return False
+    try:
+        if servo_pwm is None:
+            servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
+
+        angle = max(0, min(180, int(angle)))
+        pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
+        duty = int((pulse_us / 20000.0) * 65535.0)
+        servo_pwm.duty_cycle = duty
+        sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
+        return True
+    except Exception as e:
+        set_error("servomotor", e)
+        return False
+
+def stop_servo():
+    global servo_pwm
+    try:
+        if servo_pwm is not None:
+            servo_pwm.duty_cycle = 0
+            time.sleep(0.03)
+            servo_pwm.deinit()
+    except Exception:
+        pass
+    servo_pwm = None
+    sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
+
+def servo_move_then_release(angle: int, hold_ms: int = 250) -> bool:
+    ok = set_servo_angle(angle)
+    if not ok:
+        return False
+    time.sleep(max(0, hold_ms) / 1000.0)
+    stop_servo()
+    return True
+
+# ────────────────────────────────────────────────
+#   BUZZER
+# ────────────────────────────────────────────────
+BUZZER_ACTIVE_LOW = True
+buzzer = None
+
+def init_buzzer():
+    global buzzer
+    if not SENSORS_AVAILABLE.get("board"):
+        set_error("BUZZER", "board not available")
+        return False
+    if buzzer is not None:
+        return True
+    try:
+        buzzer = digitalio.DigitalInOut(board.D21)
+        buzzer.direction = digitalio.Direction.OUTPUT
+        buzzer.value = True if BUZZER_ACTIVE_LOW else False
+        clear_error("BUZZER")
+        return True
+    except Exception as e:
+        buzzer = None
+        set_error("BUZZER", f"init failed: {e}")
+        return False
+
+def set_buzzer(on: bool) -> bool:
+    if not init_buzzer():
+        return False
+    try:
+        buzzer.value = (not on) if BUZZER_ACTIVE_LOW else bool(on)
+        sensor_data["BUZZER"].update({"on": bool(on), "last_update": now_iso(), "error": ""})
+        clear_error("BUZZER")
+        return True
+    except Exception as e:
+        set_error("BUZZER", e)
+        return False
+
+def beep(count=1, on_ms=80, off_ms=80):
+    try:
+        for _ in range(int(count)):
+            set_buzzer(True)
+            time.sleep(on_ms / 1000.0)
+            set_buzzer(False)
+            time.sleep(off_ms / 1000.0)
+    except Exception:
+        pass
 
 def deinit_buzzer_gpio():
     global buzzer
@@ -1135,71 +919,127 @@ def deinit_buzzer_gpio():
     buzzer = None
     sensor_data["BUZZER"].update({"on": False, "last_update": now_iso(), "error": ""})
 
+# ────────────────────────────────────────────────
+#   LED
+# ────────────────────────────────────────────────
+LED_ACTIVE_HIGH = True
+led_red = None
+led_green = None
+led_orange = None
 
-def lcd_tool_release():
-    global _lcd, _lcd_addr
+def _set_led_pin(pin_obj, on: bool):
+    if pin_obj is None:
+        return
+    pin_obj.value = bool(on) if LED_ACTIVE_HIGH else (not bool(on))
+
+def init_leds():
+    global led_red, led_green, led_orange
+    if not SENSORS_AVAILABLE.get("board"):
+        set_error("LED", "board not available")
+        return False
+    if led_red is not None and led_green is not None and led_orange is not None:
+        return True
     try:
-        if _lcd is not None:
-            try:
-                if mux_select_for_lcd():
-                    _lcd.clear()
-            except Exception:
-                pass
-    finally:
-        _lcd = None
-        _lcd_addr = None
-        sensor_data["LCD_TOOL"].update({"line1": "", "line2": "", "last_update": now_iso(), "error": ""})
+        led_red = digitalio.DigitalInOut(board.D5)
+        led_green = digitalio.DigitalInOut(board.D6)
+        led_orange = digitalio.DigitalInOut(board.D13)
+        for led in (led_red, led_green, led_orange):
+            led.direction = digitalio.Direction.OUTPUT
+        _set_led_pin(led_red, False)
+        _set_led_pin(led_green, False)
+        _set_led_pin(led_orange, False)
 
+        sensor_state["LED"] = True
+        sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
+        clear_error("LED")
+        return True
+    except Exception as e:
+        led_red = None
+        led_green = None
+        led_orange = None
+        sensor_state["LED"] = False
+        set_error("LED", f"init failed: {e}")
+        return False
 
-def stop_all_tools(reason: str = ""):
-    for k in running_flags.keys():
-        running_flags[k] = False
-
-    time.sleep(0.15)
-
+def set_led_color(color: str) -> bool:
+    if not init_leds():
+        return False
+    c = (color or "").strip().lower()
     try:
-        mic_stop()
+        _set_led_pin(led_red, False)
+        _set_led_pin(led_green, False)
+        _set_led_pin(led_orange, False)
+
+        if c == "red":
+            _set_led_pin(led_red, True)
+        elif c == "green":
+            _set_led_pin(led_green, True)
+        elif c == "orange":
+            _set_led_pin(led_orange, True)
+        elif c in ("off", "", "none"):
+            c = "off"
+        else:
+            set_error("LED", f"unknown color: {c}")
+            return False
+
+        sensor_data["LED"].update({"color": c, "last_update": now_iso(), "error": ""})
+        clear_error("LED")
+        return True
+    except Exception as e:
+        set_error("LED", f"set failed: {e}")
+        return False
+
+def leds_off():
+    try:
+        if init_leds():
+            _set_led_pin(led_red, False)
+            _set_led_pin(led_green, False)
+            _set_led_pin(led_orange, False)
+            sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
+    except Exception:
+        pass
+
+def leds_deinit():
+    global led_red, led_green, led_orange
+    try:
+        if led_red:
+            led_red.deinit()
     except Exception:
         pass
     try:
-        stop_servo()
+        if led_green:
+            led_green.deinit()
     except Exception:
         pass
     try:
-        set_all_relays(False)
+        if led_orange:
+            led_orange.deinit()
     except Exception:
         pass
-    try:
-        leds_off()
-    except Exception:
-        pass
-    try:
-        set_buzzer(False)
-    except Exception:
-        pass
-    try:
-        lcd_clear()
-    except Exception:
-        pass
-
-    release_all_sensor_gpio()
-    deinit_relay_gpio()
-    deinit_buzzer_gpio()
-    leds_deinit()
-    lcd_tool_release()
-
-    for key in sensor_state.keys():
-        sensor_state[key] = False
-
-    if reason:
-        print(f"[TOOLS] stopped: {reason}")
+    led_red = None
+    led_green = None
+    led_orange = None
+    sensor_state["LED"] = False
 
 # ────────────────────────────────────────────────
-#   SENSOR READER THREADS (Tools mode)
+#   SENSOR READER THREADS
 # ────────────────────────────────────────────────
 threads = {}
 running_flags = {k: False for k in sensor_state.keys()}
 motion_count = 0
+
+def ensure_sensor_init(sensor: str) -> bool:
+    if sensor == "DHT11": return init_dht()
+    if sensor == "MPU6050": return init_mpu()
+    if sensor == "BMP280": return init_bmp()
+    if sensor == "PIR": return init_pir()
+    if sensor == "ULTRASONIC": return init_ultrasonic()
+    if sensor == "MHMQ": return init_mq()
+    if sensor == "Relay": return init_relay()
+    if sensor == "servomotor": return init_servomotor()
+    if sensor == "MIC": return mic_start()
+    if sensor == "LED": return init_leds()
+    return True
 
 def sensor_reader(sensor_name):
     global motion_count
@@ -1237,13 +1077,13 @@ def sensor_reader(sensor_name):
             elif sensor_name == "BMP280" and bmp:
                 try:
                     with i2c_lock:
-                        t = bmp.temperature
-                        p = bmp.pressure
-                        alt = bmp.altitude
+                        temp = bmp.temperature
+                        press = bmp.pressure
+                        alt = getattr(bmp, "altitude", None)
                     sensor_data["BMP280"].update({
-                        "temperature": round(t, 2),
-                        "pressure": round(p, 2),
-                        "altitude": round(alt, 2),
+                        "temperature": round(temp, 1) if temp is not None else None,
+                        "pressure": round(press, 1) if press is not None else None,
+                        "altitude": round(alt, 1) if alt is not None else None,
                         "last_update": now, "error": ""
                     })
                     clear_error("BMP280")
@@ -1251,71 +1091,88 @@ def sensor_reader(sensor_name):
                     set_error("BMP280", e)
 
             elif sensor_name == "PIR" and pir_pin:
-                motion = bool(pir_pin.value)
-                if motion and not last_pir_state:
+                state = bool(pir_pin.value)
+                if state and not last_pir_state:
                     motion_count += 1
-                last_pir_state = motion
-                sensor_data["PIR"].update({"motion": motion, "count": motion_count, "last_update": now, "error": ""})
+                sensor_data["PIR"].update({"motion": state, "count": int(motion_count), "last_update": now, "error": ""})
                 clear_error("PIR")
+                last_pir_state = state
 
             elif sensor_name == "ULTRASONIC" and ultra_trig and ultra_echo:
-                d = measure_distance(ultra_trig, ultra_echo)
-                sensor_data["ULTRASONIC"].update({"distance_cm": d, "last_update": now, "error": ""})
+                dist = measure_distance(ultra_trig, ultra_echo)
+                sensor_data["ULTRASONIC"].update({"distance_cm": dist, "last_update": now, "error": ""})
                 clear_error("ULTRASONIC")
 
             elif sensor_name == "MHMQ" and mq_pin:
-                detected = bool(mq_pin.value)
-                sensor_data["MHMQ"].update({
-                    "gas_detected": detected,
-                    "level_percent": 100 if detected else 0,
-                    "last_update": now,
-                    "error": ""
-                })
+                level = read_gas_level_percent()
+                detected = (level is not None and level >= GAS_ALERT_PERCENT)
+                sensor_data["MHMQ"].update({"gas_detected": bool(detected), "level_percent": level, "last_update": now, "error": ""})
                 clear_error("MHMQ")
-
-            time.sleep(1.0)
 
         except Exception as e:
             set_error(sensor_name, e)
-            time.sleep(1.0)
+
+        time.sleep(1.0)
 
 # ────────────────────────────────────────────────
-#   MIC + VOSK
+#   MIC
 # ────────────────────────────────────────────────
 MIC_LOCK = threading.Lock()
-MIC_STREAM = None
+MIC_Q = queue.Queue(maxsize=80)
 MIC_WORKER_THREAD = None
 MIC_WORKER_RUN = False
-MIC_Q = queue.Queue(maxsize=16)
 
-MIC_INPUT_DEVICE = None
-VOSK_MODEL_PATH = os.path.join(BASE_DIR, "vosk-model-small-en-us-0.15")
+MIC_WAVE = deque(maxlen=250)
+MIC_WAVE_LOCK = threading.Lock()
+
+VOSK_MODEL_PATH = os.environ.get(
+    "VOSK_MODEL_PATH",
+    os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
+)
 VOSK_MODEL = None
 VOSK_REC = None
-VOSK_TARGET_SR = 16000
 VOSK_LOCK = threading.Lock()
 
-VOICE_TRIGGERS = {
-    "hello",
-    "hello hello",
-    "open",
-    "open open",
-    "close",
-    "left",
-    "right",
-    "red",
-    "green",
-    "orange",
-}
+MIC_SR_CANDIDATES = [
+    int(os.environ.get("MIC_SAMPLE_RATE", "48000")),
+    48000, 44100, 16000
+]
+VOSK_TARGET_SR = 16000
+MIC_STREAM = None
 
-def _detect_trigger(text: str):
-    txt = (text or "").strip().lower()
-    if not txt:
+VOICE_TRIGGERS = {"open", "hello", "hey", "hi"}
+
+def _detect_trigger(final_text: str) -> str:
+    t = (final_text or "").strip().lower()
+    if not t:
         return ""
-    for trig in sorted(VOICE_TRIGGERS, key=len, reverse=True):
-        if trig in txt:
-            return trig
+    if t in VOICE_TRIGGERS:
+        return t
+    if "hello hello" in t:
+        return "hello hello"
+    if "open open" in t:
+        return "open open"
     return ""
+
+def _fast_resample_mono_float32(x: "np.ndarray", src_sr: int, dst_sr: int = 16000) -> "np.ndarray":
+    if src_sr == dst_sr:
+        return x
+    if src_sr % dst_sr == 0:
+        step = src_sr // dst_sr
+        if step > 1:
+            return x[::step].astype(np.float32, copy=False)
+    if len(x) < 2:
+        return x.astype(np.float32, copy=False)
+
+    duration = len(x) / float(src_sr)
+    dst_len = int(duration * dst_sr)
+    if dst_len <= 1:
+        return x[:1].astype(np.float32, copy=False)
+
+    src_idx = np.linspace(0, len(x) - 1, num=len(x), dtype=np.float64)
+    dst_idx = np.linspace(0, len(x) - 1, num=dst_len, dtype=np.float64)
+    y = np.interp(dst_idx, src_idx, x).astype(np.float32)
+    return y
 
 def vosk_init():
     global VOSK_MODEL, VOSK_REC
@@ -1325,82 +1182,53 @@ def vosk_init():
     if not os.path.isdir(VOSK_MODEL_PATH):
         set_error("MIC", f"Vosk model not found: {VOSK_MODEL_PATH}")
         return False
-    try:
-        with VOSK_LOCK:
-            if VOSK_MODEL is None:
-                VOSK_MODEL = Model(VOSK_MODEL_PATH)
-            if VOSK_REC is None:
-                VOSK_REC = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
-        clear_error("MIC")
-        return True
-    except Exception as e:
-        set_error("MIC", f"Vosk init failed: {e}")
-        return False
 
-def _downsample_to_16k(x_float32, src_sr):
-    if src_sr == 16000:
-        return x_float32
-    if len(x_float32) == 0:
-        return x_float32
-    ratio = 16000.0 / float(src_sr)
-    n_out = max(1, int(len(x_float32) * ratio))
-    idx = np.linspace(0, len(x_float32) - 1, n_out)
-    lo = np.floor(idx).astype(np.int32)
-    hi = np.minimum(lo + 1, len(x_float32) - 1)
-    frac = (idx - lo).astype(np.float32)
-    return (x_float32[lo] * (1.0 - frac) + x_float32[hi] * frac).astype(np.float32)
-
-def _try_open_input_stream(device, samplerate, blocksize, callback):
-    try:
-        stream = sd.InputStream(
-            device=device,
-            channels=1,
-            samplerate=samplerate,
-            blocksize=blocksize,
-            dtype="float32",
-            callback=callback,
-        )
-        stream.start()
-        return stream
-    except Exception:
-        return None
-
-def _mic_audio_callback(indata, frames, time_info, status):
-    if status:
-        pass
-    try:
-        MIC_Q.put_nowait(indata[:, 0].copy())
-    except queue.Full:
+    with VOSK_LOCK:
+        if VOSK_MODEL is None:
+            VOSK_MODEL = Model(VOSK_MODEL_PATH)
+        VOSK_REC = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
         try:
-            MIC_Q.get_nowait()
-        except Exception:
-            pass
-        try:
-            MIC_Q.put_nowait(indata[:, 0].copy())
+            VOSK_REC.SetWords(False)
         except Exception:
             pass
 
-def _mic_worker(src_sr):
+    sensor_data["MIC"]["listening_rate"] = VOSK_TARGET_SR
+    clear_error("MIC")
+    return True
+
+def _mic_worker_loop(src_sr: int):
     global MIC_WORKER_RUN
+
+    with VOSK_LOCK:
+        if VOSK_MODEL is not None:
+            globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
+
     while MIC_WORKER_RUN:
         try:
-            chunk = MIC_Q.get(timeout=0.25)
+            item = MIC_Q.get(timeout=0.25)
         except queue.Empty:
+            continue
+        if item is None:
             continue
 
         try:
-            ts = now_iso()
-            peak = float(np.max(np.abs(chunk))) if len(chunk) else 0.0
-            rms = float(np.sqrt(np.mean(np.square(chunk)))) if len(chunk) else 0.0
-            chunk16 = _downsample_to_16k(chunk, src_sr)
-            pcm16 = (chunk16 * 32767.0).astype(np.int16).tobytes()
+            pcm16_bytes, rms, peak, ts = item
+            with MIC_WAVE_LOCK:
+                MIC_WAVE.append(float(rms))
+
+            x16 = np.frombuffer(pcm16_bytes, dtype=np.int16)
+            x = (x16.astype(np.float32) / 32768.0)
+
+            y = _fast_resample_mono_float32(x, src_sr, VOSK_TARGET_SR)
+            y16 = np.clip(y * 32767.0, -32768, 32767).astype(np.int16).tobytes()
 
             partial_txt = ""
-            final_txt = ""
+            final_txt = None
 
             with VOSK_LOCK:
                 if VOSK_REC is not None:
-                    if VOSK_REC.AcceptWaveform(pcm16):
+                    ok = VOSK_REC.AcceptWaveform(y16)
+                    if ok:
                         res = json.loads(VOSK_REC.Result() or "{}")
                         final_txt = (res.get("text") or "").strip()
                     else:
@@ -1470,137 +1298,264 @@ def mic_start():
         return False
 
     src_sr = None
+    last_err = None
+    for sr in MIC_SR_CANDIDATES:
+        try:
+            sd.check_input_settings(samplerate=sr, channels=1, dtype="int16")
+            src_sr = sr
+            break
+        except Exception as e:
+            last_err = e
 
-    with MIC_LOCK:
-        if MIC_STREAM is not None:
-            return True
+    if src_sr is None:
+        set_error("MIC", f"No valid sample rate. Last: {last_err}")
+        return False
 
-        dev = sd.default.device[0]
-        candidate_rates = [48000, 44100, 32000, 24000, 16000, 8000]
-        stream = None
+    def _audio_cb(indata, frames, time_info, status):
+        try:
+            x16 = indata[:, 0].astype(np.int16, copy=False)
+            xf = (x16.astype(np.float32) / 32768.0)
+            rms = float(np.sqrt(np.mean(xf * xf)) + 1e-12)
+            peak = float(np.max(np.abs(xf)) + 1e-12)
+            ts = now_iso()
+            try:
+                MIC_Q.put_nowait((x16.tobytes(), rms, peak, ts))
+            except queue.Full:
+                pass
+        except Exception:
+            pass
 
-        for r in candidate_rates:
-            blocksize = int(r * 0.05)
-            stream = _try_open_input_stream(dev, r, blocksize, _mic_audio_callback)
-            if stream is not None:
-                src_sr = r
-                break
+    try:
+        with MIC_LOCK:
+            MIC_STREAM = sd.InputStream(
+                samplerate=src_sr,
+                channels=1,
+                dtype="int16",
+                blocksize=0,
+                callback=_audio_cb,
+            )
+            MIC_STREAM.start()
 
-        if stream is None:
-            set_error("MIC", "Could not open microphone at common sample rates")
-            return False
-
-        MIC_STREAM = stream
-        MIC_WORKER_RUN = True
-        MIC_WORKER_THREAD = threading.Thread(target=_mic_worker, args=(src_sr,), daemon=True)
-        MIC_WORKER_THREAD.start()
-
-        sensor_data["MIC"].update({
-            "sample_rate": src_sr,
-            "listening_rate": VOSK_TARGET_SR,
-            "last_update": now_iso(),
-            "error": ""
-        })
+        sensor_data["MIC"]["sample_rate"] = src_sr
         clear_error("MIC")
-        print(f"[MIC] OK stream at {src_sr} Hz -> VOSK {VOSK_TARGET_SR}")
+
+        MIC_WORKER_RUN = True
+        MIC_WORKER_THREAD = threading.Thread(target=_mic_worker_loop, args=(src_sr,), daemon=True)
+        MIC_WORKER_THREAD.start()
         return True
 
+    except Exception as e:
+        set_error("MIC", e)
+        mic_stop()
+        return False
+
 # ────────────────────────────────────────────────
-#   STATIC FILES / PAGES
+#   STOP ALL TOOLS
+# ────────────────────────────────────────────────
+def stop_all_tools(reason: str = ""):
+    for k in running_flags.keys():
+        running_flags[k] = False
+
+    time.sleep(0.15)
+
+    try:
+        mic_stop()
+    except Exception:
+        pass
+
+    try:
+        stop_servo()
+    except Exception:
+        pass
+
+    try:
+        set_all_relays(False)
+    except Exception:
+        pass
+
+    try:
+        set_buzzer(False)
+    except Exception:
+        pass
+
+    try:
+        leds_off()
+    except Exception:
+        pass
+
+    try:
+        lcd_clear()
+    except Exception:
+        pass
+
+    release_all_sensor_gpio()
+    deinit_relay_gpio()
+    deinit_buzzer_gpio()
+    leds_deinit()
+    lcd_tool_release()
+
+    for key in sensor_state.keys():
+        sensor_state[key] = False
+
+    if reason:
+        print(f"[TOOLS] stopped: {reason}")
+
+# ────────────────────────────────────────────────
+#   PAGE ROUTES
 # ────────────────────────────────────────────────
 @app.route("/")
-def root():
+def welcome_page():
     return send_from_directory(TEMPLATE_DIR, "welcome.html")
 
-@app.route("/<path:path>")
-def static_proxy(path):
-    return send_from_directory(os.path.join(BASE_DIR, "static"), path)
+@app.route("/choices")
+def choices_page():
+    return send_from_directory(TEMPLATE_DIR, "choices.html")
+
+@app.route("/tools")
+def tools_page():
+    return send_from_directory(TEMPLATE_DIR, "tools.html")
+
+@app.route("/activityfolder")
+def activityfolder_page():
+    return send_from_directory(TEMPLATE_DIR, "activityfolder.html")
+
+@app.route("/activity1")
+def activity1_page():
+    return send_from_directory(TEMPLATE_DIR, "activity1.html")
+
+@app.route("/activity2")
+def activity2_page():
+    return send_from_directory(TEMPLATE_DIR, "activity2.html")
+
+@app.route("/activity3")
+def activity3_page():
+    return send_from_directory(TEMPLATE_DIR, "activity3.html")
+
+@app.route("/activity4")
+def activity4_page():
+    return send_from_directory(TEMPLATE_DIR, "activity4.html")
+
+@app.route("/activity5")
+def activity5_page():
+    return send_from_directory(TEMPLATE_DIR, "activity5.html")
+
+# OLD HTML COMPAT
+@app.route("/static/template/<path:filename>")
+def serve_template_compat(filename):
+    return send_from_directory(TEMPLATE_DIR, filename)
+
+@app.route("/static/css/<path:filename>")
+def serve_css(filename):
+    return send_from_directory(os.path.join(STATIC_DIR, "css"), filename)
+
+@app.route("/static/js/<path:filename>")
+def serve_js(filename):
+    return send_from_directory(os.path.join(STATIC_DIR, "js"), filename)
+
+@app.route("/static/images/<path:filename>")
+def serve_images(filename):
+    return send_from_directory(os.path.join(STATIC_DIR, "images"), filename)
 
 # ────────────────────────────────────────────────
-#   API: STATUS / TOOLS
+#   API: SENSORS + MIC
 # ────────────────────────────────────────────────
-@app.route("/api/status", methods=["GET"])
+@app.route("/api/sensors")
+def get_sensors():
+    resp = sensor_state.copy()
+    resp["data"] = sensor_data.copy()
+    return jsonify(resp)
+
+# old compatibility
+@app.route("/api/status")
 def api_status():
     return jsonify({
         "ok": True,
         "state": sensor_state,
         "data": sensor_data,
         "exercise": exercise_status,
-        "a5": a5_latest,
+        "a5": latest_a5,
         "focus": focus_state,
         "sensors_available": SENSORS_AVAILABLE,
     })
 
-@app.route("/api/exercise_map_check", methods=["GET"])
-def api_exercise_map_check():
-    rows = []
-    for ex_id, path in EXERCISE_MAP.items():
-        rows.append({
-            "exercise_id": ex_id,
-            "path": path,
-            "exists": os.path.exists(path)
-        })
-    return jsonify({"ok": True, "items": rows})
+@app.route("/api/mic_wave")
+def api_mic_wave():
+    with MIC_WAVE_LOCK:
+        wave = list(MIC_WAVE)
+    return jsonify({
+        "ok": True,
+        "active": bool(sensor_state.get("MIC")),
+        "wave": wave[-200:],
+        "rms": sensor_data["MIC"].get("rms"),
+        "peak": sensor_data["MIC"].get("peak"),
+        "text": sensor_data["MIC"].get("text"),
+        "partial": sensor_data["MIC"].get("partial"),
+        "command": sensor_data["MIC"].get("command"),
+        "command_at": sensor_data["MIC"].get("command_at"),
+        "error": sensor_data["MIC"].get("error"),
+        "last_update": sensor_data["MIC"].get("last_update"),
+    })
 
-@app.route("/api/tool/toggle", methods=["POST"])
-def api_toggle_sensor():
+@app.route("/api/mic_command", methods=["GET", "POST"])
+def api_mic_command():
+    if request.method == "POST":
+        data = request.json or {}
+        if data.get("clear"):
+            sensor_data["MIC"]["command"] = ""
+            sensor_data["MIC"]["command_at"] = None
+        return jsonify({"ok": True, "cleared": True})
+
+    return jsonify({
+        "ok": True,
+        "command": sensor_data["MIC"].get("command", ""),
+        "command_at": sensor_data["MIC"].get("command_at"),
+        "text": sensor_data["MIC"].get("text", ""),
+    })
+
+@app.route("/api/toggle", methods=["POST"])
+def toggle_sensor():
     data = request.json or {}
     sensor = data.get("sensor")
-    active = bool(data.get("active"))
 
     if sensor not in sensor_state:
-        return jsonify({"ok": False, "error": f"Unknown sensor: {sensor}"}), 400
+        return jsonify({"ok": False, "error": "Unknown sensor"}), 400
 
-    sensor_state[sensor] = active
+    sensor_state[sensor] = not bool(sensor_state[sensor])
+    active = bool(sensor_state[sensor])
+
+    if sensor == "BUZZER":
+        ok = set_buzzer(active)
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": active,
+            "on": sensor_data["BUZZER"]["on"], "active_low": BUZZER_ACTIVE_LOW,
+            "error": sensor_data["BUZZER"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "LCD_TOOL":
+        ok = lcd_write("LCD READY", now_iso()[-8:]) if active else lcd_clear()
+        if not active:
+            lcd_tool_release()
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": active,
+            "line1": sensor_data["LCD_TOOL"]["line1"], "line2": sensor_data["LCD_TOOL"]["line2"],
+            "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""
+        }), (200 if ok else 500)
 
     if sensor == "Relay":
-        if active:
-            ok = init_relay()
-            if not ok:
-                sensor_state[sensor] = False
-        else:
-            set_all_relays(False)
+        ok = set_all_relays(active)
+        if not active:
             deinit_relay_gpio()
-            ok = True
+        if not ok:
+            sensor_state[sensor] = False
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
             "relay": sensor_data["Relay"],
             "error": sensor_data["Relay"]["error"] if not ok else ""
         }), (200 if ok else 500)
 
-    if sensor == "BUZZER":
-        if active:
-            ok = init_buzzer()
-            if not ok:
-                sensor_state[sensor] = False
-        else:
-            set_buzzer(False)
-            deinit_buzzer_gpio()
-            ok = True
-        return jsonify({
-            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
-            "buzzer": sensor_data["BUZZER"],
-            "error": sensor_data["BUZZER"]["error"] if not ok else ""
-        }), (200 if ok else 500)
-
-    if sensor == "LCD_TOOL":
-        if active:
-            ok = lcd_get() is not None
-            if not ok:
-                sensor_state[sensor] = False
-        else:
-            lcd_clear()
-            lcd_tool_release()
-            ok = True
-        return jsonify({
-            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
-            "lcd": sensor_data["LCD_TOOL"],
-            "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""
-        }), (200 if ok else 500)
-
     if sensor == "servomotor":
         if active:
-            ok = init_servomotor()
+            ok = servo_move_then_release(90, hold_ms=250)
             if not ok:
                 sensor_state[sensor] = False
         else:
@@ -1642,7 +1597,6 @@ def api_toggle_sensor():
             "error": sensor_data["LED"]["error"] if not ok else ""
         }), (200 if ok else 500)
 
-    # regular sensors: start/stop reader loop
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
@@ -1656,6 +1610,17 @@ def api_toggle_sensor():
         running_flags[sensor] = False
 
     return jsonify({"ok": True, "sensor": sensor, "active": active})
+
+# old compatibility
+@app.route("/api/tool/toggle", methods=["POST"])
+def api_tool_toggle_compat():
+    data = request.json or {}
+    sensor = data.get("sensor")
+    if sensor not in sensor_state:
+        return jsonify({"ok": False, "error": "Unknown sensor"}), 400
+    sensor_state[sensor] = not bool(sensor_state[sensor])
+    data["sensor"] = sensor
+    return toggle_sensor()
 
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
@@ -1682,7 +1647,68 @@ def api_lcd():
     return jsonify({"ok": bool(ok), "line1": line1, "line2": line2, "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
 
 # ────────────────────────────────────────────────
-#   API: EXERCISE RUN (Mode B) + A5-EX21 special
+#   A5 EX24 COMMAND
+# ────────────────────────────────────────────────
+@app.route("/api/a5/command", methods=["POST"])
+def api_a5_command():
+    payload = request.json or {}
+    is_ex24 = (payload.get("exercise_id") == "a5-ex24")
+
+    try:
+        if is_ex24:
+            action = (payload.get("action") or "").strip().lower()
+            ok_local = True
+
+            if action == "buzzer":
+                st = (payload.get("state") == "on")
+                ok_local = set_buzzer(st)
+                ex24_log("INFO", f"BUZZER -> {'on' if st else 'off'}")
+
+            elif action == "led":
+                color = payload.get("color", "off")
+                ok_local = set_led_color(color)
+                ex24_log("INFO", f"LED -> {color}")
+
+            elif action == "servo":
+                ang = int(payload.get("angle", 0))
+                ok_local = servo_move_then_release(ang, hold_ms=250)
+                ex24_log("INFO", f"SERVO -> angle={ang} released")
+
+            elif action == "relay":
+                ch = payload.get("ch")
+                st = (payload.get("state") == "on")
+                if ch == "all":
+                    ok_local = set_all_relays(st)
+                    ex24_log("INFO", f"RELAY -> ALL {'on' if st else 'off'}")
+                else:
+                    ok_local = set_relay(int(ch), st)
+                    ex24_log("INFO", f"RELAY -> ch={ch} {'on' if st else 'off'}")
+            else:
+                ok_local = False
+                ex24_log("ERR", f"Unknown action: {action}")
+
+            if not ok_local:
+                return jsonify({"ok": False, "error": "Local GPIO action failed", "payload": payload}), 500
+
+        mqtt_ok = True
+        mqtt_err = ""
+        try:
+            a5_send_cmd(payload)
+        except Exception as e:
+            mqtt_ok = False
+            mqtt_err = str(e)
+            if is_ex24:
+                ex24_log("WARN", f"MQTT publish failed: {mqtt_err}")
+
+        return jsonify({"ok": True, "sent": payload, "mqtt_ok": mqtt_ok, "mqtt_error": mqtt_err})
+
+    except Exception as e:
+        if is_ex24:
+            ex24_log("ERR", f"EX24 command failed: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ────────────────────────────────────────────────
+#   EXERCISE API
 # ────────────────────────────────────────────────
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
@@ -1693,7 +1719,6 @@ def api_exercise_run():
     if not ex_id:
         return jsonify({"ok": False, "error": "Missing exercise_id"}), 400
 
-    # a5-ex21 special (MQTT stream ON)
     if ex_id == "a5-ex21":
         try:
             a5_send_cmd({"stream": "on"})
@@ -1765,12 +1790,33 @@ def api_exercise_run():
 
 @app.route("/api/exercise_stop", methods=["POST"])
 def api_exercise_stop():
-    stopped = stop_current_exercise()
-    return jsonify({"ok": True, "stopped": bool(stopped)})
+    with exercise_lock:
+        current = exercise_status.get("exercise_id")
+        running = bool(exercise_status.get("running"))
 
-@app.route("/api/exercise_status", methods=["GET"])
+    if running and current == "a5-ex21":
+        try:
+            a5_send_cmd({"stream": "off"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        with exercise_lock:
+            exercise_status.update({
+                "running": False,
+                "ended": True,
+                "end_reason": "stopped",
+                "exit_code": 0,
+                "ended_at": now_iso(),
+            })
+        return jsonify({"ok": True, "stopped": True, "mode": "mqtt", "sent": {"stream": "off"}})
+
+    ok = stop_current_exercise()
+    return jsonify({"ok": bool(ok), "stopped": bool(ok)})
+
+@app.route("/api/exercise_status")
 def api_exercise_status():
-    return jsonify({"ok": True, **exercise_status})
+    with exercise_lock:
+        return jsonify({"ok": True, **exercise_status})
 
 @app.route("/api/exercise_logs")
 def api_exercise_logs():
@@ -1795,7 +1841,6 @@ def _cleanup():
     except Exception:
         pass
 
-
 def _server_signal_cleanup(signum, frame):
     name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
     print(f"\n[SERVER] {name} received -> cleanup")
@@ -1804,7 +1849,6 @@ def _server_signal_cleanup(signum, frame):
 
 signal.signal(signal.SIGINT, _server_signal_cleanup)
 signal.signal(signal.SIGTERM, _server_signal_cleanup)
-
 atexit.register(_cleanup)
 
 # ────────────────────────────────────────────────
