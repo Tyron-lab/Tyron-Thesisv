@@ -1,4 +1,4 @@
-# server.py — TrainerKit Tools Dashboard (FULL UPDATE WITH GPIO MANAGEMENT)
+# server.py — TrainerKit Tools Dashboard (FULL UPDATE)
 # - Tools (toggle sensors)
 # - MIC VOSK + live wave
 # - Activity 5 MQTT bridge
@@ -7,7 +7,6 @@
 # - ✅ Exercise map checker: /api/exercise_map_check
 # - ✅ /api/exercise supports ALL ids in EXERCISE_MAP (a1..a5), plus a5-ex21 special
 # - ✅ EX24: Event Logging Terminal endpoints + Local GPIO control via /api/a5/command
-# - ✅ PROPER GPIO RELEASE: All pins are deinitialized when toggled off
 
 from flask import Flask, request, jsonify, send_from_directory
 import threading
@@ -34,38 +33,37 @@ try:
     import board
     import digitalio
     SENSORS_AVAILABLE["board"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["board"] = False
-    print(f"board import failed: {e}")
 
 try:
     import adafruit_dht
     SENSORS_AVAILABLE["DHT11"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["DHT11"] = False
 
 try:
     import adafruit_mpu6050
     SENSORS_AVAILABLE["MPU6050"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["MPU6050"] = False
 
 try:
     import adafruit_bmp280
     SENSORS_AVAILABLE["BMP280"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["BMP280"] = False
 
 try:
     import pwmio
     SENSORS_AVAILABLE["servomotor"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["servomotor"] = False
 
 try:
     import adafruit_tca9548a
     SENSORS_AVAILABLE["tca9548a"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["tca9548a"] = False
 
 # LCD via smbus2 + RPLCD (optional)
@@ -73,7 +71,7 @@ try:
     from smbus2 import SMBus
     from RPLCD.i2c import CharLCD
     SENSORS_AVAILABLE["LCD"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["LCD"] = False
 
 # MIC
@@ -81,19 +79,17 @@ try:
     import sounddevice as sd
     import numpy as np
     SENSORS_AVAILABLE["MIC"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["MIC"] = False
 
 # VOSK
 try:
     from vosk import Model, KaldiRecognizer
     SENSORS_AVAILABLE["VOSK"] = True
-except Exception as e:
+except Exception:
     SENSORS_AVAILABLE["VOSK"] = False
 
-print("=" * 80)
 print("Available libraries:", SENSORS_AVAILABLE)
-print("=" * 80)
 
 # ────────────────────────────────────────────────
 #   APP + GLOBALS
@@ -108,36 +104,6 @@ i2c_lock = threading.Lock()
 
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
-
-# ────────────────────────────────────────────────
-#   ✅ GPIO TRACKING - CRITICAL FOR PROPER CLEANUP
-# ────────────────────────────────────────────────
-GPIO_LOCK = threading.Lock()
-CLAIMED_PINS = {}  # Track which pins are claimed by which sensor
-
-def claim_pin(pin_id, sensor_name):
-    """Claim a GPIO pin for a specific sensor"""
-    with GPIO_LOCK:
-        if pin_id in CLAIMED_PINS and CLAIMED_PINS[pin_id] != sensor_name:
-            return False, f"Pin {pin_id} already claimed by {CLAIMED_PINS[pin_id]}"
-        CLAIMED_PINS[pin_id] = sensor_name
-        return True, ""
-
-def release_pin(pin_id, sensor_name):
-    """Release a GPIO pin"""
-    with GPIO_LOCK:
-        if pin_id in CLAIMED_PINS and CLAIMED_PINS[pin_id] == sensor_name:
-            del CLAIMED_PINS[pin_id]
-            return True
-        return False
-
-def release_all_pins_for_sensor(sensor_name):
-    """Release all pins claimed by a sensor"""
-    with GPIO_LOCK:
-        pins_to_release = [pin for pin, sensor in CLAIMED_PINS.items() if sensor == sensor_name]
-        for pin in pins_to_release:
-            del CLAIMED_PINS[pin]
-        return pins_to_release
 
 # ────────────────────────────────────────────────
 #   ✅ MULTI-PHONE FOCUS LOCK
@@ -209,7 +175,7 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
     "BUZZER":     False,
-    "LED":        False,
+    "LED":        False,     # ✅ added for EX24
     "LCD_TOOL":   False,
     "MIC":        False,
 }
@@ -218,14 +184,18 @@ sensor_data = {
     "DHT11":      {"temperature": None, "humidity": None, "last_update": None, "error": ""},
     "MPU6050":    {"ax": None, "ay": None, "az": None, "gx": None, "gy": None, "gz": None, "temperature": None, "last_update": None, "error": ""},
     "BMP280":     {"temperature": None, "pressure": None, "altitude": None, "last_update": None, "error": ""},
+
     "PIR":        {"motion": False, "count": 0, "last_update": None, "error": ""},
     "ULTRASONIC": {"distance_cm": None, "last_update": None, "error": ""},
+
     "MHMQ":       {"gas_detected": False, "level_percent": None, "last_update": None, "error": ""},
+
     "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
     "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LED":        {"color": "off", "last_update": None, "error": ""},
+    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ added
     "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
+
     "MIC": {
         "rms": None, "peak": None, "sample_rate": None, "listening_rate": 16000,
         "partial": "", "text": "", "command": "", "command_at": None,
@@ -432,12 +402,6 @@ def lcd_clear():
 #   RELAY
 # ────────────────────────────────────────────────
 relay_pins = {}
-RELAY_PINS_MAP = {
-    1: board.D27,
-    2: board.D10,
-    3: board.D26,
-    4: board.D25
-}
 
 def init_relay():
     global relay_pins
@@ -446,20 +410,14 @@ def init_relay():
         return False
     if relay_pins:
         return True
-    
+    RELAY_PINS = [board.D27, board.D10, board.D26, board.D25]  # active-low
     try:
         relay_pins = {}
-        for ch, pin in RELAY_PINS_MAP.items():
-            # Claim pins
-            ok, msg = claim_pin(pin, "Relay")
-            if not ok:
-                raise RuntimeError(msg)
-            
+        for ch, pin in enumerate(RELAY_PINS, 1):
             io = digitalio.DigitalInOut(pin)
             io.direction = digitalio.Direction.OUTPUT
             io.value = True  # OFF if active-low
             relay_pins[ch] = io
-        
         sensor_data["Relay"].update({"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": now_iso(), "error": ""})
         clear_error("Relay")
         print("[RELAY] OK 4ch")
@@ -468,22 +426,6 @@ def init_relay():
         relay_pins = {}
         set_error("Relay", f"init failed: {e}")
         return False
-
-def release_relay():
-    """Release all relay pins"""
-    global relay_pins
-    try:
-        for ch, io in relay_pins.items():
-            try:
-                io.value = True  # Ensure off
-                io.deinit()
-                release_pin(RELAY_PINS_MAP[ch], "Relay")
-            except Exception as e:
-                print(f"Error releasing relay ch{ch}: {e}")
-        relay_pins = {}
-        print("[RELAY] GPIO released")
-    except Exception as e:
-        print(f"[RELAY] Error releasing: {e}")
 
 RELAY_ACTIVE_LOW = True
 def _relay_gpio_value(on: bool) -> bool:
@@ -527,13 +469,6 @@ def init_servomotor():
     if not SENSORS_AVAILABLE.get("servomotor") or not SENSORS_AVAILABLE.get("board") or SERVO_PIN is None:
         set_error("servomotor", "servo not available")
         return False
-    
-    # Claim pin
-    ok, msg = claim_pin(SERVO_PIN, "servomotor")
-    if not ok:
-        set_error("servomotor", msg)
-        return False
-    
     clear_error("servomotor")
     return True
 
@@ -542,22 +477,14 @@ def set_servo_angle(angle):
     if not init_servomotor():
         return False
     if servo_pwm is None:
-        try:
-            servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
-        except Exception as e:
-            set_error("servomotor", f"PWM init failed: {e}")
-            return False
+        servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
 
-    try:
-        angle = max(0, min(180, int(angle)))
-        pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
-        duty = int((pulse_us / 20000.0) * 65535.0)
-        servo_pwm.duty_cycle = duty
-        sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
-        return True
-    except Exception as e:
-        set_error("servomotor", f"set angle failed: {e}")
-        return False
+    angle = max(0, min(180, int(angle)))
+    pulse_us = MIN_PULSE + (MAX_PULSE - MIN_PULSE) * (angle / 180.0)
+    duty = int((pulse_us / 20000.0) * 65535.0)
+    servo_pwm.duty_cycle = duty
+    sensor_data["servomotor"].update({"angle": angle, "last_update": now_iso(), "error": ""})
+    return True
 
 def stop_servo() -> None:
     global servo_pwm
@@ -565,9 +492,8 @@ def stop_servo() -> None:
         if servo_pwm is not None:
             servo_pwm.duty_cycle = 0
             servo_pwm.deinit()
-            release_pin(SERVO_PIN, "servomotor")
-    except Exception as e:
-        print(f"Error stopping servo: {e}")
+    except Exception:
+        pass
     servo_pwm = None
     sensor_data["servomotor"]["last_update"] = now_iso()
 
@@ -576,7 +502,6 @@ def stop_servo() -> None:
 # ────────────────────────────────────────────────
 BUZZER_ACTIVE_LOW = True
 buzzer = None
-BUZZER_PIN = board.D21
 
 def init_buzzer():
     global buzzer
@@ -585,37 +510,16 @@ def init_buzzer():
         return False
     if buzzer is not None:
         return True
-    
-    # Claim pin
-    ok, msg = claim_pin(BUZZER_PIN, "BUZZER")
-    if not ok:
-        set_error("BUZZER", msg)
-        return False
-    
     try:
-        buzzer = digitalio.DigitalInOut(BUZZER_PIN)
+        buzzer = digitalio.DigitalInOut(board.D21)
         buzzer.direction = digitalio.Direction.OUTPUT
         buzzer.value = True if BUZZER_ACTIVE_LOW else False
         clear_error("BUZZER")
         return True
     except Exception as e:
         buzzer = None
-        release_pin(BUZZER_PIN, "BUZZER")
         set_error("BUZZER", f"init failed: {e}")
         return False
-
-def release_buzzer():
-    """Release buzzer pin"""
-    global buzzer
-    try:
-        if buzzer is not None:
-            buzzer.value = True if BUZZER_ACTIVE_LOW else False  # Ensure off
-            buzzer.deinit()
-            release_pin(BUZZER_PIN, "BUZZER")
-        buzzer = None
-        print("[BUZZER] GPIO released")
-    except Exception as e:
-        print(f"[BUZZER] Error releasing: {e}")
 
 def set_buzzer(on: bool) -> bool:
     if not init_buzzer():
@@ -626,7 +530,7 @@ def set_buzzer(on: bool) -> bool:
         clear_error("BUZZER")
         return True
     except Exception as e:
-        set_error("BUZZER", str(e))
+        set_error("BUZZER", e)
         return False
 
 def beep(count=1, on_ms=80, off_ms=80):
@@ -636,8 +540,8 @@ def beep(count=1, on_ms=80, off_ms=80):
             time.sleep(on_ms / 1000.0)
             set_buzzer(False)
             time.sleep(off_ms / 1000.0)
-    except Exception as e:
-        print(f"Beep error: {e}")
+    except Exception:
+        pass
 
 # ────────────────────────────────────────────────
 #   ✅ LED (EX24) — RED=D5, GREEN=D6, ORANGE=D13
@@ -646,11 +550,6 @@ LED_ACTIVE_HIGH = True
 led_red = None
 led_green = None
 led_orange = None
-LED_PINS = {
-    "red": board.D5,
-    "green": board.D6,
-    "orange": board.D13
-}
 
 def _set_led_pin(pin_obj, on: bool):
     if pin_obj is None:
@@ -664,18 +563,10 @@ def init_leds():
         return False
     if led_red is not None and led_green is not None and led_orange is not None:
         return True
-    
-    # Claim pins
-    for color, pin in LED_PINS.items():
-        ok, msg = claim_pin(pin, "LED")
-        if not ok:
-            set_error("LED", f"Failed to claim {color} LED: {msg}")
-            return False
-    
     try:
-        led_red = digitalio.DigitalInOut(LED_PINS["red"])
-        led_green = digitalio.DigitalInOut(LED_PINS["green"])
-        led_orange = digitalio.DigitalInOut(LED_PINS["orange"])
+        led_red = digitalio.DigitalInOut(board.D5)
+        led_green = digitalio.DigitalInOut(board.D6)
+        led_orange = digitalio.DigitalInOut(board.D13)
         for led in (led_red, led_green, led_orange):
             led.direction = digitalio.Direction.OUTPUT
 
@@ -692,37 +583,9 @@ def init_leds():
         led_red = None
         led_green = None
         led_orange = None
-        # Release any claimed pins
-        for pin in LED_PINS.values():
-            release_pin(pin, "LED")
         sensor_state["LED"] = False
         set_error("LED", f"init failed: {e}")
         return False
-
-def release_leds():
-    """Release all LED pins"""
-    global led_red, led_green, led_orange
-    try:
-        # Turn off and deinit
-        if led_red:
-            _set_led_pin(led_red, False)
-            led_red.deinit()
-            release_pin(LED_PINS["red"], "LED")
-        if led_green:
-            _set_led_pin(led_green, False)
-            led_green.deinit()
-            release_pin(LED_PINS["green"], "LED")
-        if led_orange:
-            _set_led_pin(led_orange, False)
-            led_orange.deinit()
-            release_pin(LED_PINS["orange"], "LED")
-    except Exception as e:
-        print(f"Error releasing LEDs: {e}")
-    led_red = None
-    led_green = None
-    led_orange = None
-    sensor_state["LED"] = False
-    print("[LED] GPIO released")
 
 def set_led_color(color: str) -> bool:
     if not init_leds():
@@ -755,13 +618,32 @@ def set_led_color(color: str) -> bool:
 
 def leds_off():
     try:
-        if led_red and led_green and led_orange:
+        if init_leds():
             _set_led_pin(led_red, False)
             _set_led_pin(led_green, False)
             _set_led_pin(led_orange, False)
             sensor_data["LED"].update({"color": "off", "last_update": now_iso(), "error": ""})
-    except Exception as e:
-        print(f"Error turning off LEDs: {e}")
+    except Exception:
+        pass
+
+def leds_deinit():
+    global led_red, led_green, led_orange
+    try:
+        if led_red: led_red.deinit()
+    except Exception:
+        pass
+    try:
+        if led_green: led_green.deinit()
+    except Exception:
+        pass
+    try:
+        if led_orange: led_orange.deinit()
+    except Exception:
+        pass
+    led_red = None
+    led_green = None
+    led_orange = None
+    sensor_state["LED"] = False
 
 # ────────────────────────────────────────────────
 #   ✅ /api/a5/command (NOW: EX24 LOCAL GPIO + MQTT optional)
@@ -796,8 +678,8 @@ def api_a5_command():
                 ch = payload.get("ch")
                 st = (payload.get("state") == "on")
                 if ch == "all":
-                    ok_local = set_all_relays(st)
-                    ex24_log("INFO", f"RELAY -> all {'on' if st else 'off'}")
+                    ok_local = set_all_relays(False)
+                    ex24_log("INFO", "RELAY -> all off")
                 else:
                     ok_local = set_relay(int(ch), st)
                     ex24_log("INFO", f"RELAY -> ch={ch} {'on' if st else 'off'}")
@@ -907,7 +789,6 @@ def _exercise_reader(proc: subprocess.Popen):
 
             time.sleep(0.01)
 
-        # Read any remaining output
         try:
             if proc.stdout:
                 for line in proc.stdout.readlines():
@@ -939,10 +820,6 @@ def stop_current_exercise():
         exercise_stop_requested = True
         try:
             exercise_proc.send_signal(signal.SIGINT)
-            # Give it a moment to exit
-            time.sleep(0.5)
-            if exercise_proc.poll() is None:
-                exercise_proc.terminate()
         except Exception:
             try:
                 exercise_proc.terminate()
@@ -961,13 +838,6 @@ ultra_trig = None
 ultra_echo = None
 mq_pin = None
 
-# Pin definitions
-PIR_PIN = board.D22
-ULTRA_TRIG_PIN = board.D23
-ULTRA_ECHO_PIN = board.D24
-MQ_PIN = board.D17
-DHT_PIN = board.D4
-
 GAS_SAMPLES = 20
 GAS_SAMPLE_DELAY = 0.02
 GAS_INVERT_DO = True
@@ -978,14 +848,11 @@ def read_gas_level_percent():
         return None
     hits = 0
     for _ in range(GAS_SAMPLES):
-        try:
-            v = mq_pin.value
-            if GAS_INVERT_DO:
-                v = not v
-            if v:
-                hits += 1
-        except Exception:
-            pass
+        v = mq_pin.value
+        if GAS_INVERT_DO:
+            v = not v
+        if v:
+            hits += 1
         time.sleep(GAS_SAMPLE_DELAY)
     return int(round(100 * hits / GAS_SAMPLES))
 
@@ -996,35 +863,15 @@ def init_dht():
         return False
     if dht_device is not None:
         return True
-    
-    # DHT uses its own protocol, but we'll track that it's using the pin
-    ok, msg = claim_pin(DHT_PIN, "DHT11")
-    if not ok:
-        set_error("DHT11", msg)
-        return False
-    
     try:
-        dht_device = adafruit_dht.DHT11(DHT_PIN)
+        dht_device = adafruit_dht.DHT11(board.D4)
         clear_error("DHT11")
         print("[DHT11] OK D4")
         return True
     except Exception as e:
         dht_device = None
-        release_pin(DHT_PIN, "DHT11")
         set_error("DHT11", f"init failed: {e}")
         return False
-
-def release_dht():
-    """Release DHT pin"""
-    global dht_device
-    try:
-        if dht_device is not None:
-            dht_device.exit()
-            release_pin(DHT_PIN, "DHT11")
-        dht_device = None
-        print("[DHT] GPIO released")
-    except Exception as e:
-        print(f"[DHT] Error releasing: {e}")
 
 def init_mpu():
     global mpu
@@ -1089,15 +936,8 @@ def init_pir():
         return False
     if pir_pin is not None:
         return True
-    
-    # Claim pin
-    ok, msg = claim_pin(PIR_PIN, "PIR")
-    if not ok:
-        set_error("PIR", msg)
-        return False
-    
     try:
-        pir_pin = digitalio.DigitalInOut(PIR_PIN)
+        pir_pin = digitalio.DigitalInOut(board.D22)
         pir_pin.direction = digitalio.Direction.INPUT
         try:
             pir_pin.pull = digitalio.Pull.DOWN
@@ -1108,21 +948,8 @@ def init_pir():
         return True
     except Exception as e:
         pir_pin = None
-        release_pin(PIR_PIN, "PIR")
         set_error("PIR", f"init failed: {e}")
         return False
-
-def release_pir():
-    """Release PIR pin"""
-    global pir_pin
-    try:
-        if pir_pin is not None:
-            pir_pin.deinit()
-            release_pin(PIR_PIN, "PIR")
-        pir_pin = None
-        print("[PIR] GPIO released")
-    except Exception as e:
-        print(f"[PIR] Error releasing: {e}")
 
 def init_ultrasonic():
     global ultra_trig, ultra_echo
@@ -1131,21 +958,9 @@ def init_ultrasonic():
         return False
     if ultra_trig is not None and ultra_echo is not None:
         return True
-    
-    # Claim pins
-    ok, msg = claim_pin(ULTRA_TRIG_PIN, "ULTRASONIC")
-    if not ok:
-        set_error("ULTRASONIC", msg)
-        return False
-    ok, msg = claim_pin(ULTRA_ECHO_PIN, "ULTRASONIC")
-    if not ok:
-        release_pin(ULTRA_TRIG_PIN, "ULTRASONIC")
-        set_error("ULTRASONIC", msg)
-        return False
-    
     try:
-        ultra_trig = digitalio.DigitalInOut(ULTRA_TRIG_PIN)
-        ultra_echo = digitalio.DigitalInOut(ULTRA_ECHO_PIN)
+        ultra_trig = digitalio.DigitalInOut(board.D23)
+        ultra_echo = digitalio.DigitalInOut(board.D24)
         ultra_trig.direction = digitalio.Direction.OUTPUT
         ultra_echo.direction = digitalio.Direction.INPUT
         ultra_trig.value = False
@@ -1155,26 +970,8 @@ def init_ultrasonic():
     except Exception as e:
         ultra_trig = None
         ultra_echo = None
-        release_pin(ULTRA_TRIG_PIN, "ULTRASONIC")
-        release_pin(ULTRA_ECHO_PIN, "ULTRASONIC")
         set_error("ULTRASONIC", f"init failed: {e}")
         return False
-
-def release_ultrasonic():
-    """Release ultrasonic pins"""
-    global ultra_trig, ultra_echo
-    try:
-        if ultra_trig is not None:
-            ultra_trig.deinit()
-            release_pin(ULTRA_TRIG_PIN, "ULTRASONIC")
-        if ultra_echo is not None:
-            ultra_echo.deinit()
-            release_pin(ULTRA_ECHO_PIN, "ULTRASONIC")
-        ultra_trig = None
-        ultra_echo = None
-        print("[ULTRASONIC] GPIO released")
-    except Exception as e:
-        print(f"[ULTRASONIC] Error releasing: {e}")
 
 def measure_distance(TRIG, ECHO):
     try:
@@ -1182,26 +979,21 @@ def measure_distance(TRIG, ECHO):
         time.sleep(0.00001)
         TRIG.value = False
 
-        timeout_start = time.time()
-        timeout = timeout_start + 0.1
+        start = time.time()
+        timeout = start + 0.1
 
-        # Wait for echo to go high
         while ECHO.value == 0 and time.time() < timeout:
-            pulse_start = time.time()
+            start = time.time()
 
-        # Wait for echo to go low
+        end = time.time()
         while ECHO.value == 1 and time.time() < timeout:
-            pulse_end = time.time()
+            end = time.time()
 
-        if time.time() >= timeout:
-            return None
-
-        duration = pulse_end - pulse_start
+        duration = end - start
         if duration <= 0 or duration > 0.1:
             return None
         return round(duration * 17150, 1)
-    except Exception as e:
-        print(f"Distance measurement error: {e}")
+    except Exception:
         return None
 
 def init_mq():
@@ -1211,36 +1003,16 @@ def init_mq():
         return False
     if mq_pin is not None:
         return True
-    
-    # Claim pin
-    ok, msg = claim_pin(MQ_PIN, "MHMQ")
-    if not ok:
-        set_error("MHMQ", msg)
-        return False
-    
     try:
-        mq_pin = digitalio.DigitalInOut(MQ_PIN)
+        mq_pin = digitalio.DigitalInOut(board.D17)
         mq_pin.direction = digitalio.Direction.INPUT
         clear_error("MHMQ")
         print("[MHMQ] OK D17")
         return True
     except Exception as e:
         mq_pin = None
-        release_pin(MQ_PIN, "MHMQ")
         set_error("MHMQ", f"init failed: {e}")
         return False
-
-def release_mq():
-    """Release MQ pin"""
-    global mq_pin
-    try:
-        if mq_pin is not None:
-            mq_pin.deinit()
-            release_pin(MQ_PIN, "MHMQ")
-        mq_pin = None
-        print("[MHMQ] GPIO released")
-    except Exception as e:
-        print(f"[MHMQ] Error releasing: {e}")
 
 def ensure_sensor_init(sensor: str) -> bool:
     if sensor == "DHT11": return init_dht()
@@ -1253,47 +1025,36 @@ def ensure_sensor_init(sensor: str) -> bool:
     if sensor == "servomotor": return init_servomotor()
     if sensor == "MIC": return mic_start()
     if sensor == "LED": return init_leds()
-    if sensor == "BUZZER": return init_buzzer()
     return True
 
-def release_sensor_gpio(sensor: str):
-    """Release GPIO for a specific sensor"""
-    print(f"[GPIO] Releasing {sensor}")
-    if sensor == "PIR":
-        release_pir()
-    elif sensor == "ULTRASONIC":
-        release_ultrasonic()
-    elif sensor == "MHMQ":
-        release_mq()
-    elif sensor == "DHT11":
-        release_dht()
-    elif sensor == "Relay":
-        release_relay()
-    elif sensor == "servomotor":
-        stop_servo()
-    elif sensor == "BUZZER":
-        release_buzzer()
-    elif sensor == "LED":
-        release_leds()
-    elif sensor == "MIC":
-        mic_stop()
-    # Clear any errors for this sensor
-    if sensor in sensor_data:
-        sensor_data[sensor]["error"] = ""
-
 def release_all_sensor_gpio():
-    """Release all GPIO pins"""
-    print("[GPIO] Releasing ALL sensors")
-    release_pir()
-    release_ultrasonic()
-    release_mq()
-    release_dht()
-    release_relay()
-    stop_servo()
-    release_buzzer()
-    release_leds()
-    mic_stop()
-    print("[GPIO] All sensors released")
+    global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
+    try:
+        if pir_pin: pir_pin.deinit()
+    except Exception:
+        pass
+    pir_pin = None
+
+    try:
+        if ultra_trig: ultra_trig.deinit()
+        if ultra_echo: ultra_echo.deinit()
+    except Exception:
+        pass
+    ultra_trig = None
+    ultra_echo = None
+
+    try:
+        if mq_pin: mq_pin.deinit()
+    except Exception:
+        pass
+    mq_pin = None
+
+    try:
+        if dht_device is not None:
+            dht_device.exit()
+    except Exception:
+        pass
+    dht_device = None
 
 # ────────────────────────────────────────────────
 #   SENSOR READER THREADS (Tools mode)
@@ -1305,7 +1066,6 @@ motion_count = 0
 def sensor_reader(sensor_name):
     global motion_count
     last_pir_state = False
-    print(f"[Reader] Starting {sensor_name} reader")
 
     while running_flags.get(sensor_name, False):
         now = now_iso()
@@ -1318,7 +1078,7 @@ def sensor_reader(sensor_name):
                         sensor_data["DHT11"].update({"temperature": round(t, 1), "humidity": round(h, 1), "last_update": now, "error": ""})
                         clear_error("DHT11")
                 except Exception as e:
-                    set_error("DHT11", str(e))
+                    set_error("DHT11", e)
 
             elif sensor_name == "MPU6050" and mpu:
                 try:
@@ -1334,7 +1094,7 @@ def sensor_reader(sensor_name):
                     })
                     clear_error("MPU6050")
                 except Exception as e:
-                    set_error("MPU6050", str(e))
+                    set_error("MPU6050", e)
 
             elif sensor_name == "BMP280" and bmp:
                 try:
@@ -1350,42 +1110,31 @@ def sensor_reader(sensor_name):
                     })
                     clear_error("BMP280")
                 except Exception as e:
-                    set_error("BMP280", str(e))
+                    set_error("BMP280", e)
 
             elif sensor_name == "PIR" and pir_pin:
-                try:
-                    state = bool(pir_pin.value)
-                    if state and not last_pir_state:
-                        motion_count += 1
-                    sensor_data["PIR"].update({"motion": state, "count": int(motion_count), "last_update": now, "error": ""})
-                    clear_error("PIR")
-                    last_pir_state = state
-                except Exception as e:
-                    set_error("PIR", str(e))
+                state = bool(pir_pin.value)
+                if state and not last_pir_state:
+                    motion_count += 1
+                sensor_data["PIR"].update({"motion": state, "count": int(motion_count), "last_update": now, "error": ""})
+                clear_error("PIR")
+                last_pir_state = state
 
             elif sensor_name == "ULTRASONIC" and ultra_trig and ultra_echo:
-                try:
-                    dist = measure_distance(ultra_trig, ultra_echo)
-                    sensor_data["ULTRASONIC"].update({"distance_cm": dist, "last_update": now, "error": ""})
-                    clear_error("ULTRASONIC")
-                except Exception as e:
-                    set_error("ULTRASONIC", str(e))
+                dist = measure_distance(ultra_trig, ultra_echo)
+                sensor_data["ULTRASONIC"].update({"distance_cm": dist, "last_update": now, "error": ""})
+                clear_error("ULTRASONIC")
 
             elif sensor_name == "MHMQ" and mq_pin:
-                try:
-                    level = read_gas_level_percent()
-                    detected = (level is not None and level >= GAS_ALERT_PERCENT)
-                    sensor_data["MHMQ"].update({"gas_detected": bool(detected), "level_percent": level, "last_update": now, "error": ""})
-                    clear_error("MHMQ")
-                except Exception as e:
-                    set_error("MHMQ", str(e))
+                level = read_gas_level_percent()
+                detected = (level is not None and level >= GAS_ALERT_PERCENT)
+                sensor_data["MHMQ"].update({"gas_detected": bool(detected), "level_percent": level, "last_update": now, "error": ""})
+                clear_error("MHMQ")
 
         except Exception as e:
-            set_error(sensor_name, str(e))
+            set_error(sensor_name, e)
 
         time.sleep(1.0)
-    
-    print(f"[Reader] Stopped {sensor_name} reader")
 
 # ────────────────────────────────────────────────
 #   MIC (VOSK + LIVE WAVE)
@@ -1426,8 +1175,7 @@ def _detect_trigger(final_text: str) -> str:
         return "open open"
     return ""
 
-def _fast_resample_mono_float32(x, src_sr: int, dst_sr: int = 16000):
-    import numpy as np
+def _fast_resample_mono_float32(x: "np.ndarray", src_sr: int, dst_sr: int = 16000) -> "np.ndarray":
     if src_sr == dst_sr:
         return x
     if src_sr % dst_sr == 0:
@@ -1473,7 +1221,6 @@ MIC_STREAM = None
 
 def _mic_worker_loop(src_sr: int):
     global MIC_WORKER_RUN
-    import numpy as np
 
     with VOSK_LOCK:
         if VOSK_MODEL is not None:
@@ -1531,7 +1278,7 @@ def _mic_worker_loop(src_sr: int):
             })
 
         except Exception as e:
-            set_error("MIC", str(e))
+            set_error("MIC", e)
 
 def mic_stop():
     global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
@@ -1540,8 +1287,8 @@ def mic_stop():
             if MIC_STREAM is not None:
                 MIC_STREAM.stop()
                 MIC_STREAM.close()
-        except Exception as e:
-            print(f"MIC stop error: {e}")
+        except Exception:
+            pass
         MIC_STREAM = None
 
     MIC_WORKER_RUN = False
@@ -1554,16 +1301,16 @@ def mic_stop():
     if MIC_WORKER_THREAD and MIC_WORKER_THREAD.is_alive():
         try:
             MIC_WORKER_THREAD.join(timeout=1.0)
-        except Exception as e:
-            print(f"MIC thread join error: {e}")
+        except Exception:
+            pass
     MIC_WORKER_THREAD = None
 
     with VOSK_LOCK:
         try:
             if VOSK_MODEL is not None:
                 globals()["VOSK_REC"] = KaldiRecognizer(VOSK_MODEL, VOSK_TARGET_SR)
-        except Exception as e:
-            print(f"VOSK reset error: {e}")
+        except Exception:
+            pass
 
 def mic_start():
     global MIC_STREAM, MIC_WORKER_THREAD, MIC_WORKER_RUN
@@ -1598,8 +1345,8 @@ def mic_start():
                 MIC_Q.put_nowait((x16.tobytes(), rms, peak, ts))
             except queue.Full:
                 pass
-        except Exception as e:
-            print(f"Audio callback error: {e}")
+        except Exception:
+            pass
 
     try:
         with MIC_LOCK:
@@ -1621,7 +1368,7 @@ def mic_start():
         return True
 
     except Exception as e:
-        set_error("MIC", str(e))
+        set_error("MIC", e)
         mic_stop()
         return False
 
@@ -1727,86 +1474,93 @@ def toggle_sensor():
     if sensor not in sensor_state:
         return jsonify({"ok": False, "error": "Unknown sensor"}), 400
 
-    print(f"[TOGGLE] {sensor} current state: {sensor_state[sensor]}")
-    
-    # If currently ON, turn OFF
-    if sensor_state[sensor]:
-        print(f"[TOGGLE] Turning OFF {sensor}")
-        
-        # Stop reader thread if it's a regular sensor
-        if sensor in running_flags:
-            running_flags[sensor] = False
-            time.sleep(0.2)  # Give thread time to stop
-        
-        # Release GPIO
-        release_sensor_gpio(sensor)
-        
-        # Additional cleanup for specific sensors
-        if sensor == "BUZZER":
-            set_buzzer(False)
-        elif sensor == "LCD_TOOL":
-            lcd_clear()
-        elif sensor == "Relay":
-            set_all_relays(False)
-        elif sensor == "servomotor":
-            stop_servo()
-        elif sensor == "LED":
-            leds_off()
-        elif sensor == "MIC":
-            mic_stop()
-        
-        # Update state
-        sensor_state[sensor] = False
-        return jsonify({"ok": True, "sensor": sensor, "active": False})
-    
-    # If currently OFF, turn ON
-    else:
-        print(f"[TOGGLE] Turning ON {sensor}")
-        
-        ok = False
-        # Handle each sensor type
-        if sensor == "BUZZER":
-            ok = set_buzzer(True)
-        elif sensor == "LCD_TOOL":
-            ok = lcd_write("LCD READY", now_iso()[-8:])
-        elif sensor == "Relay":
-            ok = init_relay() and set_all_relays(True)
-        elif sensor == "servomotor":
+    sensor_state[sensor] = not bool(sensor_state[sensor])
+    active = bool(sensor_state[sensor])
+
+    if sensor == "BUZZER":
+        ok = set_buzzer(active)
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": active,
+            "on": sensor_data["BUZZER"]["on"], "active_low": BUZZER_ACTIVE_LOW,
+            "error": sensor_data["BUZZER"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "LCD_TOOL":
+        ok = lcd_write("LCD READY", now_iso()[-8:]) if active else lcd_clear()
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": active,
+            "line1": sensor_data["LCD_TOOL"]["line1"], "line2": sensor_data["LCD_TOOL"]["line2"],
+            "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "Relay":
+        ok = set_all_relays(active)
+        if not ok:
+            sensor_state[sensor] = False
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+            "relay": sensor_data["Relay"],
+            "error": sensor_data["Relay"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "servomotor":
+        if active:
             ok = set_servo_angle(90)
-        elif sensor == "MIC":
+            if not ok:
+                sensor_state[sensor] = False
+        else:
+            stop_servo()
+            sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
+            ok = True
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+            "servo": sensor_data["servomotor"],
+            "error": sensor_data["servomotor"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "MIC":
+        if active:
             ok = mic_start()
-        elif sensor == "LED":
+            if not ok:
+                sensor_state[sensor] = False
+        else:
+            mic_stop()
+            ok = True
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+            "mic": sensor_data["MIC"],
+            "error": sensor_data["MIC"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    if sensor == "LED":
+        if active:
             ok = init_leds()
-            if ok:
-                set_led_color("green")
-        elif sensor == "PIR":
-            ok = init_pir()
-        elif sensor == "ULTRASONIC":
-            ok = init_ultrasonic()
-        elif sensor == "MHMQ":
-            ok = init_mq()
-        elif sensor == "DHT11":
-            ok = init_dht()
-        elif sensor == "MPU6050":
-            ok = init_mpu()
-        elif sensor == "BMP280":
-            ok = init_bmp()
+            if not ok:
+                sensor_state[sensor] = False
         else:
-            ok = ensure_sensor_init(sensor)
-        
-        if ok:
-            # Start reader thread for regular sensors
-            if sensor in ["PIR", "ULTRASONIC", "MHMQ", "DHT11", "MPU6050", "BMP280"]:
-                running_flags[sensor] = True
-                if sensor not in threads or not threads[sensor].is_alive():
-                    threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
-                    threads[sensor].start()
-            
-            sensor_state[sensor] = True
-            return jsonify({"ok": True, "sensor": sensor, "active": True})
-        else:
-            error_msg = sensor_data.get(sensor, {}).get("error", "Unknown error")
-            return jsonify({"ok": False, "sensor": sensor, "active": False, "error": error_msg}), 500
+            leds_off()
+            leds_deinit()
+            ok = True
+        return jsonify({
+            "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
+            "led": sensor_data["LED"],
+            "error": sensor_data["LED"]["error"] if not ok else ""
+        }), (200 if ok else 500)
+
+    # regular sensors: start/stop reader loop
+    if active:
+        if not ensure_sensor_init(sensor):
+            sensor_state[sensor] = False
+            return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data[sensor]["error"]}), 500
+
+        running_flags[sensor] = True
+        if sensor not in threads or not threads[sensor].is_alive():
+            threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
+            threads[sensor].start()
+    else:
+        running_flags[sensor] = False
+
+    return jsonify({"ok": True, "sensor": sensor, "active": active})
 
 @app.route("/api/buzzer", methods=["POST"])
 def api_buzzer():
@@ -1844,13 +1598,6 @@ def api_exercise_run():
     if not ex_id:
         return jsonify({"ok": False, "error": "Missing exercise_id"}), 400
 
-    # Before starting exercise, release ALL GPIO pins
-    release_all_sensor_gpio()
-    
-    # Also stop any running sensor threads
-    for sensor in list(running_flags.keys()):
-        running_flags[sensor] = False
-
     # a5-ex21 special (MQTT stream ON)
     if ex_id == "a5-ex21":
         try:
@@ -1880,6 +1627,8 @@ def api_exercise_run():
     with exercise_lock:
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
+
+        release_all_sensor_gpio()
 
         with exercise_log_lock:
             exercise_stdout.clear()
@@ -1943,11 +1692,6 @@ def api_exercise_stop():
         return jsonify({"ok": True, "stopped": True, "mode": "mqtt", "sent": {"stream": "off"}})
 
     ok = stop_current_exercise()
-    
-    # After exercise stops, release any GPIO that might have been left claimed
-    time.sleep(0.5)  # Give exercise time to clean up
-    release_all_sensor_gpio()
-    
     return jsonify({"ok": bool(ok), "stopped": bool(ok)})
 
 @app.route("/api/exercise_status")
@@ -1964,52 +1708,39 @@ def api_exercise_logs():
 #   CLEANUP
 # ────────────────────────────────────────────────
 def _cleanup():
-    print("\n" + "=" * 80)
-    print("[ CLEANUP ] Releasing all resources...")
-    print("=" * 80)
-    
     try:
         mic_stop()
-    except Exception as e:
-        print(f"MIC cleanup error: {e}")
-    
+    except Exception:
+        pass
     try:
         stop_current_exercise()
-    except Exception as e:
-        print(f"Exercise cleanup error: {e}")
+    except Exception:
+        pass
 
-    # Release all GPIO
-    release_all_sensor_gpio()
-
-    # Also turn outputs OFF
+    # turn outputs OFF
     try:
         set_buzzer(False)
-    except Exception as e:
-        print(f"Buzzer cleanup error: {e}")
-    
+    except Exception:
+        pass
     try:
         set_all_relays(False)
-    except Exception as e:
-        print(f"Relay cleanup error: {e}")
-    
+    except Exception:
+        pass
     try:
         leds_off()
-    except Exception as e:
-        print(f"LED cleanup error: {e}")
-    
+        leds_deinit()
+    except Exception:
+        pass
     try:
         stop_servo()
-    except Exception as e:
-        print(f"Servo cleanup error: {e}")
+    except Exception:
+        pass
 
     try:
         if mqtt_client:
             mqtt_client.loop_stop()
-    except Exception as e:
-        print(f"MQTT cleanup error: {e}")
-    
-    print("[ CLEANUP ] Complete")
-    print("=" * 80)
+    except Exception:
+        pass
 
 atexit.register(_cleanup)
 
@@ -2027,7 +1758,6 @@ if __name__ == "__main__":
     print("LED pins: RED=D5 GREEN=D6 ORANGE=D13")
     print("Voice triggers:", sorted(list(VOICE_TRIGGERS)) + ["hello hello", "open open"])
     print("=" * 80)
-    print("\nStarting server...\n")
 
     start_a5_mqtt()
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
