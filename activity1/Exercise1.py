@@ -1,3 +1,9 @@
+# Exercise 1: Motion Detection (PIR → Status LEDs) + LCD messages via TCA9548A
+# LED RED    = D5   (MOTION DETECTED)
+# LED GREEN  = D6   (NO MOTION)
+# LED ORANGE = D13  (WARMUP / CALIBRATING)
+# PIR INPUT  = D22
+
 import time
 import signal
 import sys
@@ -10,22 +16,23 @@ from smbus2 import SMBus
 from RPLCD.i2c import CharLCD
 
 print("╔════════════════════════════════════════════╗", file=sys.stderr)
-print("║ Exercise 1 STARTED — PID: %-18s ║" % os.getpid(), file=sys.stderr)
+print(f"║ Exercise 1 STARTED — PID: {os.getpid():<18} ║", file=sys.stderr)
 print("╚════════════════════════════════════════════╝", file=sys.stderr)
 sys.stderr.flush()
 
-# CHANGE THESE IF NEEDED:
+# ─── CONFIG ────────────────────────────────────────────────
 I2C_BUS  = 1
 MUX_ADDR = 0x70
 LCD_CH   = 0
 LCD_ADDR = 0x27
-
 LCD_COLS = 16
 LCD_ROWS = 2
 
 INVERT_PIR = True
 
+# ─── SIGNAL HANDLING ───────────────────────────────────────
 _should_exit = False
+
 def _handle_term(signum, frame):
     global _should_exit
     _should_exit = True
@@ -34,6 +41,7 @@ def _handle_term(signum, frame):
 signal.signal(signal.SIGTERM, _handle_term)
 signal.signal(signal.SIGINT, _handle_term)
 
+# ─── HELPER FUNCTIONS ──────────────────────────────────────
 def mux_select(channel: int):
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
@@ -77,12 +85,31 @@ def make_in_pir(pin):
     print(f"  → {pin} OK", file=sys.stderr)
     return io
 
-# ─── PROTECTED GPIO INIT ────────────────────────────────────────
+def all_off():
+    R.value = False
+    G.value = False
+    O.value = False
+
+def show_detected():
+    R.value = True
+    G.value = False
+    O.value = False
+
+def show_no_motion():
+    R.value = False
+    G.value = True
+    O.value = False
+
+def read_motion() -> bool:
+    v = bool(pir.value)
+    return (not v) if INVERT_PIR else v
+
+# ─── MAIN GPIO INITIALIZATION (protected) ──────────────────
 try:
     print("Initializing LEDs...", file=sys.stderr)
-    R = make_out(board.D5, False)    # RED
-    G = make_out(board.D6, False)    # GREEN
-    O = make_out(board.D13, False)   # ORANGE
+    R = make_out(board.D5, False)     # RED
+    G = make_out(board.D6, False)     # GREEN
+    O = make_out(board.D13, False)    # ORANGE
 
     print("Initializing PIR...", file=sys.stderr)
     pir = make_in_pir(board.D22)
@@ -90,14 +117,107 @@ try:
 except Exception as e:
     print("!!! CRITICAL ERROR: GPIO initialization failed !!!", file=sys.stderr)
     print(str(e), file=sys.stderr)
-    print("Exercise 1 will exit now.", file=sys.stderr)
     sys.exit(1)
 
 sys.stderr.flush()
-# ──────────────────────────────────────────────────────────────────
 
-print("PIR Motion Detection: warming up PIR (30s)...", file=sys.stderr)
+# ─── PROGRAM START ─────────────────────────────────────────
+print("PIR Motion Detection: warming up PIR (30s)...")
 all_off()
-sys.stderr.flush()
 
-# Rest of your code (LCD init, warmup loop, etc.) remains the same...
+# Init LCD (if it fails, keep running without LCD)
+lcd = None
+try:
+    lcd = lcd_init()
+except Exception as e:
+    print(f"[LCD] init failed, continuing without LCD: {e}")
+    lcd = None
+
+warmup_seconds = 30
+
+if lcd:
+    lcd_write(lcd, "Calibrating...", f"Wait {warmup_seconds}s")
+
+# Warmup blink ORANGE
+for sec_left in range(warmup_seconds, 0, -1):
+    if _should_exit:
+        print("Stopped (SIGTERM) during warmup.")
+        break
+    O.value = True
+    time.sleep(0.5)
+    O.value = False
+    time.sleep(0.5)
+    if lcd:
+        lcd_write(lcd, "Calibrating...", f"Wait {sec_left-1}s")
+    print(f"Warmup: {sec_left} seconds left", file=sys.stderr)   # ← debug
+    sys.stderr.flush()
+
+O.value = False
+
+if _should_exit:
+    print("Stopped during warmup.")
+else:
+    print("Monitoring motion... (Stop button to end)")
+
+# ─── MAIN LOOP ─────────────────────────────────────────────
+last_motion = None
+
+try:
+    show_no_motion()
+    if lcd:
+        lcd_write(lcd, "Ready", "No motion")
+
+    while not _should_exit:
+        motion = read_motion()
+
+        if motion:
+            show_detected()
+        else:
+            show_no_motion()
+
+        if motion != last_motion:
+            if motion:
+                print("🚨 MOTION DETECTED")
+                if lcd:
+                    lcd_write(lcd, "Detected!", "Motion found")
+            else:
+                print("✅ NO MOTION")
+                if lcd:
+                    lcd_write(lcd, "Ready", "No motion")
+            last_motion = motion
+
+        time.sleep(0.05)
+
+except Exception as e:
+    print(f"❌ ERROR: {e}")
+    all_off()
+    R.value = True
+    if lcd:
+        try:
+            lcd_write(lcd, "ERROR", str(e)[:16])
+        except:
+            pass
+    time.sleep(1)
+
+finally:
+    try:
+        if lcd:
+            lcd_write(lcd, "Stopped", "")
+            time.sleep(0.4)
+            mux_select(LCD_CH)
+            lcd.clear()
+    except:
+        pass
+
+    all_off()
+    try: pir.deinit()
+    except: pass
+    try: R.deinit()
+    except: pass
+    try: G.deinit()
+    except: pass
+    try: O.deinit()
+    except: pass
+
+    print("Exercise 1 exited cleanly.")
+    sys.exit(0)
