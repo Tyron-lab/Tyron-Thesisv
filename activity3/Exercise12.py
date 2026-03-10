@@ -6,7 +6,7 @@
 import time
 import math
 import signal
-import sys               # ← added
+import sys
 
 # ---- I2C mux (TCA9548A) ----
 from smbus2 import SMBus
@@ -19,44 +19,36 @@ import board
 import busio
 
 try:
-    import adafruit_mpu6050 # python3 -m pip install adafruit-circuitpython-mpu6050
-    
+    import adafruit_mpu6050
     HAS_ADAFRUIT_MPU = True
 except Exception:
     HAS_ADAFRUIT_MPU = False
 
 
 # =========================
-# SETTINGS (EDIT THESE)
+# SETTINGS
 # =========================
 I2C_BUS  = 1
 MUX_ADDR = 0x70
 
-# LCD mux channel + address
 LCD_CH   = 0
-LCD_ADDR = 0x27     # common: 0x27 or 0x3F
+LCD_ADDR = 0x27
 LCD_COLS = 16
 LCD_ROWS = 2
 
-# MPU6050 mux channel
-MPU_CH   = 1        # <-- CHANGE: SDx/SCx -> x (where MPU6050 is plugged)
-
-# MPU6050 I2C address (common: 0x68; if AD0 pulled HIGH then 0x69)
-# If not sure, leave None and it will auto-try 0x68 then 0x69
+MPU_CH   = 1
 MPU_ADDR = None
 
-# Motion thresholds (tune to your liking)
-ACCEL_MOVING_MS2 = 1.2     # moving if | |a|-g | > this (m/s^2)
-GYRO_MOVING_DPS  = 25.0    # moving if gyro magnitude > this (deg/s)
+ACCEL_MOVING_MS2 = 1.2
+GYRO_MOVING_DPS  = 25.0
 
-# Display refresh
 REFRESH_S = 0.25
 # =========================
 
 
-# ────────────────────────────────────────────────
-# Added: SIGTERM + SIGINT handling (Stop button / Ctrl+C)
-# ────────────────────────────────────────────────
+# ─────────────────────────
+# STOP SIGNAL HANDLING
+# ─────────────────────────
 _should_exit = False
 
 def _handle_term(signum, frame):
@@ -65,17 +57,22 @@ def _handle_term(signum, frame):
 
 signal.signal(signal.SIGTERM, _handle_term)
 signal.signal(signal.SIGINT, _handle_term)
-# ────────────────────────────────────────────────
 
+
+# ─────────────────────────
+# I2C BUS (OPEN ONCE)
+# ─────────────────────────
+bus = SMBus(I2C_BUS)
 
 def mux_select(channel: int):
-    """Select TCA9548A channel (0..7)."""
     if not (0 <= channel <= 7):
         raise ValueError("TCA9548A channel must be 0..7")
-    with SMBus(I2C_BUS) as bus:
-        bus.write_byte(MUX_ADDR, 1 << channel)
+    bus.write_byte(MUX_ADDR, 1 << channel)
 
 
+# ─────────────────────────
+# LCD FUNCTIONS
+# ─────────────────────────
 def lcd_init():
     mux_select(LCD_CH)
     lcd = CharLCD(
@@ -92,26 +89,32 @@ def lcd_init():
 
 def lcd_write(lcd, line1: str, line2: str = ""):
     mux_select(LCD_CH)
-    lcd.clear()
-    lcd.write_string((line1 or "")[:LCD_COLS])
-    lcd.cursor_pos = (1, 0)
-    lcd.write_string((line2 or "")[:LCD_COLS])
+    lcd.cursor_pos = (0,0)
+    lcd.write_string(line1.ljust(LCD_COLS)[:LCD_COLS])
+    lcd.cursor_pos = (1,0)
+    lcd.write_string(line2.ljust(LCD_COLS)[:LCD_COLS])
 
 
+# ─────────────────────────
+# MPU INITIALIZATION
+# ─────────────────────────
 def mpu_init(i2c):
+
     if not HAS_ADAFRUIT_MPU:
-        raise RuntimeError("Missing library: adafruit_mpu6050. Install it: pip install adafruit-circuitpython-mpu6050")
+        raise RuntimeError(
+            "Missing library: adafruit_mpu6050\n"
+            "Install with:\n"
+            "pip install adafruit-circuitpython-mpu6050"
+        )
 
     mux_select(MPU_CH)
+
     addrs = [MPU_ADDR] if MPU_ADDR is not None else [0x68, 0x69]
     last_err = None
 
     for addr in addrs:
         try:
             mpu = adafruit_mpu6050.MPU6050(i2c, address=addr)
-            # Optional: you can change ranges, but defaults are fine
-            # mpu.accelerometer_range = adafruit_mpu6050.Range.RANGE_8_G
-            # mpu.gyro_range = adafruit_mpu6050.GyroRange.RANGE_500_DPS
             return mpu, addr
         except Exception as e:
             last_err = e
@@ -119,6 +122,9 @@ def mpu_init(i2c):
     raise RuntimeError(f"MPU6050 not found at {addrs}. Last error: {last_err}")
 
 
+# ─────────────────────────
+# MATH HELPERS
+# ─────────────────────────
 def accel_mag(ax, ay, az):
     return math.sqrt(ax*ax + ay*ay + az*az)
 
@@ -129,7 +135,10 @@ def gyro_mag(gx, gy, gz):
 
 print("Exercise 12 running (MPU6050 -> Motion Status)... Ctrl+C to stop.")
 
-# Init LCD (continue even if LCD fails)
+
+# ─────────────────────────
+# LCD INIT
+# ─────────────────────────
 lcd = None
 try:
     lcd = lcd_init()
@@ -138,80 +147,104 @@ except Exception as e:
     print(f"[LCD] init failed (continuing without LCD): {e}")
     lcd = None
 
-# Create I2C object once
+
+# ─────────────────────────
+# I2C OBJECT
+# ─────────────────────────
 i2c = busio.I2C(board.SCL, board.SDA)
 
-# Init MPU6050
+
+# ─────────────────────────
+# MPU INIT
+# ─────────────────────────
 try:
+
     mpu, used_addr = mpu_init(i2c)
+
     print(f"[MPU6050] OK at address 0x{used_addr:02X} on mux channel {MPU_CH}")
+
     if lcd:
         lcd_write(lcd, "MPU6050 OK", f"Addr 0x{used_addr:02X} CH{MPU_CH}")
         time.sleep(1.2)
+
 except Exception as e:
+
     print(f"[MPU6050] init failed: {e}")
+
     if lcd:
         lcd_write(lcd, "MPU6050 ERROR", str(e)[:16])
-    while True:
+
+    while not _should_exit:
         time.sleep(2)
 
-# Main loop
+
+# ─────────────────────────
+# MAIN LOOP
+# ─────────────────────────
 last_display = None
 moving_count = 0
 
 try:
-    while True:
-        if _should_exit:
-            break
+
+    while not _should_exit:
 
         try:
-            # Always select the MPU channel before reading
+
             mux_select(MPU_CH)
 
-            # adafruit_mpu6050 returns:
-            # acceleration in m/s^2, gyro in rad/s (depending on version) OR deg/s in some libs.
-            # For adafruit_mpu6050: gyro is in rad/s. We'll convert to deg/s.
-            ax, ay, az = mpu.acceleration  # m/s^2
-            gx, gy, gz = mpu.gyro          # rad/s
+            ax, ay, az = mpu.acceleration
+            gx, gy, gz = mpu.gyro
 
-            # Convert gyro rad/s -> deg/s
             gx_dps = gx * 57.2958
             gy_dps = gy * 57.2958
             gz_dps = gz * 57.2958
 
             a_mag = accel_mag(ax, ay, az)
+
             g = 9.81
-            a_delta = abs(a_mag - g)              # how far from 1g
+            a_delta = abs(a_mag - g)
+
             g_mag = gyro_mag(gx_dps, gy_dps, gz_dps)
 
             moving = (a_delta > ACCEL_MOVING_MS2) or (g_mag > GYRO_MOVING_DPS)
+
             status = "MOVING" if moving else "STILL"
 
             if moving:
                 moving_count += 1
 
             line1 = f"Motion: {status}"
-            # show a quick hint value so you can tune thresholds
-            # keep within 16 chars
             line2 = f"dA:{a_delta:>4.1f} g:{g_mag:>4.0f}"
 
             print(f"{status} | aΔ={a_delta:.2f} m/s2 | gyro={g_mag:.1f} dps | count={moving_count}")
 
         except Exception as e:
+
             line1 = "READ ERROR"
             line2 = "Check wiring"
             print(f"[MPU6050] read error: {e}")
 
+
         if lcd:
             display = (line1, line2)
+
             if display != last_display:
                 lcd_write(lcd, line1, line2)
                 last_display = display
 
+
         time.sleep(REFRESH_S)
+
 
 except KeyboardInterrupt:
     print("\nStopped.")
+
+
+# ─────────────────────────
+# CLEANUP
+# ─────────────────────────
+finally:
+
     if lcd:
         try:
             lcd_write(lcd, "Stopped", "")
@@ -221,18 +254,11 @@ except KeyboardInterrupt:
         except Exception:
             pass
 
-# ────────────────────────────────────────────────
-# Added: final cleanup on SIGTERM / SIGINT exit
-# ────────────────────────────────────────────────
-finally:
-    if lcd:
-        try:
-            lcd_write(lcd, "Stopped", "")
-            time.sleep(0.8)
-            mux_select(LCD_CH)
-            lcd.clear()
-        except Exception:
-            pass
+    try:
+        bus.close()
+    except Exception:
+        pass
 
     print("Exercise 12 exited cleanly.")
+
     sys.exit(0)
