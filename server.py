@@ -9,6 +9,7 @@
 # - ✅ EX24: Event Logging Terminal endpoints + Local GPIO control via /api/a5/command
 # - ✅ EX24: Servo move-then-release (fully stops holding)
 # - ✅ EX24: Relay ALL ON + ALL OFF
+# - ✅ FIX: release_all_sensor_gpio now stops reader threads BEFORE deiniting pins
 
 from flask import Flask, request, jsonify, send_from_directory
 import threading
@@ -1046,15 +1047,25 @@ def ensure_sensor_init(sensor: str) -> bool:
     return True
 
 # ────────────────────────────────────────────────
-#   STRONG GPIO RELEASE FUNCTION (includes LEDs)
+#   ✅ STRONG GPIO RELEASE — stops threads FIRST
 # ────────────────────────────────────────────────
 def release_all_sensor_gpio():
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
     global led_red, led_green, led_orange
 
-    print("[GPIO cleanup] Releasing all claimed pins before new exercise...", file=sys.stderr)
+    print("[GPIO cleanup] Stopping reader threads + releasing all pins...", file=sys.stderr)
 
-    # Input sensors
+    # ── 1) Stop ALL sensor reader threads FIRST ──────────────────────────
+    # This prevents threads from touching pins after deinit
+    SENSORS_TO_STOP = ["PIR", "ULTRASONIC", "MHMQ", "DHT11", "MPU6050", "BMP280"]
+    for s in SENSORS_TO_STOP:
+        running_flags[s] = False
+        sensor_state[s] = False
+
+    # Give threads time to notice the flag and exit their loops
+    time.sleep(0.35)
+
+    # ── 2) Deinit input/output GPIO pins ─────────────────────────────────
     for name, pin in [
         ("PIR (D22)", pir_pin),
         ("Ultrasonic TRIG (D23)", ultra_trig),
@@ -1070,7 +1081,7 @@ def release_all_sensor_gpio():
 
     pir_pin = ultra_trig = ultra_echo = mq_pin = None
 
-    # DHT
+    # ── 3) DHT ───────────────────────────────────────────────────────────
     if dht_device is not None:
         try:
             dht_device.exit()
@@ -1079,7 +1090,7 @@ def release_all_sensor_gpio():
             print(f"  → DHT exit failed: {e}", file=sys.stderr)
         dht_device = None
 
-    # LED outputs (critical for Exercise 1)
+    # ── 4) LED outputs ───────────────────────────────────────────────────
     led_released = []
     for pin_var, name in [
         (led_red,    "LED RED (D5)"),
@@ -1099,10 +1110,10 @@ def release_all_sensor_gpio():
     if led_released:
         print(f"  → Released LEDs: {', '.join(led_released)}", file=sys.stderr)
 
-    # Final cleanup delay — increased to give kernel more time
+    # ── 5) Final GC + kernel settle time ─────────────────────────────────
     gc.collect()
-    time.sleep(1.2)
-    print("[GPIO cleanup] Release complete (waited 1.2s).", file=sys.stderr)
+    time.sleep(1.0)
+    print("[GPIO cleanup] Release complete (waited 1.0s after deinit).", file=sys.stderr)
 
 # ────────────────────────────────────────────────
 #   SENSOR READER THREADS (Tools mode)
@@ -1676,7 +1687,7 @@ def api_exercise_run():
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
 
-        # Strong GPIO release before launching exercise
+        # ── Strong GPIO release: stops threads first, then deinits pins ──
         release_all_sensor_gpio()
 
         # Extra safety delay after cleanup
@@ -1709,7 +1720,6 @@ def api_exercise_run():
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
-                # Put child in new session/group → prevents inheriting parent's signals
                 preexec_fn=os.setsid if os.name != 'nt' else None,
             )
             exercise_reader_thread = threading.Thread(target=_exercise_reader, args=(exercise_proc,), daemon=True)
