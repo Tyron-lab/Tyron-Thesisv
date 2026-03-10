@@ -938,11 +938,43 @@ def release_sensor_gpio(sensor: str):
             pass
         dht_device = None
         print("[DHT11] GPIO released (D4 free)")
+def force_free_blinka_pins(*gpio_nums):
+    """
+    Force-release GPIO pins using the SAME lgpio chip handle that adafruit-blinka
+    holds internally (lgpio_pin.CHIP). This is the only handle that actually owns
+    the pins — opening a new handle in the subprocess cannot free them.
+
+    Called before launching any Exercise subprocess so the child process can
+    claim the pins without getting 'GPIO busy'.
+    """
+    try:
+        from adafruit_blinka.microcontroller.generic_linux import lgpio_pin
+        import lgpio as _lgpio
+        chip_handle = lgpio_pin.CHIP          # blinka's own open handle
+        freed = []
+        for gpio in gpio_nums:
+            try:
+                _lgpio.gpio_free(chip_handle, gpio)
+                freed.append(gpio)
+            except Exception:
+                pass                          # pin not claimed — fine
+        print(f"[GPIO] force_free_blinka_pins freed: {freed}", flush=True)
+    except Exception as e:
+        print(f"[GPIO] force_free_blinka_pins skipped: {e}", flush=True)
+
+# All GPIO pin numbers used across ALL exercises:
+# LEDs=5,6,13  PIR=22  ULTRA TRIG=23 ECHO=24  MQ=17  DHT=4
+# BUZZER=21    RELAY=27,10,26,25      SERVO=12
+_ALL_EXERCISE_PINS = (4, 5, 6, 10, 12, 13, 17, 21, 22, 23, 24, 25, 26, 27)
+
 def release_all_sensor_gpio():
     """Release ALL sensor GPIO pins at once (used before launching an Exercise subprocess)."""
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
     for sensor in ("PIR", "ULTRASONIC", "MHMQ", "DHT11"):
         release_sensor_gpio(sensor)
+    # ✅ THE REAL FIX: free pins on blinka's own lgpio handle so the subprocess
+    # can claim them. deinit() alone does not drop the kernel-level lgpio claim.
+    force_free_blinka_pins(*_ALL_EXERCISE_PINS)
 def ensure_sensor_init(sensor: str) -> bool:
     if sensor == "DHT11":     return init_dht()
     if sensor == "MPU6050":   return init_mpu()

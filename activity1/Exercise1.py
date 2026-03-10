@@ -73,26 +73,42 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.cursor_pos = (1, 0)
     lcd.write_string((line2 or "")[:LCD_COLS])
 
-# ✅ Force-free pins at the lgpio chip level before claiming them.
-# The server process (server.py) may still hold lgpio kernel claims on these
-# pins even after calling deinit(). This opens a fresh chip handle and
-# explicitly releases each pin so this subprocess can claim them cleanly.
+# ✅ Force-free pins using blinka's own lgpio chip handle (the one the server
+# process uses). A new handle opened here cannot free pins owned by the server,
+# but blinka's module-level CHIP handle can. Falls back to a fresh handle if
+# blinka is not loaded in this process (e.g. running standalone).
 def force_free_gpio(*gpio_nums):
+    import lgpio as _lgpio
+    freed = []
+
+    # Strategy 1: use blinka's own handle (works when server already imported blinka)
     try:
-        import lgpio as _lgpio
-        h = _lgpio.gpiochip_open(0)
-        freed = []
+        from adafruit_blinka.microcontroller.generic_linux import lgpio_pin
+        h = lgpio_pin.CHIP
         for gpio in gpio_nums:
             try:
                 _lgpio.gpio_free(h, gpio)
                 freed.append(gpio)
             except Exception:
-                pass   # pin wasn't claimed — that's fine
-        _lgpio.gpiochip_close(h)
-        print(f"[GPIO] Force-freed pins at lgpio level: {freed}", file=sys.stderr)
+                pass
+        print(f"[GPIO] force_free via blinka CHIP handle: {freed}", file=sys.stderr)
+        return
     except Exception as e:
-        # lgpio not available or already clean — safe to continue
-        print(f"[GPIO] force_free_gpio skipped: {e}", file=sys.stderr)
+        print(f"[GPIO] blinka handle strategy skipped: {e}", file=sys.stderr)
+
+    # Strategy 2: open a fresh handle (works if nothing else owns the pins)
+    try:
+        h = _lgpio.gpiochip_open(0)
+        for gpio in gpio_nums:
+            try:
+                _lgpio.gpio_free(h, gpio)
+                freed.append(gpio)
+            except Exception:
+                pass
+        _lgpio.gpiochip_close(h)
+        print(f"[GPIO] force_free via fresh handle: {freed}", file=sys.stderr)
+    except Exception as e:
+        print(f"[GPIO] force_free_gpio failed entirely: {e}", file=sys.stderr)
 
 def make_out(pin, initial=False):
     print(f"Claiming output pin {pin}...", file=sys.stderr)
