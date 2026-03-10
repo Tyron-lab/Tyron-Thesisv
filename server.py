@@ -1,4 +1,4 @@
-# server.py — TrainerKit Tools Dashboard (FULL UPDATE with Solution A)
+# server.py — TrainerKit Tools Dashboard (FULL UPDATE with strong GPIO release)
 # - Tools (toggle sensors)
 # - MIC VOSK + live wave
 # - Activity 5 MQTT bridge
@@ -123,7 +123,7 @@ def now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 # ────────────────────────────────────────────────
-#   ✅ MULTI-PHONE FOCUS LOCK
+#   MULTI-PHONE FOCUS LOCK
 # ────────────────────────────────────────────────
 FOCUS_LOCK = threading.Lock()
 focus_state = {"running": False, "exercise_id": None, "since": None, "by": None}
@@ -153,7 +153,7 @@ def api_focus():
         return jsonify({**focus_state})
 
 # ────────────────────────────────────────────────
-#   ✅ EX24: SERVER-SIDE EVENT LOG (Terminal)
+#   EX24: SERVER-SIDE EVENT LOG (Terminal)
 # ────────────────────────────────────────────────
 EX24_LOG_LOCK = threading.Lock()
 EX24_LOG = deque(maxlen=900)
@@ -192,7 +192,7 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
     "BUZZER":     False,
-    "LED":        False,     # ✅ EX24
+    "LED":        False,
     "LCD_TOOL":   False,
     "MIC":        False,
 }
@@ -210,7 +210,7 @@ sensor_data = {
     "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
     "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ EX24
+    "LED":        {"color": "off", "last_update": None, "error": ""},
     "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
 
     "MIC": {
@@ -230,7 +230,7 @@ def clear_error(key: str):
         sensor_data[key]["error"] = ""
 
 # ────────────────────────────────────────────────
-#   ✅ ACTIVITY 5 MQTT BRIDGE (ESP32)
+#   ACTIVITY 5 MQTT BRIDGE (ESP32)
 # ────────────────────────────────────────────────
 MQTT_HOST = "192.168.4.1"
 MQTT_PORT = 1883
@@ -581,7 +581,6 @@ def set_servo_angle(angle):
     return True
 
 def stop_servo() -> None:
-    """Hard stop: remove PWM so servo stops holding/buzzing."""
     global servo_pwm
     try:
         if servo_pwm is not None:
@@ -594,7 +593,6 @@ def stop_servo() -> None:
     sensor_data["servomotor"]["last_update"] = now_iso()
 
 def servo_move_then_release(angle: int, hold_ms: int = 250) -> bool:
-    """Move servo then stop PWM so it won't keep buzzing/holding."""
     ok = set_servo_angle(angle)
     if not ok:
         return False
@@ -649,7 +647,7 @@ def beep(count=1, on_ms=80, off_ms=80):
         pass
 
 # ────────────────────────────────────────────────
-#   ✅ LED (EX24) — RED=D5, GREEN=D6, ORANGE=D13
+#   LED (EX24)
 # ────────────────────────────────────────────────
 LED_ACTIVE_HIGH = True
 led_red = None
@@ -683,9 +681,7 @@ def init_leds():
         clear_error("LED")
         return True
     except Exception as e:
-        led_red = None
-        led_green = None
-        led_orange = None
+        led_red = led_green = led_orange = None
         sensor_state["LED"] = False
         set_error("LED", f"init failed: {e}")
         return False
@@ -742,13 +738,11 @@ def leds_deinit():
         if led_orange: led_orange.deinit()
     except Exception:
         pass
-    led_red = None
-    led_green = None
-    led_orange = None
+    led_red = led_green = led_orange = None
     sensor_state["LED"] = False
 
 # ────────────────────────────────────────────────
-#   ✅ /api/a5/command (EX24 LOCAL GPIO + MQTT optional)
+#   /api/a5/command (EX24 LOCAL GPIO + MQTT)
 # ────────────────────────────────────────────────
 @app.route("/api/a5/command", methods=["POST"])
 def api_a5_command():
@@ -756,7 +750,6 @@ def api_a5_command():
     is_ex24 = (payload.get("exercise_id") == "a5-ex24")
 
     try:
-        # 1) EX24: Do GPIO locally
         if is_ex24:
             action = (payload.get("action") or "").strip().lower()
             ok_local = True
@@ -773,7 +766,7 @@ def api_a5_command():
 
             elif action == "servo":
                 ang = int(payload.get("angle", 0))
-                ok_local = servo_move_then_release(ang, hold_ms=250)  # ✅ full stop
+                ok_local = servo_move_then_release(ang, hold_ms=250)
                 ex24_log("INFO", f"SERVO -> angle={ang} (released)")
 
             elif action == "relay":
@@ -781,7 +774,7 @@ def api_a5_command():
                 st = (payload.get("state") == "on")
 
                 if ch == "all":
-                    ok_local = set_all_relays(st)  # ✅ ALL ON and ALL OFF
+                    ok_local = set_all_relays(st)
                     ex24_log("INFO", f"RELAY -> ALL {'on' if st else 'off'}")
                 else:
                     ok_local = set_relay(int(ch), st)
@@ -793,7 +786,6 @@ def api_a5_command():
             if not ok_local:
                 return jsonify({"ok": False, "error": "Local GPIO action failed", "payload": payload}), 500
 
-        # 2) MQTT publish (optional)
         mqtt_ok = True
         mqtt_err = ""
         try:
@@ -812,7 +804,7 @@ def api_a5_command():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ────────────────────────────────────────────────
-#   EXERCISE MAP (Mode B uses this)
+#   EXERCISE MAP
 # ────────────────────────────────────────────────
 EXERCISE_MAP = {
     "a1-ex1": os.path.join(BASE_DIR, "activity1", "Exercise1.py"),
@@ -850,7 +842,7 @@ def api_exercise_map_check():
     return jsonify({"ok": True, "base_dir": BASE_DIR, "map": out})
 
 # ────────────────────────────────────────────────
-#   DHT / MPU / BMP / PIR / ULTRASONIC / GAS
+#   SENSORS INIT & DATA
 # ────────────────────────────────────────────────
 dht_device = None
 mpu = None
@@ -928,7 +920,6 @@ def init_bmp():
     if bmp is not None:
         return True
 
-    last = None
     for addr in (0x76, 0x77):
         try:
             with i2c_lock:
@@ -946,9 +937,8 @@ def init_bmp():
             return True
         except Exception as e:
             bmp = None
-            last = e
 
-    set_error("BMP280", f"init failed: {last}")
+    set_error("BMP280", "init failed for all addresses")
     return False
 
 def init_pir():
@@ -990,8 +980,7 @@ def init_ultrasonic():
         print("[ULTRASONIC] OK TRIG=D23 ECHO=D24")
         return True
     except Exception as e:
-        ultra_trig = None
-        ultra_echo = None
+        ultra_trig = ultra_echo = None
         set_error("ULTRASONIC", f"init failed: {e}")
         return False
 
@@ -1050,30 +1039,31 @@ def ensure_sensor_init(sensor: str) -> bool:
     return True
 
 # ────────────────────────────────────────────────
-#   GPIO RELEASE – strengthened version (Solution A)
+#   STRONG GPIO RELEASE FUNCTION (includes LEDs)
 # ────────────────────────────────────────────────
 def release_all_sensor_gpio():
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
-    
+    global led_red, led_green, led_orange
+
     print("[GPIO cleanup] Releasing all claimed pins before new exercise...", file=sys.stderr)
-    
-    pins_to_release = [
-        ("PIR pin", pir_pin),
-        ("Ultrasonic TRIG", ultra_trig),
-        ("Ultrasonic ECHO", ultra_echo),
-        ("MQ gas pin", mq_pin),
-    ]
-    
-    for name, pin in pins_to_release:
+
+    # Input sensors
+    for name, pin in [
+        ("PIR (D22)", pir_pin),
+        ("Ultrasonic TRIG (D23)", ultra_trig),
+        ("Ultrasonic ECHO (D24)", ultra_echo),
+        ("MQ gas (D17)", mq_pin),
+    ]:
         if pin is not None:
             try:
                 pin.deinit()
                 print(f"  → Released: {name}", file=sys.stderr)
             except Exception as e:
                 print(f"  → Failed to release {name}: {e}", file=sys.stderr)
-    
+
     pir_pin = ultra_trig = ultra_echo = mq_pin = None
-    
+
+    # DHT
     if dht_device is not None:
         try:
             dht_device.exit()
@@ -1081,14 +1071,34 @@ def release_all_sensor_gpio():
         except Exception as e:
             print(f"  → DHT exit failed: {e}", file=sys.stderr)
         dht_device = None
-    
-    # Force garbage collection + delay to help release hardware lock
+
+    # LED outputs (critical for Exercise 1)
+    led_released = []
+    for pin_var, name in [
+        (led_red,    "LED RED (D5)"),
+        (led_green,  "LED GREEN (D6)"),
+        (led_orange, "LED ORANGE (D13)"),
+    ]:
+        if pin_var is not None:
+            try:
+                pin_var.deinit()
+                led_released.append(name)
+            except Exception as e:
+                print(f"  → Failed to release {name}: {e}", file=sys.stderr)
+
+    led_red = led_green = led_orange = None
+    sensor_state["LED"] = False
+
+    if led_released:
+        print(f"  → Released LEDs: {', '.join(led_released)}", file=sys.stderr)
+
+    # Final cleanup delay
     gc.collect()
-    time.sleep(0.4)
-    print("[GPIO cleanup] Release complete.", file=sys.stderr)
+    time.sleep(1.0)
+    print("[GPIO cleanup] Release complete (waited 1 second).", file=sys.stderr)
 
 # ────────────────────────────────────────────────
-#   SENSOR READER THREADS (Tools mode)
+#   SENSOR READER THREADS
 # ────────────────────────────────────────────────
 threads = {}
 running_flags = {k: False for k in sensor_state.keys()}
@@ -1618,7 +1628,7 @@ def api_lcd():
     return jsonify({"ok": bool(ok), "line1": line1, "line2": line2, "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
 
 # ────────────────────────────────────────────────
-#   API: EXERCISE RUN (Mode B) + A5-EX21 special – with Solution A
+#   EXERCISE RUN (with strong GPIO release)
 # ────────────────────────────────────────────────
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
@@ -1659,9 +1669,8 @@ def api_exercise_run():
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
 
-        # ─── Solution A: Force release all GPIO before starting exercise ───────
+        # Strong GPIO release before launching exercise
         release_all_sensor_gpio()
-        # ──────────────────────────────────────────────────────────────────────
 
         with exercise_log_lock:
             exercise_stdout.clear()
@@ -1707,7 +1716,6 @@ def api_exercise_stop():
         current = exercise_status.get("exercise_id")
         running = bool(exercise_status.get("running"))
 
-    # a5-ex21 special (MQTT stream OFF)
     if running and current == "a5-ex21":
         try:
             a5_send_cmd({"stream": "off"})
@@ -1750,7 +1758,6 @@ def _cleanup():
     except Exception:
         pass
 
-    # turn outputs OFF
     try:
         set_buzzer(False)
     except Exception:
@@ -1775,7 +1782,6 @@ def _cleanup():
     except Exception:
         pass
 
-    # Also release GPIO pins on full server shutdown
     release_all_sensor_gpio()
 
 atexit.register(_cleanup)
