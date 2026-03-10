@@ -1676,6 +1676,7 @@ def api_exercise_run():
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
 
+        # Strong GPIO release before launching exercise
         release_all_sensor_gpio()
 
         with exercise_log_lock:
