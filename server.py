@@ -94,6 +94,20 @@ except Exception:
 print("Available libraries:", SENSORS_AVAILABLE)
 
 # ────────────────────────────────────────────────
+#   Graceful shutdown signal handlers
+# ────────────────────────────────────────────────
+
+def _handle_term(signum, frame):
+    sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
+    print(f"\n[{sig_name}] received - running cleanup...", file=sys.stderr)
+    _cleanup()
+    print("Cleanup finished. Exiting.", file=sys.stderr)
+    sys.exit(0 if signum == signal.SIGTERM else 130)
+
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT,  _handle_term)
+
+# ────────────────────────────────────────────────
 #   APP + GLOBALS
 # ────────────────────────────────────────────────
 app = Flask(__name__)
