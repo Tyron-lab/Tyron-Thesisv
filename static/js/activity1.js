@@ -4,13 +4,14 @@
    - Stop => POST /api/exercise_stop
    - Multi-phone busy: uses /api/focus (shared)
    - Removes sensor values on cards; relies on Exercise scripts + LCD output
+   ✅ FIX: refreshRunnerStatus now shows error overlay with Python stderr
 */
 
 (() => {
   const API_RUN = "/api/exercise";
   const API_STOP = "/api/exercise_stop";
   const API_STATUS = "/api/exercise_status";
-  const API_LOGS = "/api/exercise_logs"; // optional (used only for ex23 panel)
+  const API_LOGS = "/api/exercise_logs";
   const API_FOCUS = "/api/focus";
 
   const API_A5_LATEST = "/api/a5/latest";
@@ -51,6 +52,52 @@
   }
 
   // ────────────────────────────────────────────────
+  // ✅ Error overlay — shows Python stderr on screen
+  // ────────────────────────────────────────────────
+  function showErrorOverlay(exId, stderr, stdout) {
+    const existing = document.getElementById("_ex_error_overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "_ex_error_overlay";
+    overlay.style.cssText = [
+      "position:fixed", "inset:0", "background:rgba(0,0,0,0.85)", "z-index:9999",
+      "display:flex", "align-items:center", "justify-content:center", "padding:16px"
+    ].join(";");
+
+    const box = document.createElement("div");
+    box.style.cssText = [
+      "background:#1a1a1a", "border:2px solid #e53935", "border-radius:10px",
+      "padding:20px", "max-width:95vw", "max-height:85vh", "overflow-y:auto",
+      "font-family:monospace", "color:#fff", "width:100%"
+    ].join(";");
+
+    const title = document.createElement("div");
+    title.style.cssText = "color:#e53935;font-size:1.1em;font-weight:bold;margin-bottom:12px;";
+    title.textContent = "❌ Exercise " + exId + " crashed — Python error:";
+
+    const pre = document.createElement("pre");
+    pre.style.cssText = "white-space:pre-wrap;word-break:break-all;font-size:0.8em;color:#ffcdd2;margin:0 0 14px 0;";
+    pre.textContent = stderr
+      ? stderr
+      : (stdout ? "STDOUT:\n" + stdout : "No output captured — check server terminal.");
+
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "✕ Close";
+    closeBtn.style.cssText = [
+      "background:#e53935", "color:#fff", "border:none", "border-radius:6px",
+      "padding:10px 24px", "font-size:1em", "cursor:pointer", "width:100%"
+    ].join(";");
+    closeBtn.onclick = () => overlay.remove();
+
+    box.appendChild(title);
+    box.appendChild(pre);
+    box.appendChild(closeBtn);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  }
+
+  // ────────────────────────────────────────────────
   // Multi-phone focus lock
   // ────────────────────────────────────────────────
   let currentRunningEx = null;
@@ -84,7 +131,6 @@
         card.style.filter = "";
       }
 
-      // Disable buttons in other cards; allow Stop only on running card
       const btns = qsa("button", card);
       btns.forEach((btn) => {
         const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
@@ -104,7 +150,6 @@
       });
     });
 
-    // Modal buttons lock if modal is on a different exercise
     if (hasRunning && modalExerciseId && modalExerciseId !== runningExId) {
       if (modalRunBtn) modalRunBtn.disabled = true;
       if (modalSpeakBtn) modalSpeakBtn.disabled = true;
@@ -126,7 +171,6 @@
     const running = !!r.data.running;
     const exId = r.data.exercise_id || null;
 
-    // ✅ FIX: when focus is cleared, reset ALL cards to Ready on ALL phones
     if (!running) {
       currentRunningEx = null;
       setBusyUI(null);
@@ -143,7 +187,6 @@
       currentRunningEx = exId;
       setBusyUI(currentRunningEx);
 
-      // Show "Running..." only on the focused exercise; others show Busy
       qsa(".exercise-card[data-exercise]").forEach((card) => {
         const id = card.dataset.exercise;
         if (id === currentRunningEx) setStatus(id, "Running...", "state-running");
@@ -181,7 +224,6 @@
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
 
-  // A5 EX21 live panel (still allowed in popup only)
   const a5LivePanel = qs("#a5LivePanel");
   const a5Dot = qs("#a5Dot");
   const a5ConnText = qs("#a5ConnText");
@@ -191,7 +233,6 @@
   const a5Updated = qs("#a5Updated");
   const a5Raw = qs("#a5Raw");
 
-  // A5 EX22 command panel
   const a5CmdPanel = qs("#a5CmdPanel");
   const a5CmdDot = qs("#a5CmdDot");
   const a5CmdText = qs("#a5CmdText");
@@ -205,7 +246,6 @@
   const cmdLedGreen = qs("#cmdLedGreen");
   const cmdAllOff   = qs("#cmdAllOff");
 
-  // A5 EX23 storage panel (optional)
   const a5StorePanel   = qs("#a5StorePanel");
   const a5StoreDot     = qs("#a5StoreDot");
   const a5StoreText    = qs("#a5StoreText");
@@ -216,8 +256,6 @@
   const a5StoreRaw     = qs("#a5StoreRaw");
 
   let modalExerciseId = null;
-
-  // A5 helpers (popup only)
   let a5Timer = null;
 
   function setA5Conn(state, text) {
@@ -259,7 +297,6 @@
     if (a5Temp) a5Temp.textContent = safeVal(t);
     if (a5Motion) a5Motion.textContent = safeVal(m);
     if (a5Noise) a5Noise.textContent = safeVal(n);
-
     if (a5Updated) a5Updated.textContent = "Last update: " + (r.data.last_update || "—");
     if (a5Raw) a5Raw.textContent = "raw: " + (raw ? raw : "—");
   }
@@ -338,7 +375,6 @@
   }
   bindCmdButtons();
 
-  // Ex23 storage panel (optional)
   let a5StoreTimer = null;
   let a5StoreLastLine = "";
 
@@ -461,7 +497,7 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
   // ────────────────────────────────────────────────
-  // Exercise-only start/stop
+  // Exercise start / stop
   // ────────────────────────────────────────────────
   async function startExercise(exId) {
     if (!exId) return;
@@ -520,18 +556,40 @@
     });
   }
 
+  // ────────────────────────────────────────────────
+  // ✅ refreshRunnerStatus — pops up the real Python error
+  // ────────────────────────────────────────────────
   async function refreshRunnerStatus() {
     if (!currentRunningEx) return;
     const r = await getJSON(API_STATUS);
     if (!r.ok || !r.data) return;
 
-    const running = !!r.data.running;
+    const running   = !!r.data.running;
+    const endReason = r.data.end_reason || "";
+    const exitCode  = r.data.exit_code;
+
     if (!running) {
       const doneId = currentRunningEx;
+
+      // Grab logs BEFORE clearing state
+      const logs   = await getJSON(API_LOGS).catch(() => null);
+      const stderr = logs?.data?.stderr || "";
+      const stdout = logs?.data?.stdout || "";
+
       await setFocus(doneId, false);
       currentRunningEx = null;
       setBusyUI(null);
-      setStatus(doneId, "Finished");
+
+      // Show error overlay if it crashed (not stopped by user)
+      const crashed = (endReason === "error") ||
+                      (exitCode !== 0 && exitCode !== null && endReason !== "stopped");
+
+      if (crashed) {
+        setStatus(doneId, "Error ❌", "state-error");
+        showErrorOverlay(doneId, stderr, stdout);
+      } else {
+        setStatus(doneId, endReason === "stopped" ? "Stopped" : "Finished");
+      }
 
       qsa(".exercise-card[data-exercise]").forEach((card) => {
         const id = card.dataset.exercise;
@@ -587,7 +645,7 @@
   });
 
   // ────────────────────────────────────────────────
-  // Init: no indicators, just Ready
+  // Init
   // ────────────────────────────────────────────────
   qsa(".exercise-card[data-exercise]").forEach((card) => {
     setStatus(card.dataset.exercise, "Ready");
