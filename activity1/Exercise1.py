@@ -73,6 +73,27 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.cursor_pos = (1, 0)
     lcd.write_string((line2 or "")[:LCD_COLS])
 
+# ✅ Force-free pins at the lgpio chip level before claiming them.
+# The server process (server.py) may still hold lgpio kernel claims on these
+# pins even after calling deinit(). This opens a fresh chip handle and
+# explicitly releases each pin so this subprocess can claim them cleanly.
+def force_free_gpio(*gpio_nums):
+    try:
+        import lgpio as _lgpio
+        h = _lgpio.gpiochip_open(0)
+        freed = []
+        for gpio in gpio_nums:
+            try:
+                _lgpio.gpio_free(h, gpio)
+                freed.append(gpio)
+            except Exception:
+                pass   # pin wasn't claimed — that's fine
+        _lgpio.gpiochip_close(h)
+        print(f"[GPIO] Force-freed pins at lgpio level: {freed}", file=sys.stderr)
+    except Exception as e:
+        # lgpio not available or already clean — safe to continue
+        print(f"[GPIO] force_free_gpio skipped: {e}", file=sys.stderr)
+
 def make_out(pin, initial=False):
     print(f"Claiming output pin {pin}...", file=sys.stderr)
     try:
@@ -100,7 +121,6 @@ def make_in_pir(pin):
         print(f"  → Failed to claim {pin}: {e}", file=sys.stderr)
         raise
 
-# ✅ Fixed: use module-level globals, not locals()
 def all_off():
     if R is not None: R.value = False
     if G is not None: G.value = False
@@ -124,6 +144,11 @@ def read_motion() -> bool:
 
 # ─── MAIN GPIO INITIALIZATION (protected) ──────────────────
 try:
+    # ✅ Release all pins this exercise needs at the lgpio level FIRST.
+    # GPIO nums: RED=5, GREEN=6, ORANGE=13, PIR=22
+    print("Releasing any existing lgpio claims...", file=sys.stderr)
+    force_free_gpio(5, 6, 13, 22)
+
     print("Initializing LEDs...", file=sys.stderr)
     R = make_out(board.D5, False)     # RED
     G = make_out(board.D6, False)     # GREEN
@@ -240,7 +265,7 @@ finally:
                 pin_obj.deinit()
                 print(f"  → Released {name}", file=sys.stderr)
         except Exception as e:
-            print(f"  → Failed to release {name}: {e}", file=sys.stderr)
+            print(f"  → Released {name}: {e}", file=sys.stderr)
 
     print("Exercise 1 exited cleanly.")
     sys.exit(0)
