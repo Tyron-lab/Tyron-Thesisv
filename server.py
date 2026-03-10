@@ -1,4 +1,4 @@
-# server.py — TrainerKit Tools Dashboard (FULL UPDATE with strong GPIO release)
+# server.py — TrainerKit Tools Dashboard (FULL UPDATE with strong GPIO release + fixes)
 # - Tools (toggle sensors)
 # - MIC VOSK + live wave
 # - Activity 5 MQTT bridge
@@ -192,7 +192,7 @@ sensor_state = {
     "Relay":      False,
     "servomotor": False,
     "BUZZER":     False,
-    "LED":        False,     # ✅ EX24
+    "LED":        False,
     "LCD_TOOL":   False,
     "MIC":        False,
 }
@@ -210,7 +210,7 @@ sensor_data = {
     "Relay":      {"ch1": False, "ch2": False, "ch3": False, "ch4": False, "last_update": None, "error": ""},
     "servomotor": {"angle": 0, "last_update": None, "error": ""},
     "BUZZER":     {"on": False, "last_update": None, "error": ""},
-    "LED":        {"color": "off", "last_update": None, "error": ""},  # ✅ EX24
+    "LED":        {"color": "off", "last_update": None, "error": ""},
     "LCD_TOOL":   {"line1": "", "line2": "", "last_update": None, "error": ""},
 
     "MIC": {
@@ -769,7 +769,7 @@ def api_a5_command():
 
             elif action == "servo":
                 ang = int(payload.get("angle", 0))
-                ok_local = servo_move_then_release(ang, hold_ms=250)  # ✅ full stop
+                ok_local = servo_move_then_release(ang, hold_ms=250)
                 ex24_log("INFO", f"SERVO -> angle={ang} (released)")
 
             elif action == "relay":
@@ -777,7 +777,7 @@ def api_a5_command():
                 st = (payload.get("state") == "on")
 
                 if ch == "all":
-                    ok_local = set_all_relays(st)  # ✅ ALL ON and ALL OFF
+                    ok_local = set_all_relays(st)
                     ex24_log("INFO", f"RELAY -> ALL {'on' if st else 'off'}")
                 else:
                     ok_local = set_relay(int(ch), st)
@@ -1679,11 +1679,16 @@ def api_exercise_run():
         # Strong GPIO release before launching exercise
         release_all_sensor_gpio()
 
+        # Extra safety delay after cleanup
+        time.sleep(0.5)
+
+        # Explicitly reset stop flag
+        exercise_stop_requested = False
+
         with exercise_log_lock:
             exercise_stdout.clear()
             exercise_stderr.clear()
 
-        exercise_stop_requested = False
         exercise_status.update({
             "exercise_id": ex_id,
             "running": True,
@@ -1695,6 +1700,8 @@ def api_exercise_run():
         })
 
         try:
+            print(f"[exercise] Starting subprocess for {ex_id}: {script_path}", file=sys.stderr)
+
             exercise_proc = subprocess.Popen(
                 [sys.executable, script_path],
                 stdout=subprocess.PIPE,
@@ -1702,6 +1709,8 @@ def api_exercise_run():
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
+                # Put child in new session/group → prevents inheriting parent's signals
+                preexec_fn=os.setsid if os.name != 'nt' else None,
             )
             exercise_reader_thread = threading.Thread(target=_exercise_reader, args=(exercise_proc,), daemon=True)
             exercise_reader_thread.start()
@@ -1715,6 +1724,7 @@ def api_exercise_run():
                 "exit_code": -1,
                 "ended_at": now_iso(),
             })
+            print(f"[exercise launch error] {e}", file=sys.stderr)
             return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/exercise_stop", methods=["POST"])
@@ -1812,5 +1822,3 @@ if __name__ == "__main__":
 
     start_a5_mqtt()
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
-
-    # sffs
