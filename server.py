@@ -9,6 +9,7 @@
 # - ✅ EX24: Event Logging Terminal endpoints + Local GPIO control via /api/a5/command
 # - ✅ EX24: Servo move-then-release (fully stops holding)
 # - ✅ EX24: Relay ALL ON + ALL OFF
+# - ✅ FIXED: Complete GPIO release before launching exercises to prevent resource conflicts
 
 from flask import Flask, request, jsonify, send_from_directory
 import threading
@@ -24,6 +25,7 @@ import json
 import atexit
 import queue
 import gc
+import traceback
 
 import paho.mqtt.client as mqtt
 
@@ -1046,13 +1048,93 @@ def ensure_sensor_init(sensor: str) -> bool:
     return True
 
 # ────────────────────────────────────────────────
-#   STRONG GPIO RELEASE FUNCTION (includes LEDs)
+#   COMPLETE GPIO RELEASE FUNCTION (includes all pins)
 # ────────────────────────────────────────────────
 def release_all_sensor_gpio():
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
     global led_red, led_green, led_orange
+    global relay_pins, buzzer, servo_pwm, tca, mpu, bmp
+    global _lcd
 
     print("[GPIO cleanup] Releasing all claimed pins before new exercise...", file=sys.stderr)
+
+    # Stop all sensor reader threads first
+    for sensor_name in running_flags:
+        running_flags[sensor_name] = False
+    time.sleep(0.5)  # Give threads time to stop
+
+    # Stop MIC if running
+    try:
+        mic_stop()
+        print("  → Stopped: MIC", file=sys.stderr)
+    except Exception as e:
+        print(f"  → MIC stop failed: {e}", file=sys.stderr)
+
+    # Release I2C sensors
+    if mpu is not None:
+        try:
+            # Can't easily deinit MPU, but set to None
+            mpu = None
+            print("  → Released: MPU6050", file=sys.stderr)
+        except:
+            pass
+    
+    if bmp is not None:
+        try:
+            bmp = None
+            print("  → Released: BMP280", file=sys.stderr)
+        except:
+            pass
+    
+    if dht_device is not None:
+        try:
+            dht_device.exit()
+            print("  → Released: DHT11", file=sys.stderr)
+        except Exception as e:
+            print(f"  → DHT exit failed: {e}", file=sys.stderr)
+        dht_device = None
+
+    # Release MUX
+    if tca is not None:
+        try:
+            # Can't easily deinit TCA, but set to None
+            tca = None
+            print("  → Released: TCA9548A MUX", file=sys.stderr)
+        except:
+            pass
+
+    # Turn off and release output devices
+    # Buzzer
+    if buzzer is not None:
+        try:
+            set_buzzer(False)
+            buzzer.deinit()
+            buzzer = None
+            print("  → Released: Buzzer (D21)", file=sys.stderr)
+        except Exception as e:
+            print(f"  → Buzzer release failed: {e}", file=sys.stderr)
+
+    # Servo
+    if servo_pwm is not None:
+        try:
+            stop_servo()
+            print("  → Released: Servo (D12)", file=sys.stderr)
+        except Exception as e:
+            print(f"  → Servo release failed: {e}", file=sys.stderr)
+
+    # Relays (4 channels)
+    if relay_pins:
+        try:
+            set_all_relays(False)
+            for ch, pin in relay_pins.items():
+                try:
+                    pin.deinit()
+                except:
+                    pass
+            relay_pins = {}
+            print("  → Released: Relays (D27,D10,D26,D25)", file=sys.stderr)
+        except Exception as e:
+            print(f"  → Relay release failed: {e}", file=sys.stderr)
 
     # Input sensors
     for name, pin in [
@@ -1070,16 +1152,7 @@ def release_all_sensor_gpio():
 
     pir_pin = ultra_trig = ultra_echo = mq_pin = None
 
-    # DHT
-    if dht_device is not None:
-        try:
-            dht_device.exit()
-            print("  → Released: DHT11", file=sys.stderr)
-        except Exception as e:
-            print(f"  → DHT exit failed: {e}", file=sys.stderr)
-        dht_device = None
-
-    # LED outputs (critical for Exercise 1)
+    # LED outputs
     led_released = []
     for pin_var, name in [
         (led_red,    "LED RED (D5)"),
@@ -1098,6 +1171,21 @@ def release_all_sensor_gpio():
 
     if led_released:
         print(f"  → Released LEDs: {', '.join(led_released)}", file=sys.stderr)
+
+    # Reset LCD if it was used
+    try:
+        lcd_clear()
+        if _lcd is not None:
+            _lcd = None
+            print("  → Released: LCD", file=sys.stderr)
+    except Exception as e:
+        print(f"  → LCD release failed: {e}", file=sys.stderr)
+
+    # Reset exercise status
+    try:
+        stop_current_exercise()
+    except:
+        pass
 
     # Final cleanup delay — increased to give kernel more time
     gc.collect()
@@ -1702,6 +1790,10 @@ def api_exercise_run():
         try:
             print(f"[exercise] Starting subprocess for {ex_id}: {script_path}", file=sys.stderr)
 
+            # Set environment to ensure Python uses correct paths
+            env = os.environ.copy()
+            env["PYTHONUNBUFFERED"] = "1"
+
             exercise_proc = subprocess.Popen(
                 [sys.executable, script_path],
                 stdout=subprocess.PIPE,
@@ -1709,6 +1801,7 @@ def api_exercise_run():
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
+                env=env,
                 # Put child in new session/group → prevents inheriting parent's signals
                 preexec_fn=os.setsid if os.name != 'nt' else None,
             )
@@ -1725,6 +1818,7 @@ def api_exercise_run():
                 "ended_at": now_iso(),
             })
             print(f"[exercise launch error] {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
             return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/exercise_stop", methods=["POST"])

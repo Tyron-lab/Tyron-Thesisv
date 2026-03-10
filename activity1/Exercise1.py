@@ -8,6 +8,7 @@ import time
 import signal
 import sys
 import os
+import traceback
 
 import board
 import digitalio
@@ -68,39 +69,49 @@ def lcd_write(lcd, line1: str, line2: str = ""):
 
 def make_out(pin, initial=False):
     print(f"Claiming output pin {pin}...", file=sys.stderr)
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.OUTPUT
-    io.value = bool(initial)
-    print(f"  → {pin} OK", file=sys.stderr)
-    return io
+    try:
+        io = digitalio.DigitalInOut(pin)
+        io.direction = digitalio.Direction.OUTPUT
+        io.value = bool(initial)
+        print(f"  → {pin} OK", file=sys.stderr)
+        return io
+    except Exception as e:
+        print(f"  → Failed to claim {pin}: {e}", file=sys.stderr)
+        raise
 
 def make_in_pir(pin):
     print(f"Claiming input pin {pin} (PIR)...", file=sys.stderr)
-    io = digitalio.DigitalInOut(pin)
-    io.direction = digitalio.Direction.INPUT
     try:
-        io.pull = digitalio.Pull.DOWN
-    except Exception:
-        pass
-    print(f"  → {pin} OK", file=sys.stderr)
-    return io
+        io = digitalio.DigitalInOut(pin)
+        io.direction = digitalio.Direction.INPUT
+        try:
+            io.pull = digitalio.Pull.DOWN
+        except Exception:
+            pass
+        print(f"  → {pin} OK", file=sys.stderr)
+        return io
+    except Exception as e:
+        print(f"  → Failed to claim {pin}: {e}", file=sys.stderr)
+        raise
 
 def all_off():
-    R.value = False
-    G.value = False
-    O.value = False
+    if 'R' in locals() and R: R.value = False
+    if 'G' in locals() and G: G.value = False
+    if 'O' in locals() and O: O.value = False
 
 def show_detected():
-    R.value = True
-    G.value = False
-    O.value = False
+    if 'R' in locals() and R: R.value = True
+    if 'G' in locals() and G: G.value = False
+    if 'O' in locals() and O: O.value = False
 
 def show_no_motion():
-    R.value = False
-    G.value = True
-    O.value = False
+    if 'R' in locals() and R: R.value = False
+    if 'G' in locals() and G: G.value = True
+    if 'O' in locals() and O: O.value = False
 
 def read_motion() -> bool:
+    if 'pir' not in locals() or pir is None:
+        return False
     v = bool(pir.value)
     return (not v) if INVERT_PIR else v
 
@@ -117,6 +128,8 @@ try:
 except Exception as e:
     print("!!! CRITICAL ERROR: GPIO initialization failed !!!", file=sys.stderr)
     print(str(e), file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    sys.stderr.flush()
     sys.exit(1)
 
 sys.stderr.flush()
@@ -129,8 +142,10 @@ all_off()
 lcd = None
 try:
     lcd = lcd_init()
+    print("LCD initialized successfully", file=sys.stderr)
 except Exception as e:
-    print(f"[LCD] init failed, continuing without LCD: {e}")
+    print(f"[LCD] init failed, continuing without LCD: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
     lcd = None
 
 warmup_seconds = 30
@@ -190,8 +205,9 @@ try:
 
 except Exception as e:
     print(f"❌ ERROR: {e}")
+    traceback.print_exc(file=sys.stderr)
     all_off()
-    R.value = True
+    if 'R' in locals() and R: R.value = True
     if lcd:
         try:
             lcd_write(lcd, "ERROR", str(e)[:16])
@@ -210,13 +226,17 @@ finally:
         pass
 
     all_off()
-    try: pir.deinit()
+    try: 
+        if 'pir' in locals() and pir: pir.deinit()
     except: pass
-    try: R.deinit()
+    try: 
+        if 'R' in locals() and R: R.deinit()
     except: pass
-    try: G.deinit()
+    try: 
+        if 'G' in locals() and G: G.deinit()
     except: pass
-    try: O.deinit()
+    try: 
+        if 'O' in locals() and O: O.deinit()
     except: pass
 
     print("Exercise 1 exited cleanly.")
