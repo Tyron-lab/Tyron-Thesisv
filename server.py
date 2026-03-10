@@ -1,4 +1,4 @@
-# server.py — TrainerKit Tools Dashboard (FULL UPDATE)
+# server.py — TrainerKit Tools Dashboard (FULL UPDATE with Solution A)
 # - Tools (toggle sensors)
 # - MIC VOSK + live wave
 # - Activity 5 MQTT bridge
@@ -23,6 +23,7 @@ from collections import deque
 import json
 import atexit
 import queue
+import gc
 
 import paho.mqtt.client as mqtt
 
@@ -1048,34 +1049,43 @@ def ensure_sensor_init(sensor: str) -> bool:
     if sensor == "LED": return init_leds()
     return True
 
+# ────────────────────────────────────────────────
+#   GPIO RELEASE – strengthened version (Solution A)
+# ────────────────────────────────────────────────
 def release_all_sensor_gpio():
     global pir_pin, ultra_trig, ultra_echo, mq_pin, dht_device
-    try:
-        if pir_pin: pir_pin.deinit()
-    except Exception:
-        pass
-    pir_pin = None
-
-    try:
-        if ultra_trig: ultra_trig.deinit()
-        if ultra_echo: ultra_echo.deinit()
-    except Exception:
-        pass
-    ultra_trig = None
-    ultra_echo = None
-
-    try:
-        if mq_pin: mq_pin.deinit()
-    except Exception:
-        pass
-    mq_pin = None
-
-    try:
-        if dht_device is not None:
+    
+    print("[GPIO cleanup] Releasing all claimed pins before new exercise...", file=sys.stderr)
+    
+    pins_to_release = [
+        ("PIR pin", pir_pin),
+        ("Ultrasonic TRIG", ultra_trig),
+        ("Ultrasonic ECHO", ultra_echo),
+        ("MQ gas pin", mq_pin),
+    ]
+    
+    for name, pin in pins_to_release:
+        if pin is not None:
+            try:
+                pin.deinit()
+                print(f"  → Released: {name}", file=sys.stderr)
+            except Exception as e:
+                print(f"  → Failed to release {name}: {e}", file=sys.stderr)
+    
+    pir_pin = ultra_trig = ultra_echo = mq_pin = None
+    
+    if dht_device is not None:
+        try:
             dht_device.exit()
-    except Exception:
-        pass
-    dht_device = None
+            print("  → Released: DHT11", file=sys.stderr)
+        except Exception as e:
+            print(f"  → DHT exit failed: {e}", file=sys.stderr)
+        dht_device = None
+    
+    # Force garbage collection + delay to help release hardware lock
+    gc.collect()
+    time.sleep(0.4)
+    print("[GPIO cleanup] Release complete.", file=sys.stderr)
 
 # ────────────────────────────────────────────────
 #   SENSOR READER THREADS (Tools mode)
@@ -1608,7 +1618,7 @@ def api_lcd():
     return jsonify({"ok": bool(ok), "line1": line1, "line2": line2, "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
 
 # ────────────────────────────────────────────────
-#   API: EXERCISE RUN (Mode B) + A5-EX21 special
+#   API: EXERCISE RUN (Mode B) + A5-EX21 special – with Solution A
 # ────────────────────────────────────────────────
 @app.route("/api/exercise", methods=["POST"])
 def api_exercise_run():
@@ -1649,7 +1659,9 @@ def api_exercise_run():
         if exercise_proc is not None and exercise_proc.poll() is None:
             stop_current_exercise()
 
+        # ─── Solution A: Force release all GPIO before starting exercise ───────
         release_all_sensor_gpio()
+        # ──────────────────────────────────────────────────────────────────────
 
         with exercise_log_lock:
             exercise_stdout.clear()
@@ -1762,6 +1774,9 @@ def _cleanup():
             mqtt_client.loop_stop()
     except Exception:
         pass
+
+    # Also release GPIO pins on full server shutdown
+    release_all_sensor_gpio()
 
 atexit.register(_cleanup)
 
