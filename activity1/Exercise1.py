@@ -31,6 +31,12 @@ LCD_ROWS = 2
 
 INVERT_PIR = True
 
+# ─── GPIO HANDLES (module-level) ───────────────────────────
+R   = None   # RED LED   D5
+G   = None   # GREEN LED D6
+O   = None   # ORANGE LED D13
+pir = None   # PIR input D22
+
 # ─── SIGNAL HANDLING ───────────────────────────────────────
 _should_exit = False
 
@@ -94,23 +100,24 @@ def make_in_pir(pin):
         print(f"  → Failed to claim {pin}: {e}", file=sys.stderr)
         raise
 
+# ✅ Fixed: use module-level globals, not locals()
 def all_off():
-    if 'R' in locals() and R: R.value = False
-    if 'G' in locals() and G: G.value = False
-    if 'O' in locals() and O: O.value = False
+    if R is not None: R.value = False
+    if G is not None: G.value = False
+    if O is not None: O.value = False
 
 def show_detected():
-    if 'R' in locals() and R: R.value = True
-    if 'G' in locals() and G: G.value = False
-    if 'O' in locals() and O: O.value = False
+    if R is not None: R.value = True
+    if G is not None: G.value = False
+    if O is not None: O.value = False
 
 def show_no_motion():
-    if 'R' in locals() and R: R.value = False
-    if 'G' in locals() and G: G.value = True
-    if 'O' in locals() and O: O.value = False
+    if R is not None: R.value = False
+    if G is not None: G.value = True
+    if O is not None: O.value = False
 
 def read_motion() -> bool:
-    if 'pir' not in locals() or pir is None:
+    if pir is None:
         return False
     v = bool(pir.value)
     return (not v) if INVERT_PIR else v
@@ -164,7 +171,7 @@ for sec_left in range(warmup_seconds, 0, -1):
     time.sleep(0.5)
     if lcd:
         lcd_write(lcd, "Calibrating...", f"Wait {sec_left-1}s")
-    print(f"Warmup: {sec_left} seconds left", file=sys.stderr)   # ← debug
+    print(f"Warmup: {sec_left} seconds left", file=sys.stderr)
     sys.stderr.flush()
 
 O.value = False
@@ -207,11 +214,11 @@ except Exception as e:
     print(f"❌ ERROR: {e}")
     traceback.print_exc(file=sys.stderr)
     all_off()
-    if 'R' in locals() and R: R.value = True
+    if R is not None: R.value = True   # red = error indicator
     if lcd:
         try:
             lcd_write(lcd, "ERROR", str(e)[:16])
-        except:
+        except Exception:
             pass
     time.sleep(1)
 
@@ -222,22 +229,18 @@ finally:
             time.sleep(0.4)
             mux_select(LCD_CH)
             lcd.clear()
-    except:
+    except Exception:
         pass
 
     all_off()
-    try: 
-        if 'pir' in locals() and pir: pir.deinit()
-    except: pass
-    try: 
-        if 'R' in locals() and R: R.deinit()
-    except: pass
-    try: 
-        if 'G' in locals() and G: G.deinit()
-    except: pass
-    try: 
-        if 'O' in locals() and O: O.deinit()
-    except: pass
+
+    for name, pin_obj in [("pir", pir), ("R", R), ("G", G), ("O", O)]:
+        try:
+            if pin_obj is not None:
+                pin_obj.deinit()
+                print(f"  → Released {name}", file=sys.stderr)
+        except Exception as e:
+            print(f"  → Failed to release {name}: {e}", file=sys.stderr)
 
     print("Exercise 1 exited cleanly.")
     sys.exit(0)
