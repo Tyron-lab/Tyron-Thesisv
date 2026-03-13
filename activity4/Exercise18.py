@@ -155,7 +155,9 @@ def main():
             pass
         audio_q.put(indata[:, 0].copy())
 
-    dev = sd.default.device[0]
+    dev = 1
+    print("Input device:", dev)
+    
     candidate_rates = [48000, 44100, 32000, 24000, 16000, 8000]
     stream = None
     chosen_rate = None
