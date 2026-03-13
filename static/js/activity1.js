@@ -200,13 +200,12 @@
   // ────────────────────────────────────────────────
   function speak(text) {
     try {
-      if (!("speechSynthesis" in window)) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1;
-      u.pitch = 1;
-      u.lang = "en-US";
-      window.speechSynthesis.speak(u);
+      // Use Flask /api/speak → espeak → VS801 Bluetooth speaker
+      fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).catch(() => {});
     } catch {}
   }
 
@@ -653,9 +652,6 @@
 
   setBusyUI(null);
 
-  // Merged into one interval to halve concurrent fetch requests
-  setInterval(() => {
-    syncFocusFromServer().catch(() => {});
-    refreshRunnerStatus().catch(() => {});
-  }, 900);
+  setInterval(() => { syncFocusFromServer().catch(() => {}); }, 500);
+  setInterval(() => { refreshRunnerStatus().catch(() => {}); }, 900);
 })();

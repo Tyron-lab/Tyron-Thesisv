@@ -318,13 +318,10 @@ def lcd_write(line1="", line2=""):
         return False
     try:
         with i2c_lock:
-            # Use cursor pos instead of clear() — no flicker, faster I2C
-            l1 = (line1 or "").ljust(LCD_COLS)[:LCD_COLS]
-            l2 = (line2 or "").ljust(LCD_COLS)[:LCD_COLS]
-            lcd.cursor_pos = (0, 0)
-            lcd.write_string(l1)
+            lcd.clear()
+            lcd.write_string((line1 or "")[:LCD_COLS])
             lcd.cursor_pos = (1, 0)
-            lcd.write_string(l2)
+            lcd.write_string((line2 or "")[:LCD_COLS])
         sensor_data["LCD_TOOL"].update({"line1": line1, "line2": line2, "last_update": now_iso(), "error": ""})
         return True
     except Exception as e:
@@ -684,27 +681,24 @@ def _append_log(stdout_line=None, stderr_line=None):
             exercise_stderr.append(stderr_line.rstrip("\n"))
 def _exercise_reader(proc: subprocess.Popen):
     global exercise_proc
-
-    # Split into two threads so stdout and stderr never block each other
-    def _drain(stream, is_stderr):
+    try:
+        while proc.poll() is None:
+            line = proc.stdout.readline() if proc.stdout else ""
+            if line:
+                _append_log(stdout_line=line)
+            eline = proc.stderr.readline() if proc.stderr else ""
+            if eline:
+                _append_log(stderr_line=eline)
+            time.sleep(0.01)
         try:
-            for line in iter(stream.readline, ""):
-                if is_stderr:
-                    _append_log(stderr_line=line)
-                else:
+            if proc.stdout:
+                for line in proc.stdout.readlines():
                     _append_log(stdout_line=line)
+            if proc.stderr:
+                for eline in proc.stderr.readlines():
+                    _append_log(stderr_line=eline)
         except Exception:
             pass
-
-    t_out = threading.Thread(target=_drain, args=(proc.stdout, False), daemon=True)
-    t_err = threading.Thread(target=_drain, args=(proc.stderr, True), daemon=True)
-    t_out.start()
-    t_err.start()
-
-    try:
-        proc.wait()
-        t_out.join(timeout=2.0)
-        t_err.join(timeout=2.0)
     finally:
         with exercise_lock:
             exit_code = proc.poll()
@@ -741,7 +735,7 @@ pir_pin = None
 ultra_trig = None
 ultra_echo = None
 mq_pin = None
-GAS_SAMPLES = 5       # was 20 × 0.02s = 0.4s blocking; now 5 × 0.02s = 0.1s
+GAS_SAMPLES = 20
 GAS_SAMPLE_DELAY = 0.02
 GAS_INVERT_DO = True
 GAS_ALERT_PERCENT = 30
@@ -1062,13 +1056,7 @@ def sensor_reader(sensor_name):
                 clear_error("MHMQ")
         except Exception as e:
             set_error(sensor_name, e)
-        # Fast sensors poll quickly; slow sensors keep 1s to avoid DHT/BMP read noise
-        if sensor_name in ("PIR", "ULTRASONIC"):
-            time.sleep(0.1)
-        elif sensor_name == "MHMQ":
-            time.sleep(0.5)
-        else:
-            time.sleep(1.0)
+        time.sleep(1.0)
 # ────────────────────────────────────────────────
 # MIC (VOSK + LIVE WAVE)
 # ────────────────────────────────────────────────
@@ -1592,9 +1580,27 @@ def api_exercise_logs():
     with exercise_log_lock:
         return jsonify({"ok": True, "stdout": "\n".join(exercise_stdout), "stderr": "\n".join(exercise_stderr)})
 
-# ────────────────────────────────────────────────
-# CLEANUP
-# ────────────────────────────────────────────────
+@app.route("/api/speak", methods=["POST"])
+def api_speak():
+    data = request.json or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "No text provided"}), 400
+    try:
+        # Use espeak piped to paplay → outputs through default PipeWire sink (VS801)
+        cmd = f'espeak "{text}" --stdout | paplay --device=bluez_output.5F_43_DA_1E_0D_99.1'
+        subprocess.Popen(cmd, shell=True)
+        return jsonify({"ok": True, "text": text})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/speak_stop", methods=["POST"])
+def api_speak_stop():
+    try:
+        subprocess.call(["pkill", "-f", "espeak"])
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 def _cleanup():
     try:
         mic_stop()

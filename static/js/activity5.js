@@ -151,15 +151,14 @@
   let speakingExId = null;
 
   function stopSpeakingOnly() {
-    try { window.speechSynthesis?.cancel(); } catch {}
+    // Stop espeak on server
+    fetch("/api/speak_stop", { method: "POST" }).catch(() => {});
     speakingExId = null;
     qsa(".exercise-card.state-speaking").forEach(c => c.classList.remove("state-speaking"));
   }
 
   function startSpeak(exId, text) {
     try {
-      if (!("speechSynthesis" in window)) return;
-
       stopSpeakingOnly();
 
       speakingExId = exId;
@@ -167,12 +166,12 @@
       card?.classList.add("state-speaking");
       setStatus(exId, "Speaking...");
 
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1;
-      u.pitch = 1;
-      u.lang = "en-US";
-
-      u.onend = () => {
+      // Use Flask /api/speak → espeak → VS801 Bluetooth speaker
+      fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).then(() => {
         const c = getCard(exId);
         c?.classList.remove("state-speaking");
         if (speakingExId === exId) {
@@ -180,18 +179,14 @@
           setStatus(exId, "Ready");
           pulseOk(exId);
         }
-      };
-
-      u.onerror = () => {
+      }).catch(() => {
         const c = getCard(exId);
         c?.classList.remove("state-speaking");
         if (speakingExId === exId) {
           speakingExId = null;
           setStatus(exId, "Ready");
         }
-      };
-
-      window.speechSynthesis.speak(u);
+      });
     } catch {}
   }
 
