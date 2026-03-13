@@ -432,13 +432,21 @@ def set_servo_angle(angle):
 def stop_servo() -> None:
     global servo_pwm
     try:
-        if servo_pwm is not None:
-            servo_pwm.duty_cycle = 0
-            servo_pwm.deinit()
-    except Exception:
-        pass
+        if servo_pwm is None:
+            # Create PWM if not already open so we can send the stop pulse
+            servo_pwm = pwmio.PWMOut(SERVO_PIN, duty_cycle=0, frequency=FREQUENCY)
+        # Send neutral (1500µs) — exact stop point for continuous rotation servos
+        neutral_us   = 1500
+        neutral_duty = int((neutral_us / 20000.0) * 65535)
+        servo_pwm.duty_cycle = neutral_duty
+        time.sleep(0.35)          # hold neutral long enough for servo to halt
+        servo_pwm.duty_cycle = 0  # cut pulse after it has stopped
+        time.sleep(0.05)
+        servo_pwm.deinit()
+    except Exception as e:
+        print(f"[SERVO] stop_servo error: {e}")
     servo_pwm = None
-    sensor_data["servomotor"]["last_update"] = now_iso()
+    sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
 # ────────────────────────────────────────────────
 # BUZZER
 # ────────────────────────────────────────────────
@@ -591,12 +599,12 @@ def api_a5_command():
                 ok_local = set_led_color(color)
                 ex24_log("INFO", f"LED -> {color}")
             elif action == "servo":
-                # ✅ FIX: handle state="stop" to release servo pulse
+                # ✅ FIX: state="stop" sends neutral pulse then cuts signal
                 servo_state = str(payload.get("state", "")).strip().lower()
                 if servo_state == "stop":
                     stop_servo()
                     ok_local = True
-                    ex24_log("INFO", "SERVO -> STOP (pulse off)")
+                    ex24_log("INFO", "SERVO -> STOP (neutral + cut)")
                 else:
                     ang = int(payload.get("angle", 0))
                     ok_local = set_servo_angle(ang)
@@ -605,7 +613,7 @@ def api_a5_command():
                 ch = payload.get("ch")
                 st = (payload.get("state") == "on")
                 if str(ch).strip().lower() == "all":
-                    # ✅ FIX: pass st so ALL ON actually turns all ON
+                    # ✅ FIX: was hardcoded False — now respects actual state
                     ok_local = set_all_relays(st)
                     ex24_log("INFO", f"RELAY -> all {'on' if st else 'off'}")
                 else:
