@@ -66,10 +66,21 @@ def make_led(pin, initial=False, name="LED"):
         raise
 
 def ack(addr: int) -> bool:
+    """Probe an I2C address. Uses a timeout so a locked bus never hangs the process."""
     try:
-        with SMBus(I2C_BUS) as bus:
-            bus.write_quick(addr)
-        return True
+        import threading
+        result = [False]
+        def _probe():
+            try:
+                with SMBus(I2C_BUS) as bus:
+                    bus.write_quick(addr)
+                result[0] = True
+            except Exception:
+                result[0] = False
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=0.5)   # 500ms max — if bus is locked this returns False instead of hanging
+        return result[0]
     except Exception:
         return False
 

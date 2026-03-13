@@ -65,6 +65,7 @@ def mux_select(channel: int):
         raise ValueError("TCA9548A channel must be 0..7")
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
+    time.sleep(0.02)  # settle — prevents I2C collision when switching channels
 
 
 def lcd_init():
@@ -83,10 +84,13 @@ def lcd_init():
 
 def lcd_write(lcd, line1: str, line2: str = ""):
     mux_select(LCD_CH)
-    lcd.clear()
-    lcd.write_string((line1 or "")[:LCD_COLS])
+    # cursor positioning instead of clear() — no flicker, faster, no I2C stall
+    l1 = (line1 or "").ljust(LCD_COLS)[:LCD_COLS]
+    l2 = (line2 or "").ljust(LCD_COLS)[:LCD_COLS]
+    lcd.cursor_pos = (0, 0)
+    lcd.write_string(l1)
     lcd.cursor_pos = (1, 0)
-    lcd.write_string((line2 or "")[:LCD_COLS])
+    lcd.write_string(l2)
 
 
 def init_bmp(i2c):
@@ -183,7 +187,15 @@ try:
 
         if lcd:
             lcd_write(lcd, line1, line2)
-        time.sleep(SCREEN_S)
+
+        # Interruptible sleep — responds to Stop instantly instead of blocking 2.5s
+        for _ in range(int(SCREEN_S / 0.05)):
+            if _should_exit:
+                break
+            time.sleep(0.05)
+
+        if _should_exit:
+            break
 
         # ---- Screen 2: MPU6050 ----
         if mpu:
@@ -212,7 +224,12 @@ try:
 
         if lcd:
             lcd_write(lcd, line1, line2)
-        time.sleep(SCREEN_S)
+
+        # Interruptible sleep
+        for _ in range(int(SCREEN_S / 0.05)):
+            if _should_exit:
+                break
+            time.sleep(0.05)
 
 except KeyboardInterrupt:
     print("\nStopped.")
@@ -226,6 +243,19 @@ finally:
             lcd.clear()
         except Exception:
             pass
+
+    # ✅ CRITICAL: release I2C bus so the next exercise (e.g. Ex15) doesn't hang
+    try:
+        i2c.deinit()
+    except Exception:
+        pass
+
+    # Disable all mux channels so no downstream device stays selected
+    try:
+        with SMBus(I2C_BUS) as bus:
+            bus.write_byte(MUX_ADDR, 0x00)
+    except Exception:
+        pass
 
     print("Exercise 14 exited cleanly.")
     sys.exit(0)
