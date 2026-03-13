@@ -27,12 +27,10 @@
 
       <div class="cards">
 
-        <!-- EX 11: BMP280 + LCD -->
         <article class="exercise-card"
           data-exercise="a3-ex11"
           data-image="/static/images/BMP.png"
           data-image2="/static/images/LCDI2C.png"
-          data-image3="/static/images/TCA.png"
           tabindex="0" role="button"
           data-say-title="Exercise 11: BMP280 Temperature & Pressure"
           data-say-text="Reads temperature and pressure from BMP280 via I2C (through TCA9548A mux) and displays clean values on the LCD.">
@@ -49,16 +47,15 @@
             <button class="run-btn" type="button" data-run="a3-ex11">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex11">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex11">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a3-ex11">Stop Speak</button>
             <span class="status" data-status-for="a3-ex11">Ready</span>
           </div>
         </article>
 
-        <!-- EX 12: MPU6050 + LCD -->
         <article class="exercise-card"
           data-exercise="a3-ex12"
           data-image="/static/images/MPU.png"
           data-image2="/static/images/LCDI2C.png"
-          data-image3="/static/images/TCA.png"
           tabindex="0" role="button"
           data-say-title="Exercise 12: MPU6050 Motion Status"
           data-say-text="Reads accelerometer and gyroscope from MPU6050 via I2C and classifies motion as STILL or MOVING.">
@@ -75,16 +72,15 @@
             <button class="run-btn" type="button" data-run="a3-ex12">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex12">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex12">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a3-ex12">Stop Speak</button>
             <span class="status" data-status-for="a3-ex12">Ready</span>
           </div>
         </article>
 
-        <!-- EX 13: DHT11 + BMP + GAS -->
         <article class="exercise-card"
           data-exercise="a3-ex13"
           data-image="/static/images/DHT.png"
           data-image2="/static/images/BMP.png"
-          data-image3="/static/images/GAS.png"
           tabindex="0" role="button"
           data-say-title="Exercise 13: Multi-Sensor Formatted Display"
           data-say-text="Cycles through DHT11, BMP280, and MQ Gas sensor readings with clean, readable formatting on the LCD.">
@@ -101,16 +97,15 @@
             <button class="run-btn" type="button" data-run="a3-ex13">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex13">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex13">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a3-ex13">Stop Speak</button>
             <span class="status" data-status-for="a3-ex13">Ready</span>
           </div>
         </article>
 
-        <!-- EX 14: BMP280 + MPU6050 -->
         <article class="exercise-card"
           data-exercise="a3-ex14"
           data-image="/static/images/BMP.png"
           data-image2="/static/images/MPU.png"
-          data-image3="/static/images/TCA.png"
           tabindex="0" role="button"
           data-say-title="Exercise 14: Multiple I²C Devices"
           data-say-text="Reads from BMP280 and MPU6050 on the same I²C bus using TCA9548A mux channels and cycles their data on LCD.">
@@ -127,16 +122,15 @@
             <button class="run-btn" type="button" data-run="a3-ex14">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex14">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex14">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a3-ex14">Stop Speak</button>
             <span class="status" data-status-for="a3-ex14">Ready</span>
           </div>
         </article>
 
-        <!-- EX 15: I2C Check -->
         <article class="exercise-card"
           data-exercise="a3-ex15"
           data-image="/static/images/TCA.png"
           data-image2="/static/images/LED.png"
-          data-image3="/static/images/LCDI2C.png"
           tabindex="0" role="button"
           data-say-title="Exercise 15: I²C Communication Check"
           data-say-text="Scans for LCD, BMP280 and MPU6050 on the I²C bus. GREEN = all present, RED = any missing, with LCD details.">
@@ -153,6 +147,7 @@
             <button class="run-btn" type="button" data-run="a3-ex15">Run</button>
             <button class="stop-btn" type="button" data-stop="a3-ex15">Stop</button>
             <button class="speak-btn" type="button" data-speak="a3-ex15">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a3-ex15">Stop Speak</button>
             <span class="status" data-status-for="a3-ex15">Ready</span>
           </div>
         </article>
@@ -170,7 +165,6 @@
           <div class="modal-media-split">
             <img id="modalImg" alt="" />
             <img id="modalImg2" alt="" />
-            <img id="modalImg3" alt="" />
           </div>
         </div>
 
@@ -183,6 +177,7 @@
             <button class="run-btn" type="button" id="modalRunBtn">Run</button>
             <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
             <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+            <button class="stop-speak-btn" type="button" id="modalStopSpeakBtn">Stop Speak</button>
           </div>
         </div>
       </div>

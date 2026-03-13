@@ -243,7 +243,8 @@ body{
 
 .run-btn,
 .speak-btn,
-.stop-btn{
+.stop-btn,
+.stop-speak-btn{
   appearance:none;
   border: 1px solid rgba(148,163,184,.45);
   background: rgba(2,6,23,.22);
@@ -260,7 +261,8 @@ body{
 }
 
 .run-btn:hover,
-.speak-btn:hover{
+.speak-btn:hover,
+.stop-speak-btn:hover{
   transform: translateY(-1px);
   border-color: rgba(96,165,250,.85);
   background: rgba(2,6,23,.30);
@@ -268,8 +270,22 @@ body{
 }
 
 .run-btn:active,
-.speak-btn:active{
+.speak-btn:active,
+.stop-speak-btn:active{
   transform: translateY(0);
+}
+
+/* stop-speak button — distinct amber tone so it reads as "cancel" not "action" */
+.stop-speak-btn{
+  border-color: rgba(251,191,36,.45);
+  color: rgba(251,191,36,.95);
+}
+
+.stop-speak-btn:hover{
+  border-color: rgba(251,191,36,.90);
+  background: rgba(120,53,15,.25);
+  box-shadow: 0 12px 26px rgba(0,0,0,0.45);
+  color: #fbbf24;
 }
 
 .status{

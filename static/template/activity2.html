@@ -26,12 +26,10 @@
 
     <section class="cards" aria-label="Activity 2 Exercises">
 
-      <!-- EX 6: Clap Switch -->
       <article class="exercise-card"
         data-exercise="a2-ex6"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LED.png"
-        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 6: Clap Switch"
         data-say-text="Detects single clap to toggle GREEN LED ON, double clap to turn it OFF. Uses smart noise rejection and anti-false-trigger logic.">
@@ -48,16 +46,15 @@
           <button class="run-btn" type="button" data-run="a2-ex6">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex6">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex6">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a2-ex6">Stop Speak</button>
           <span class="status" data-status-for="a2-ex6">Ready</span>
         </div>
       </article>
 
-      <!-- EX 7: Sound Level Indicator -->
       <article class="exercise-card"
         data-exercise="a2-ex7"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LED.png"
-        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 7: Sound Level Indicator with Running Lights"
         data-say-text="Classifies ambient sound into QUIET (GREEN), MODERATE (running lights), LOUD (solid RED). MID level shows animated traffic-light pattern.">
@@ -74,16 +71,15 @@
           <button class="run-btn" type="button" data-run="a2-ex7">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex7">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex7">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a2-ex7">Stop Speak</button>
           <span class="status" data-status-for="a2-ex7">Ready</span>
         </div>
       </article>
 
-      <!-- EX 8: Noise Level Classifier -->
       <article class="exercise-card"
         data-exercise="a2-ex8"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LED.png"
-        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 8: Noise Level Classifier"
         data-say-text="Classifies current noise level into quiet (GREEN), moderate (ORANGE), or too noisy (RED) using adaptive thresholds and anti-flicker hold.">
@@ -100,16 +96,15 @@
           <button class="run-btn" type="button" data-run="a2-ex8">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex8">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex8">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a2-ex8">Stop Speak</button>
           <span class="status" data-status-for="a2-ex8">Ready</span>
         </div>
       </article>
 
-      <!-- EX 9: Voice Activated System -->
       <article class="exercise-card"
         data-exercise="a2-ex9"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LCDI2C.png"
-        data-image3="/static/images/LED.png"
         tabindex="0" role="button"
         data-say-title="Exercise 9: Voice Activated System"
         data-say-text="Detects when someone is speaking → shows 'VOICE DETECTED' on LCD and beeps buzzer briefly. Includes cooldown and minimum duration filter.">
@@ -126,16 +121,15 @@
           <button class="run-btn" type="button" data-run="a2-ex9">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex9">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex9">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a2-ex9">Stop Speak</button>
           <span class="status" data-status-for="a2-ex9">Ready</span>
         </div>
       </article>
 
-      <!-- EX 10: Loud Sound Alert -->
       <article class="exercise-card"
         data-exercise="a2-ex10"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LED.png"
-        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 10: Loud Sound Alert System"
         data-say-text="Detects sudden loud sounds → activates buzzer alarm + blink RED (D5) + ORANGE (D13) LEDs. Includes hold time, cooldown, and optional LCD message.">
@@ -152,6 +146,7 @@
           <button class="run-btn" type="button" data-run="a2-ex10">Run</button>
           <button class="stop-btn" type="button" data-stop="a2-ex10">Stop</button>
           <button class="speak-btn" type="button" data-speak="a2-ex10">Speak</button>
+          <button class="stop-speak-btn" type="button" data-stop-speak="a2-ex10">Stop Speak</button>
           <span class="status" data-status-for="a2-ex10">Ready</span>
         </div>
       </article>
@@ -168,7 +163,6 @@
           <div class="modal-media-split">
             <img id="modalImg" alt="" />
             <img id="modalImg2" alt="" />
-            <img id="modalImg3" alt="" />
           </div>
         </div>
 
@@ -181,6 +175,7 @@
             <button class="run-btn" type="button" id="modalRunBtn">Run</button>
             <button class="stop-btn" type="button" id="modalStopBtn">Stop</button>
             <button class="speak-btn" type="button" id="modalSpeakBtn">Speak</button>
+            <button class="stop-speak-btn" type="button" id="modalStopSpeakBtn">Stop Speak</button>
           </div>
         </div>
       </div>

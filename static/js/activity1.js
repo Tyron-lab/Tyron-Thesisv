@@ -200,12 +200,17 @@
   // ────────────────────────────────────────────────
   function speak(text) {
     try {
-      // Use Flask /api/speak → espeak → VS801 Bluetooth speaker
       fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       }).catch(() => {});
+    } catch {}
+  }
+
+  function stopSpeak() {
+    try {
+      fetch("/api/speak_stop", { method: "POST" }).catch(() => {});
     } catch {}
   }
 
@@ -219,10 +224,10 @@
   const modalMeta = qs("#modalMeta");
   const modalImg = qs("#modalImg");
   const modalImg2 = qs("#modalImg2");
-  const modalImg3 = qs("#modalImg3");
   const modalRunBtn = qs("#modalRunBtn");
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
+  const modalStopSpeakBtn = qs("#modalStopSpeakBtn");
 
   const a5LivePanel = qs("#a5LivePanel");
   const a5Dot = qs("#a5Dot");
@@ -449,12 +454,10 @@
     if (modalTitle) modalTitle.textContent = title;
     if (modalDesc) modalDesc.textContent = desc;
 
-    const img1 = card.dataset.image  || "";
+    const img1 = card.dataset.image || "";
     const img2 = card.dataset.image2 || "";
-    const img3 = card.dataset.image3 || "";
-    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; }
+    if (modalImg)  { modalImg.src = img1;  modalImg.alt = title; modalImg.hidden  = !img1; }
     if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; }
-    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; }
 
     if (modalMeta) {
       modalMeta.innerHTML = "";
@@ -467,9 +470,10 @@
       });
     }
 
-    if (modalRunBtn)  modalRunBtn.onclick  = () => startExercise(exId);
-    if (modalStopBtn) modalStopBtn.onclick = () => stopExercise(exId);
-    if (modalSpeakBtn) modalSpeakBtn.onclick = () => speak(`${title}. ${desc}`);
+    if (modalRunBtn)       modalRunBtn.onclick       = () => startExercise(exId);
+    if (modalStopBtn)      modalStopBtn.onclick      = () => stopExercise(exId);
+    if (modalSpeakBtn)     modalSpeakBtn.onclick     = () => speak(`${title}. ${desc}`);
+    if (modalStopSpeakBtn) modalStopSpeakBtn.onclick = () => stopSpeak();
 
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
     if (exId === "a5-ex22") startA5Commands();  else stopA5Commands();
@@ -643,6 +647,13 @@
       const title = card.dataset.sayTitle || qs("h3", card)?.textContent || "Exercise";
       const text = card.dataset.sayText || qs(".ex-desc", card)?.textContent || "";
       speak(`${title}. ${text}`);
+    });
+  });
+
+  qsa("button.stop-speak-btn[data-stop-speak]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      stopSpeak();
     });
   });
 
