@@ -392,19 +392,17 @@
   qs("#ctrlLedOrange")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "orange" }, "LED ORANGE"); });
   qs("#ctrlLedOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "led", color: "off" }, "LED OFF"); });
 
-  qs("#ctrlServo0")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 0 }, "SERVO 0°"); });
-  qs("#ctrlServo90")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 90 }, "SERVO 90°"); });
+  qs("#ctrlServo0")?.addEventListener("click",   (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 0   }, "SERVO 0°");   });
+  qs("#ctrlServo90")?.addEventListener("click",  (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 90  }, "SERVO 90°");  });
   qs("#ctrlServo180")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "servo", angle: 180 }, "SERVO 180°"); });
+  // ✅ FIX: Servo STOP — duty_cycle=0 so motor fully releases (no more holding)
+  qs("#ctrlServoStop")?.addEventListener("click",(e) => { e.preventDefault(); ex24Cmd({ action: "servo", state: "stop" }, "SERVO STOP"); });
 
-  qs("#ctrlRelay1On")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "on" }, "RELAY CH1 ON"); });
+  qs("#ctrlRelay1On")?.addEventListener("click",  (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "on"  }, "RELAY CH1 ON");  });
   qs("#ctrlRelay1Off")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: 1, state: "off" }, "RELAY CH1 OFF"); });
 
-  // ✅ NEW: ALL ON
-  qs("#ctrlRelayAllOn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    ex24Cmd({ action: "relay", ch: "all", state: "on" }, "RELAY ALL ON");
-  });
-
+  // ✅ FIX: ch="all" string — relay_set() in Python handles it correctly now
+  qs("#ctrlRelayAllOn")?.addEventListener("click",  (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: "all", state: "on"  }, "RELAY ALL ON");  });
   qs("#ctrlRelayAllOff")?.addEventListener("click", (e) => { e.preventDefault(); ex24Cmd({ action: "relay", ch: "all", state: "off" }, "RELAY ALL OFF"); });
 
   // Card click opens modals
