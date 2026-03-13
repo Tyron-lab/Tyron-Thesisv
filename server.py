@@ -591,15 +591,23 @@ def api_a5_command():
                 ok_local = set_led_color(color)
                 ex24_log("INFO", f"LED -> {color}")
             elif action == "servo":
-                ang = int(payload.get("angle", 0))
-                ok_local = set_servo_angle(ang)
-                ex24_log("INFO", f"SERVO -> angle={ang}")
+                # ✅ FIX: handle state="stop" to release servo pulse
+                servo_state = str(payload.get("state", "")).strip().lower()
+                if servo_state == "stop":
+                    stop_servo()
+                    ok_local = True
+                    ex24_log("INFO", "SERVO -> STOP (pulse off)")
+                else:
+                    ang = int(payload.get("angle", 0))
+                    ok_local = set_servo_angle(ang)
+                    ex24_log("INFO", f"SERVO -> angle={ang}")
             elif action == "relay":
                 ch = payload.get("ch")
                 st = (payload.get("state") == "on")
-                if ch == "all":
-                    ok_local = set_all_relays(False)
-                    ex24_log("INFO", "RELAY -> all off")
+                if str(ch).strip().lower() == "all":
+                    # ✅ FIX: pass st so ALL ON actually turns all ON
+                    ok_local = set_all_relays(st)
+                    ex24_log("INFO", f"RELAY -> all {'on' if st else 'off'}")
                 else:
                     ok_local = set_relay(int(ch), st)
                     ex24_log("INFO", f"RELAY -> ch={ch} {'on' if st else 'off'}")
