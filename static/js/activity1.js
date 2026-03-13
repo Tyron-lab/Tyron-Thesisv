@@ -219,6 +219,7 @@
   const modalMeta = qs("#modalMeta");
   const modalImg = qs("#modalImg");
   const modalImg2 = qs("#modalImg2");
+  const modalImg3 = qs("#modalImg3");
   const modalRunBtn = qs("#modalRunBtn");
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
@@ -448,10 +449,12 @@
     if (modalTitle) modalTitle.textContent = title;
     if (modalDesc) modalDesc.textContent = desc;
 
-    const img1 = card.dataset.image || "";
+    const img1 = card.dataset.image  || "";
     const img2 = card.dataset.image2 || "";
-    if (modalImg)  { modalImg.src = img1;  modalImg.alt = title; modalImg.hidden  = !img1; }
+    const img3 = card.dataset.image3 || "";
+    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; }
     if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; }
+    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; }
 
     if (modalMeta) {
       modalMeta.innerHTML = "";
