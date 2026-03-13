@@ -1073,6 +1073,7 @@ VOSK_MODEL_PATH = os.environ.get(
 VOSK_MODEL = None
 VOSK_REC = None
 VOSK_LOCK = threading.Lock()
+MIC_INPUT_DEVICE = int(os.environ.get("MIC_INPUT_DEVICE", "1"))   # ✅ INMP441 / VoiceHAT = device 1
 MIC_SR_CANDIDATES = [
     int(os.environ.get("MIC_SAMPLE_RATE", "48000")),
     48000, 44100, 16000
@@ -1215,21 +1216,25 @@ def mic_start():
     last_err = None
     for sr in MIC_SR_CANDIDATES:
         try:
-            sd.check_input_settings(samplerate=sr, channels=1, dtype="int16")
+            # ✅ FIX: specify device=MIC_INPUT_DEVICE (same as Exercise6) and
+            # use float32 — the INMP441/VoiceHAT works with float32, not int16
+            sd.check_input_settings(samplerate=sr, channels=1, dtype="float32",
+                                    device=MIC_INPUT_DEVICE)
             src_sr = sr
             break
         except Exception as e:
             last_err = e
     if src_sr is None:
-        set_error("MIC", f"No valid sample rate. Last: {last_err}")
+        set_error("MIC", f"No valid sample rate on device {MIC_INPUT_DEVICE}. Last: {last_err}")
         return False
     def _audio_cb(indata, frames, time_info, status):
         try:
-            x16 = indata[:, 0].astype(np.int16, copy=False)
-            xf = (x16.astype(np.float32) / 32768.0)
+            # ✅ FIX: indata is float32 now — convert to int16 for VOSK pipeline
+            xf = indata[:, 0].astype(np.float32, copy=False)
             rms = float(np.sqrt(np.mean(xf * xf)) + 1e-12)
             peak = float(np.max(np.abs(xf)) + 1e-12)
             ts = now_iso()
+            x16 = np.clip(xf * 32767.0, -32768, 32767).astype(np.int16)
             try:
                 MIC_Q.put_nowait((x16.tobytes(), rms, peak, ts))
             except queue.Full:
@@ -1241,8 +1246,9 @@ def mic_start():
             MIC_STREAM = sd.InputStream(
                 samplerate=src_sr,
                 channels=1,
-                dtype="int16",
+                dtype="float32",           # ✅ FIX: float32 matches INMP441/VoiceHAT
                 blocksize=0,
+                device=MIC_INPUT_DEVICE,   # ✅ FIX: explicitly target device 1
                 callback=_audio_cb,
             )
             MIC_STREAM.start()
