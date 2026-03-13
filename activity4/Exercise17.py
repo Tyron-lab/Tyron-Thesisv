@@ -142,9 +142,10 @@ def main():
             pass
         audio_q.put(indata[:, 0].copy())
 
-    # Default input device
-    dev = sd.default.device[0]
-    print("Default input device:", dev)
+    # ✅ FIX: explicitly use device 1 (INMP441 / VoiceHAT)
+    # sd.default.device[0] returns the system default which is NOT the I2S mic
+    dev = 1
+    print("Input device:", dev)
 
     # Try sample rates
     candidate_rates = [48000, 44100, 32000, 24000, 16000, 8000]
