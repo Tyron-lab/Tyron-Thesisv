@@ -1,69 +1,43 @@
-import time
-import sys
-import signal
-
 import board
 import digitalio
+import time
 
-BUZZER_PIN = board.D16
+# ---- Buzzer pin ----
+BUZZER_PIN = board.D21
 
-# ✅ KEEP THIS TRUE FIRST (so it will NEVER beep)
-MUTE = True
+# If your buzzer is wired as active-low (beeps when pin is LOW), set True.
+# If it beeps when pin is HIGH, set False.
+BUZZER_ACTIVE_LOW = True
 
-# ✅ ACTIVE BUZZER modules are VERY OFTEN active-low:
-#    beep when input LOW, silent when input HIGH
-ACTIVE_LOW = True
+# ✅ Set True to keep buzzer completely silent always
+MUTE = False
 
-_should_exit = False
-def _term(sig, frame):
-    global _should_exit
-    _should_exit = True
-
-signal.signal(signal.SIGTERM, _term)
-signal.signal(signal.SIGINT, _term)
-
+# Setup buzzer GPIO
 buzzer = digitalio.DigitalInOut(BUZZER_PIN)
 buzzer.direction = digitalio.Direction.OUTPUT
 
-def buzzer_write(on: bool):
-    # active-low: ON=LOW, OFF=HIGH
-    if ACTIVE_LOW:
-        buzzer.value = (not on)
-    else:
-        buzzer.value = bool(on)
-
 def buzzer_off_hard():
-    # Force OFF level strongly
-    buzzer_write(False)
-    time.sleep(0.05)
-    buzzer_write(False)
+    """Force buzzer OFF immediately, no matter what."""
+    # For active-low: OFF = HIGH (True)
+    # For active-high: OFF = LOW (False)
+    buzzer.value = BUZZER_ACTIVE_LOW
+    time.sleep(0.02)  # Let module settle
 
-# ✅ force silent immediately
-buzzer_off_hard()
+def buzzer_set(on: bool):
+    """Turn buzzer ON or OFF with correct polarity."""
+    if MUTE:
+        buzzer.value = BUZZER_ACTIVE_LOW  # Force silent
+        return
 
-print("BUZZER: forced silent.")
-print("If it's still beeping now, the module is wired to 5V/GND wrong or not controlled by this pin.")
-print("Running... (Ctrl+C to exit)")
+    if BUZZER_ACTIVE_LOW:
+        buzzer.value = not on  # ON=LOW, OFF=HIGH
+    else:
+        buzzer.value = bool(on)  # ON=HIGH, OFF=LOW
 
-try:
-    while not _should_exit:
-        # stay silent
-        buzzer_off_hard()
+def buzzer_silence():
+    """Silence the buzzer completely (call this on startup or shutdown)."""
+    buzzer_off_hard()
+    buzzer_set(False)
 
-        # if you later set MUTE=False, it will beep once per second
-        if not MUTE:
-            buzzer_write(True)
-            time.sleep(0.15)
-            buzzer_write(False)
-            time.sleep(0.85)
-        else:
-            time.sleep(0.3)
-
-finally:
-    # ensure silent
-    try:
-        buzzer_off_hard()
-        buzzer.deinit()
-    except Exception:
-        pass
-    sys.exit(0)
+# ✅ Silence buzzer immediately on import/startup
+buzzer_silence()
