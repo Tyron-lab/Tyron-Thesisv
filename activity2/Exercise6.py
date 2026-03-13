@@ -44,8 +44,8 @@ INPUT_DEVICE = 1
 # ---------------- Clap detection tuning ----------------
 CLAP_PEAK_THRESHOLD = 0.08
 
-MIN_CLAP_GAP = 0.35           # ⬅️ stronger anti-double
-DOUBLE_CLAP_WINDOW = 0.80
+MIN_CLAP_GAP = 0.25          # ⬅️ stronger anti-double
+DOUBLE_CLAP_WINDOW = 1.0
 
 USE_AUTO_THRESHOLD = True
 AUTO_MULTIPLIER = 2.5
