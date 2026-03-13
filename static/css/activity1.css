@@ -275,12 +275,11 @@ body{
   transform: translateY(0);
 }
 
-/* stop-speak — red/danger so it clearly reads as "cancel audio" */
+/* stop-speak — red/danger, clearly reads as "cancel audio" */
 .stop-speak-btn{
   border-color: rgba(239,68,68,.55);
   color: rgba(252,165,165,.95);
 }
-
 .stop-speak-btn:hover{
   border-color: rgba(239,68,68,.90);
   background: rgba(127,29,29,.30);
@@ -341,7 +340,7 @@ body.modal-open #pageRoot {
 .modal-overlay.open { display: grid; }
 
 .modal-card {
-  width: min(920px, 96vw);
+  width: min(1020px, 96vw);
   border-radius: 18px;
   background: var(--bg2, #111a2b);
   border: 1px solid var(--border, #334155);
@@ -412,6 +411,7 @@ body.modal-open #pageRoot {
 .modal-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
   margin-top: 14px;
 }
 
