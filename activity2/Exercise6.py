@@ -42,14 +42,14 @@ BLOCK_SIZE = int(SAMPLE_RATE * (BLOCK_MS / 1000.0))
 INPUT_DEVICE = 1
 
 # ---------------- Clap detection tuning ----------------
-CLAP_PEAK_THRESHOLD = 0.12
+CLAP_PEAK_THRESHOLD = 0.08
 
 MIN_CLAP_GAP = 0.35           # ⬅️ stronger anti-double
 DOUBLE_CLAP_WINDOW = 0.80
 
 USE_AUTO_THRESHOLD = True
-AUTO_MULTIPLIER = 3.5
-AUTO_FLOOR = 0.06
+AUTO_MULTIPLIER = 2.5
+AUTO_FLOOR = 0.05
 
 # ✅ Ignore first seconds (startup pop)
 WARMUP_SECONDS = 1.5
@@ -57,7 +57,7 @@ WARMUP_SECONDS = 1.5
 # ✅ Spike requirement (NEW)
 # Clap must exceed (noise_median + SPIKE_ABS) AND (noise_median * SPIKE_MULT)
 SPIKE_ABS  = 0.08
-SPIKE_MULT = 3.0
+SPIKE_MULT = 2.0
 
 # ✅ Re-arm settings
 REARM_RATIO = 0.35
