@@ -407,5 +407,5 @@ async function pollMicWave() {
 }
 
 // fast poll to look live but not lag
-setInterval(pollMicWave, 120);
+setInterval(pollMicWave, 200);
 pollMicWave();

@@ -653,6 +653,9 @@
 
   setBusyUI(null);
 
-  setInterval(() => { syncFocusFromServer().catch(() => {}); }, 500);
-  setInterval(() => { refreshRunnerStatus().catch(() => {}); }, 900);
+  // Merged into one interval to halve concurrent fetch requests
+  setInterval(() => {
+    syncFocusFromServer().catch(() => {});
+    refreshRunnerStatus().catch(() => {});
+  }, 900);
 })();

@@ -129,6 +129,7 @@ except Exception as e:
     lcd = None
 
 last_state = None  # "SAFE" or "ALERT"
+last_lcd = (None, None)  # guard to avoid redundant LCD writes
 
 try:
     # default SAFE
@@ -148,7 +149,10 @@ try:
             show_alert()
 
             if lcd:
-                lcd_write(lcd, "SMOKE DETECT!", f"Level: {level}%")
+                display = ("SMOKE DETECT!", f"Level: {level}%")
+                if display != last_lcd:
+                    lcd_write(lcd, display[0], display[1])
+                    last_lcd = display
 
             # small delay but responsive
             time.sleep(0.12)
@@ -161,7 +165,10 @@ try:
             show_safe()
 
             if lcd:
-                lcd_write(lcd, "CLEAR / SAFE", f"Level: {level}%")
+                display = ("CLEAR / SAFE", f"Level: {level}%")
+                if display != last_lcd:
+                    lcd_write(lcd, display[0], display[1])
+                    last_lcd = display
 
             time.sleep(0.2)
 
