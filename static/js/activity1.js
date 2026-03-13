@@ -208,9 +208,26 @@
     } catch {}
   }
 
-  function stopSpeak() {
+  function stopSpeak(triggerBtn) {
     try {
-      fetch("/api/speak_stop", { method: "POST" }).catch(() => {});
+      fetch("/api/speak_stop", { method: "POST" })
+        .then(() => {
+          // Flash the button to confirm it worked
+          const btns = triggerBtn
+            ? [triggerBtn]
+            : qsa("button.stop-speak-btn");
+          btns.forEach(b => {
+            b.textContent = "Stopped ✓";
+            b.style.borderColor = "rgba(34,197,94,.90)";
+            b.style.color       = "#22c55e";
+            setTimeout(() => {
+              b.textContent = "Stop Speak";
+              b.style.borderColor = "";
+              b.style.color       = "";
+            }, 1200);
+          });
+        })
+        .catch(() => {});
     } catch {}
   }
 
@@ -473,7 +490,7 @@
     if (modalRunBtn)       modalRunBtn.onclick       = () => startExercise(exId);
     if (modalStopBtn)      modalStopBtn.onclick      = () => stopExercise(exId);
     if (modalSpeakBtn)     modalSpeakBtn.onclick     = () => speak(`${title}. ${desc}`);
-    if (modalStopSpeakBtn) modalStopSpeakBtn.onclick = () => stopSpeak();
+    if (modalStopSpeakBtn) modalStopSpeakBtn.onclick = () => stopSpeak(modalStopSpeakBtn);
 
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
     if (exId === "a5-ex22") startA5Commands();  else stopA5Commands();
@@ -653,7 +670,7 @@
   qsa("button.stop-speak-btn[data-stop-speak]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      stopSpeak();
+      stopSpeak(btn);
     });
   });
 

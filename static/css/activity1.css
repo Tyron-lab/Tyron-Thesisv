@@ -275,17 +275,17 @@ body{
   transform: translateY(0);
 }
 
-/* stop-speak button — distinct amber tone so it reads as "cancel" not "action" */
+/* stop-speak — red/danger so it clearly reads as "cancel audio" */
 .stop-speak-btn{
-  border-color: rgba(251,191,36,.45);
-  color: rgba(251,191,36,.95);
+  border-color: rgba(239,68,68,.55);
+  color: rgba(252,165,165,.95);
 }
 
 .stop-speak-btn:hover{
-  border-color: rgba(251,191,36,.90);
-  background: rgba(120,53,15,.25);
+  border-color: rgba(239,68,68,.90);
+  background: rgba(127,29,29,.30);
   box-shadow: 0 12px 26px rgba(0,0,0,0.45);
-  color: #fbbf24;
+  color: #fca5a5;
 }
 
 .status{

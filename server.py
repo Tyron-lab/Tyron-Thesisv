@@ -1613,7 +1613,9 @@ def api_speak():
 @app.route("/api/speak_stop", methods=["POST"])
 def api_speak_stop():
     try:
+        # Kill both espeak AND paplay — paplay holds the pipe open after espeak dies
         subprocess.call(["pkill", "-f", "espeak"])
+        subprocess.call(["pkill", "-f", "paplay"])
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
