@@ -1603,10 +1603,22 @@ def api_speak():
     if not text:
         return jsonify({"ok": False, "error": "No text provided"}), 400
     try:
-        # Use espeak piped to paplay → outputs through default PipeWire sink (VS801)
-        cmd = f'espeak "{text}" --stdout | paplay --device=bluez_output.5F_43_DA_1E_0D_99.1'
+        # Check if Bluetooth speaker is available, fall back to default sink if not
+        bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
+        check = subprocess.run(
+            ["pactl", "list", "sinks", "short"],
+            capture_output=True, text=True
+        )
+        if bt_device in check.stdout:
+            # Bluetooth speaker is connected → use it directly
+            cmd = f'espeak "{text}" --stdout | paplay --device={bt_device}'
+            sink_used = "bluetooth"
+        else:
+            # Bluetooth not ready → fall back to default sink
+            cmd = f'espeak "{text}" --stdout | paplay'
+            sink_used = "default"
         subprocess.Popen(cmd, shell=True)
-        return jsonify({"ok": True, "text": text})
+        return jsonify({"ok": True, "text": text, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
