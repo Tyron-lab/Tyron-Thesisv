@@ -538,23 +538,25 @@
   async function startExercise(exId) {
     if (!exId) return;
 
-    await syncFocusFromServer();
+    // syncFocus and setFocus call Flask directly — if Flask is unreachable, ignore and continue
+    await syncFocusFromServer().catch(() => {});
     if (currentRunningEx && currentRunningEx !== exId) {
       setStatus(exId, `BUSY (running: ${currentRunningEx})`);
       setBusyUI(currentRunningEx);
       return;
     }
 
-    await setFocus(exId, true);
+    await setFocus(exId, true).catch(() => {});
     currentRunningEx = exId;
     setBusyUI(currentRunningEx);
     setStatus(exId, "Running...", "state-running");
 
+    // Run goes through PHP backend (exercise.php) — this logs to MySQL
     const { ok, data, text } = await postJSON(API_RUN, { action: "run", exercise_id: exId });
     if (!ok) {
       const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || "Run failed");
       setStatus(exId, "Error", "state-error");
-      await setFocus(exId, false);
+      await setFocus(exId, false).catch(() => {});
       currentRunningEx = null;
       setBusyUI(null);
       throw new Error(msg);
@@ -562,7 +564,7 @@
   }
 
   async function stopExercise(requestedExId = null) {
-    await syncFocusFromServer();
+    await syncFocusFromServer().catch(() => {});
 
     if (!currentRunningEx) {
       if (requestedExId) setStatus(requestedExId, "Ready");
@@ -580,7 +582,7 @@
     setStatus(exId, "Stopping...");
 
     await postJSON(API_STOP, { action: "stop", exercise_id: exId }).catch(() => {});
-    await setFocus(exId, false);
+    await setFocus(exId, false).catch(() => {});
 
     setStatus(exId, "Stopped");
     currentRunningEx = null;
