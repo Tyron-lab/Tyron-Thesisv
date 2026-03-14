@@ -436,9 +436,17 @@
       e.preventDefault();
       e.stopPropagation();
       const exId = btn.getAttribute("data-speak") || "";
-      const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
-      const title = card?.dataset.sayTitle || qs("h3", card || document)?.textContent || "Exercise";
-      const text = card?.dataset.sayText || qs(".ex-desc", card || document)?.textContent || "";
+
+      // Walk up to find the parent exercise-card
+      const card = btn.closest(".exercise-card") || qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
+
+      const title = card?.dataset?.sayTitle
+        || card?.querySelector("h3")?.textContent?.trim()
+        || "Exercise";
+      const text = card?.dataset?.sayText
+        || card?.querySelector(".ex-desc")?.textContent?.trim()
+        || "";
+
       startSpeak(exId, `${title}. ${text}`);
     });
   });
