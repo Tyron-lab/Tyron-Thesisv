@@ -16,7 +16,8 @@
     ? ""
     : "http://" + window.location.hostname + ":5000";
 
-  const PHP_BASE   = window.location.origin + "/trainerkit";
+  // PHP backend is always on XAMPP port 80, regardless of which port this page is on
+  const PHP_BASE   = window.location.protocol + "//" + window.location.hostname + "/trainerkit";
   const API_RUN    = PHP_BASE + "/exercise.php";
   const API_STOP   = PHP_BASE + "/exercise.php";
   const API_STATUS = API_BASE + "/api/exercise_status";
