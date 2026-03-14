@@ -11,10 +11,11 @@
     ? ""
     : "http://" + window.location.hostname + ":5000";
 
+  const PHP_BASE       = window.location.origin + "/trainerkit";
   const API_STATUS     = API_BASE + "/api/exercise_status";
   const API_FOCUS      = API_BASE + "/api/focus";
   const API_A5_LATEST  = API_BASE + "/api/a5/latest";
-  const API_A5_COMMAND = API_BASE + "/api/a5/command";
+  const API_A5_COMMAND = PHP_BASE + "/relay.php";
   const API_EX24_LOGS  = API_BASE + "/api/ex24/logs";
   const API_EX24_CLEAR = API_BASE + "/api/ex24/clear";
   const API_SPEAK      = API_BASE + "/api/speak";
@@ -85,7 +86,8 @@
   }
 
   async function sendA5Command(cmd) {
-    return await postJSON(API_A5_COMMAND, cmd);
+    // Wrap through relay.php so every EX24 command gets logged to command_log in MySQL
+    return await postJSON(API_A5_COMMAND, { path: "/api/a5/command", method: "POST", body: cmd });
   }
 
   // ────────────────────────────────────────────────
