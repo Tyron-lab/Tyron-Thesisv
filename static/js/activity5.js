@@ -104,31 +104,10 @@
   }
 
   async function syncFocusFromServer() {
-    const r = await getJSON(API_FOCUS);
-    if (!r.ok || !r.data) return;
-
-    const running = !!r.data.running;
-    const exId = r.data.exercise_id || null;
-
-    if (!running) {
-      currentRunningEx = null;
-      setBusyUI(null);
-      qsa(".exercise-card[data-exercise]").forEach((card) => {
-        setStatus(card.dataset.exercise, "Ready");
-      });
-      return;
-    }
-
-    if (exId && exId !== currentRunningEx) {
-      currentRunningEx = exId;
-      setBusyUI(currentRunningEx);
-
-      qsa(".exercise-card[data-exercise]").forEach((card) => {
-        const id = card.dataset.exercise;
-        if (id === currentRunningEx) setStatus(id, "Running...", "state-running");
-        else setStatus(id, `BUSY (running: ${currentRunningEx})`);
-      });
-    }
+    // Activity 5 has no run buttons — ignore focus lock from other activities
+    // Always keep all cards clear and visible
+    currentRunningEx = null;
+    setBusyUI(null);
   }
 
   // ────────────────────────────────────────────────
@@ -398,7 +377,6 @@
 
       const exId = card.dataset.exercise || "";
       if (exId === "a5-ex24") openEx24Modal();
-      else if (exId === "a5-ex21-22") openToolsModal();
     });
 
     card.addEventListener("keydown", (e) => {
@@ -440,11 +418,7 @@
     });
   });
 
-  // Tools nav button
-  qs("#openToolsDash")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    openToolsModal();
-  });
+
 
   // Init
   qsa(".exercise-card[data-exercise]").forEach((card) => setStatus(card.dataset.exercise, "Ready"));
