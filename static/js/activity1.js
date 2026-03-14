@@ -658,7 +658,7 @@
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       try { await startExercise(btn.dataset.run); }
-      catch (err) { alert(String(err.message || err)); }
+      catch (err) { console.warn('[Run error]', err.message || err); }
     });
   });
 
@@ -666,7 +666,7 @@
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       try { await stopExercise(btn.dataset.stop); }
-      catch (err) { alert(String(err.message || err)); }
+      catch (err) { console.warn('[Stop error]', err.message || err); }
     });
   });
 
