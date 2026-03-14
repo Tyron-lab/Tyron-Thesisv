@@ -83,18 +83,6 @@ print("Available libraries:", SENSORS_AVAILABLE)
 # ────────────────────────────────────────────────
 app = Flask(__name__)
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
-
-# ✅ CORS: Allow requests from phones, Live Server, and any origin
-@app.after_request
-def add_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    return response
-
-@app.route("/api/<path:path>", methods=["OPTIONS"])
-def options_handler(path):
-    return "", 204
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
 i2c_lock = threading.Lock()
@@ -1633,6 +1621,11 @@ def api_speak():
             capture_output=True, text=True, env=audio_env
         )
         if bt_device in check.stdout:
+            # ✅ Wake up suspended Bluetooth sink before speaking
+            subprocess.run(["pactl", "set-sink-suspend", bt_device, "0"],
+                env=audio_env, capture_output=True)
+            subprocess.run(["pactl", "set-default-sink", bt_device],
+                env=audio_env, capture_output=True)
             cmd = f'espeak "{text}" -s {speed} --stdout | paplay --device={bt_device}'
             sink_used = "bluetooth"
         else:
