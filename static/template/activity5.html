@@ -13,9 +13,9 @@
   <div class="act-wrap" id="pageRoot">
 
     <div class="nav-card">
-      <a class="nav-btn" href="/static/template/activityfolder.html">← Back</a>
-      <a class="nav-btn" href="/static/template/tools.html">Tools</a>
-      <a class="nav-btn" href="/static/template/welcome.html">Home</a>
+      <a class="nav-btn" href="/activityfolder">← Back</a>
+      <a class="nav-btn" href="/tools">Tools</a>
+      <a class="nav-btn" href="/">Home</a>
     </div>
 
     <header class="act-header">
@@ -47,8 +47,6 @@
             <span><b>Output:</b> Live Dashboard</span>
           </div>
           <div class="ex-actions">
-            <button class="speak-btn" type="button" data-speak="a5-ex21-22">Speak</button>
-            <button class="stop-speak-btn" type="button" data-stop-speak="a5-ex21-22">Stop</button>
             <span class="status" data-status-for="a5-ex21-22">Ready</span>
           </div>
         </article>
@@ -72,8 +70,6 @@
             <span><b>Output:</b> Shared View</span>
           </div>
           <div class="ex-actions">
-            <button class="speak-btn" type="button" data-speak="a5-ex23">Speak</button>
-            <button class="stop-speak-btn" type="button" data-stop-speak="a5-ex23">Stop</button>
             <span class="status" data-status-for="a5-ex23">Ready</span>
           </div>
         </article>
@@ -97,8 +93,6 @@
             <span><b>Output:</b> Terminal + CSV</span>
           </div>
           <div class="ex-actions">
-            <button class="speak-btn" type="button" data-speak="a5-ex24">Speak</button>
-            <button class="stop-speak-btn" type="button" data-stop-speak="a5-ex24">Stop</button>
             <span class="status" data-status-for="a5-ex24">Ready</span>
           </div>
         </article>
@@ -122,8 +116,6 @@
             <span><b>Output:</b> Simulated Devices</span>
           </div>
           <div class="ex-actions">
-            <button class="speak-btn" type="button" data-speak="a5-ex25">Speak</button>
-            <button class="stop-speak-btn" type="button" data-stop-speak="a5-ex25">Stop</button>
             <span class="status" data-status-for="a5-ex25">Ready</span>
           </div>
         </article>
@@ -132,37 +124,6 @@
     </section>
   </div>
 
-  <!-- Tools Dashboard Modal -->
-  <div class="modal-overlay" id="toolsModal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
-      <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="Close">✕</button>
-
-      <h2 id="toolsTitle">Multi-User ESP32 MQTT Live Dashboard</h2>
-      <p>Real-time monitoring from multiple users via MQTT</p>
-
-      <div class="live-panel">
-        <div class="live-head">Live Status</div>
-        <div class="live-body">
-          <div class="live-item">
-            <div class="live-k">Connected Users</div>
-            <div class="live-v" id="userCount">—</div>
-          </div>
-          <div class="live-item">
-            <div class="live-k">Latest Message</div>
-            <div class="live-v" id="latestEvent">—</div>
-          </div>
-          <div class="live-item">
-            <div class="live-k">Last Update</div>
-            <div class="live-v" id="lastUpdate">—</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-actions">
-        <button class="stop-btn" type="button" id="toolsStopAll">Stop All Monitoring</button>
-      </div>
-    </div>
-  </div>
 
   <!-- EX24 Terminal Modal -->
   <div class="modal-overlay" id="ex24Modal" aria-hidden="true">

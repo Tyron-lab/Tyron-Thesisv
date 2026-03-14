@@ -94,33 +94,12 @@
   let currentRunningEx = null;
 
   function setBusyUI(runningExId) {
-    const hasRunning = !!runningExId;
-
+    // Activity 5 has no run buttons so busy lock styling is disabled
     qsa(".exercise-card[data-exercise]").forEach((card) => {
-      const exId = card.dataset.exercise;
-      const isThis = hasRunning && exId === runningExId;
-
-      if (hasRunning && !isThis) {
-        if (card.dataset.prevTabindex === undefined) {
-          card.dataset.prevTabindex = card.getAttribute("tabindex") ?? "";
-        }
-        card.setAttribute("aria-disabled", "true");
-        card.setAttribute("tabindex", "-1");
-        card.style.pointerEvents = "none";
-        card.style.opacity = "0.55";
-        card.style.filter = "grayscale(0.35)";
-      } else {
-        card.removeAttribute("aria-disabled");
-        const prev = card.dataset.prevTabindex;
-        if (prev !== undefined) {
-          if (prev === "") card.removeAttribute("tabindex");
-          else card.setAttribute("tabindex", prev);
-          delete card.dataset.prevTabindex;
-        }
-        card.style.pointerEvents = "";
-        card.style.opacity = "";
-        card.style.filter = "";
-      }
+      card.removeAttribute("aria-disabled");
+      card.style.pointerEvents = "";
+      card.style.opacity = "";
+      card.style.filter = "";
     });
   }
 
