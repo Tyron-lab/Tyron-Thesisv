@@ -100,7 +100,7 @@ VOSK_MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "vosk-model-small-en-us
 if not os.path.isdir(VOSK_MODEL_PATH):
     VOSK_MODEL_PATH = os.path.join(BASE_DIR, "models", "vosk-model-small-en-us-0.15")
 
-GRAMMAR      = '["open", "close", "stop", "relay", "servo", "all", "[unk]"]'
+GRAMMAR      = '["open", "close", "stop", "fast", "relay", "servo", "all", "[unk]"]'
 SAMPLE_RATE  = 48000
 VOSK_SR      = 16000
 BLOCK_MS     = 20
@@ -129,10 +129,10 @@ def handle_command(text: str):
         all_relays_on()
     elif "close" in t and "relay" in t:
         all_relays_off()
+    elif "fast" in t and "servo" in t:
+        set_servo_angle(180)
     elif "open" in t and "servo" in t:
         set_servo_angle(90)
-    elif "close" in t and "servo" in t:
-        set_servo_angle(0)
     elif "stop" in t and "servo" in t:
         servo_stop()
     elif "open" in t and "all" in t:
@@ -140,7 +140,7 @@ def handle_command(text: str):
         set_servo_angle(90)
     elif "close" in t and "all" in t:
         all_relays_off()
-        set_servo_angle(0)
+        servo_stop()
     else:
         print(f"[CMD] Unknown: '{t}'")
 
@@ -193,11 +193,11 @@ print("=" * 50)
 print("Exercise 7: Voice Activated Relay & Servo")
 print("  'open relay'  -> All Relays ON")
 print("  'close relay' -> All Relays OFF")
+print("  'fast servo'  -> Servo 180 degrees (max)")
 print("  'open servo'  -> Servo 90 degrees")
-print("  'close servo' -> Servo 0 degrees")
 print("  'stop servo'  -> Servo STOP")
 print("  'open all'    -> Relays ON + Servo 90")
-print("  'close all'   -> Relays OFF + Servo 0")
+print("  'close all'   -> Relays OFF + Servo STOP")
 print("=" * 50)
 print("Listening...")
 
