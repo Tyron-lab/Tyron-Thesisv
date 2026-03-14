@@ -16,10 +16,8 @@
     ? ""
     : "http://" + window.location.hostname + ":5000";
 
-  // PHP backend is on the Windows laptop running XAMPP (192.168.4.64)
-  const PHP_BASE   = "http://192.168.4.64/trainerkit";
-  const API_RUN    = PHP_BASE + "/exercise.php";
-  const API_STOP   = PHP_BASE + "/exercise.php";
+  const API_RUN    = API_BASE + "/api/exercise";
+  const API_STOP   = API_BASE + "/api/exercise_stop";
   const API_STATUS = API_BASE + "/api/exercise_status";
   const API_LOGS   = API_BASE + "/api/exercise_logs";
   const API_FOCUS  = API_BASE + "/api/focus";
@@ -538,25 +536,23 @@
   async function startExercise(exId) {
     if (!exId) return;
 
-    // syncFocus and setFocus call Flask directly — if Flask is unreachable, ignore and continue
-    await syncFocusFromServer().catch(() => {});
+    await syncFocusFromServer();
     if (currentRunningEx && currentRunningEx !== exId) {
       setStatus(exId, `BUSY (running: ${currentRunningEx})`);
       setBusyUI(currentRunningEx);
       return;
     }
 
-    await setFocus(exId, true).catch(() => {});
+    await setFocus(exId, true);
     currentRunningEx = exId;
     setBusyUI(currentRunningEx);
     setStatus(exId, "Running...", "state-running");
 
-    // Run goes through PHP backend (exercise.php) — this logs to MySQL
-    const { ok, data, text } = await postJSON(API_RUN, { action: "run", exercise_id: exId });
+    const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
     if (!ok) {
       const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || "Run failed");
       setStatus(exId, "Error", "state-error");
-      await setFocus(exId, false).catch(() => {});
+      await setFocus(exId, false);
       currentRunningEx = null;
       setBusyUI(null);
       throw new Error(msg);
@@ -564,7 +560,7 @@
   }
 
   async function stopExercise(requestedExId = null) {
-    await syncFocusFromServer().catch(() => {});
+    await syncFocusFromServer();
 
     if (!currentRunningEx) {
       if (requestedExId) setStatus(requestedExId, "Ready");
@@ -581,8 +577,8 @@
     const exId = currentRunningEx;
     setStatus(exId, "Stopping...");
 
-    await postJSON(API_STOP, { action: "stop", exercise_id: exId }).catch(() => {});
-    await setFocus(exId, false).catch(() => {});
+    await postJSON(API_STOP, {}).catch(() => {});
+    await setFocus(exId, false);
 
     setStatus(exId, "Stopped");
     currentRunningEx = null;
@@ -658,7 +654,7 @@
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       try { await startExercise(btn.dataset.run); }
-      catch (err) { console.warn('[Run error]', err.message || err); }
+      catch (err) { alert(String(err.message || err)); }
     });
   });
 
@@ -666,7 +662,7 @@
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       try { await stopExercise(btn.dataset.stop); }
-      catch (err) { console.warn('[Stop error]', err.message || err); }
+      catch (err) { alert(String(err.message || err)); }
     });
   });
 

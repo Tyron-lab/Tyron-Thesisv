@@ -1,26 +1,17 @@
 /* activity5.js — Group 5 + EX24 controls + EX24 terminal
    - Speak/Stop are separate buttons
    - EX24 does NOT run a python script anymore (Execute removed)
-   - FIX: API_BASE auto-detects Flask server for Live Server / phone support
-   - FIX: Smooth slower speech via espeak speed param
 */
 
 (() => {
-  // Auto-detect Flask server base URL
-  const API_BASE = window.location.port === "5000"
-    ? ""
-    : "http://" + window.location.hostname + ":5000";
+  const API_STATUS = "/api/exercise_status";
+  const API_FOCUS = "/api/focus";
 
-  // PHP backend is on the Windows laptop running XAMPP (192.168.4.64)
-  const PHP_BASE       = "http://192.168.4.64/trainerkit";
-  const API_STATUS     = API_BASE + "/api/exercise_status";
-  const API_FOCUS      = API_BASE + "/api/focus";
-  const API_A5_LATEST  = API_BASE + "/api/a5/latest";
-  const API_A5_COMMAND = PHP_BASE + "/relay.php";
-  const API_EX24_LOGS  = API_BASE + "/api/ex24/logs";
-  const API_EX24_CLEAR = API_BASE + "/api/ex24/clear";
-  const API_SPEAK      = API_BASE + "/api/speak";
-  const API_SPEAK_STOP = API_BASE + "/api/speak_stop";
+  const API_A5_LATEST = "/api/a5/latest";
+  const API_A5_COMMAND = "/api/a5/command";
+
+  const API_EX24_LOGS = "/api/ex24/logs";
+  const API_EX24_CLEAR = "/api/ex24/clear";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -87,8 +78,7 @@
   }
 
   async function sendA5Command(cmd) {
-    // Wrap through relay.php so every EX24 command gets logged to command_log in MySQL
-    return await postJSON(API_A5_COMMAND, { path: "/api/a5/command", method: "POST", body: cmd });
+    return await postJSON(API_A5_COMMAND, cmd);
   }
 
   // ────────────────────────────────────────────────
@@ -97,20 +87,62 @@
   let currentRunningEx = null;
 
   function setBusyUI(runningExId) {
-    // Activity 5 has no run buttons so busy lock styling is disabled
+    const hasRunning = !!runningExId;
+
     qsa(".exercise-card[data-exercise]").forEach((card) => {
-      card.removeAttribute("aria-disabled");
-      card.style.pointerEvents = "";
-      card.style.opacity = "";
-      card.style.filter = "";
+      const exId = card.dataset.exercise;
+      const isThis = hasRunning && exId === runningExId;
+
+      if (hasRunning && !isThis) {
+        if (card.dataset.prevTabindex === undefined) {
+          card.dataset.prevTabindex = card.getAttribute("tabindex") ?? "";
+        }
+        card.setAttribute("aria-disabled", "true");
+        card.setAttribute("tabindex", "-1");
+        card.style.pointerEvents = "none";
+        card.style.opacity = "0.55";
+        card.style.filter = "grayscale(0.35)";
+      } else {
+        card.removeAttribute("aria-disabled");
+        const prev = card.dataset.prevTabindex;
+        if (prev !== undefined) {
+          if (prev === "") card.removeAttribute("tabindex");
+          else card.setAttribute("tabindex", prev);
+          delete card.dataset.prevTabindex;
+        }
+        card.style.pointerEvents = "";
+        card.style.opacity = "";
+        card.style.filter = "";
+      }
     });
   }
 
   async function syncFocusFromServer() {
-    // Activity 5 has no run buttons — ignore focus lock from other activities
-    // Always keep all cards clear and visible
-    currentRunningEx = null;
-    setBusyUI(null);
+    const r = await getJSON(API_FOCUS);
+    if (!r.ok || !r.data) return;
+
+    const running = !!r.data.running;
+    const exId = r.data.exercise_id || null;
+
+    if (!running) {
+      currentRunningEx = null;
+      setBusyUI(null);
+      qsa(".exercise-card[data-exercise]").forEach((card) => {
+        setStatus(card.dataset.exercise, "Ready");
+      });
+      return;
+    }
+
+    if (exId && exId !== currentRunningEx) {
+      currentRunningEx = exId;
+      setBusyUI(currentRunningEx);
+
+      qsa(".exercise-card[data-exercise]").forEach((card) => {
+        const id = card.dataset.exercise;
+        if (id === currentRunningEx) setStatus(id, "Running...", "state-running");
+        else setStatus(id, `BUSY (running: ${currentRunningEx})`);
+      });
+    }
   }
 
   // ────────────────────────────────────────────────
@@ -119,7 +151,8 @@
   let speakingExId = null;
 
   function stopSpeakingOnly() {
-    fetch(API_SPEAK_STOP, { method: "POST" }).catch(() => {});
+    // Stop espeak on server
+    fetch("/api/speak_stop", { method: "POST" }).catch(() => {});
     speakingExId = null;
     qsa(".exercise-card.state-speaking").forEach(c => c.classList.remove("state-speaking"));
   }
@@ -133,11 +166,11 @@
       card?.classList.add("state-speaking");
       setStatus(exId, "Speaking...");
 
-      // Use Flask /api/speak with speed:130 for smooth voice (default espeak is 175 = too fast)
-      fetch(API_SPEAK, {
+      // Use Flask /api/speak → espeak → VS801 Bluetooth speaker
+      fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, speed: 130 }),
+        body: JSON.stringify({ text }),
       }).then(() => {
         const c = getCard(exId);
         c?.classList.remove("state-speaking");
@@ -338,15 +371,12 @@
 
     const r = await sendA5Command({ exercise_id: "a5-ex24", ...payload }).catch(() => null);
 
-    // relay.php wraps Pi response inside pi_data
-    const success = r && r.ok && r.data && (r.data.ok || (r.data.pi_data && r.data.pi_data.ok));
-    if (success) {
+    if (r && r.ok && r.data && r.data.ok) {
       pulseOk("a5-ex24");
       setStatus("a5-ex24", "OK");
-      terminalAppend(`[OK] ${pretty}`);
       return true;
     } else {
-      const msg = r?.data?.pi_data?.error || r?.data?.error || r?.text || "Command failed";
+      const msg = r?.data?.error || r?.text || "Command failed";
       terminalAppend(`[ERR] ${pretty} -> ${String(msg).trim()}`);
       setStatus("a5-ex24", "Error", "state-error");
       return false;
@@ -383,6 +413,7 @@
 
       const exId = card.dataset.exercise || "";
       if (exId === "a5-ex24") openEx24Modal();
+      else if (exId === "a5-ex21-22") openToolsModal();
     });
 
     card.addEventListener("keydown", (e) => {
@@ -399,17 +430,9 @@
       e.preventDefault();
       e.stopPropagation();
       const exId = btn.getAttribute("data-speak") || "";
-
-      // Walk up to find the parent exercise-card
-      const card = btn.closest(".exercise-card") || qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
-
-      const title = card?.dataset?.sayTitle
-        || card?.querySelector("h3")?.textContent?.trim()
-        || "Exercise";
-      const text = card?.dataset?.sayText
-        || card?.querySelector(".ex-desc")?.textContent?.trim()
-        || "";
-
+      const card = qs(`.exercise-card[data-exercise="${CSS.escape(exId)}"]`);
+      const title = card?.dataset.sayTitle || qs("h3", card || document)?.textContent || "Exercise";
+      const text = card?.dataset.sayText || qs(".ex-desc", card || document)?.textContent || "";
       startSpeak(exId, `${title}. ${text}`);
     });
   });
@@ -424,7 +447,11 @@
     });
   });
 
-
+  // Tools nav button
+  qs("#openToolsDash")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    openToolsModal();
+  });
 
   // Init
   qsa(".exercise-card[data-exercise]").forEach((card) => setStatus(card.dataset.exercise, "Ready"));
