@@ -16,8 +16,9 @@
     ? ""
     : "http://" + window.location.hostname + ":5000";
 
-  const API_RUN    = API_BASE + "/api/exercise";
-  const API_STOP   = API_BASE + "/api/exercise_stop";
+  const PHP_BASE   = window.location.origin + "/trainerkit";
+  const API_RUN    = PHP_BASE + "/exercise.php";
+  const API_STOP   = PHP_BASE + "/exercise.php";
   const API_STATUS = API_BASE + "/api/exercise_status";
   const API_LOGS   = API_BASE + "/api/exercise_logs";
   const API_FOCUS  = API_BASE + "/api/focus";
@@ -548,7 +549,7 @@
     setBusyUI(currentRunningEx);
     setStatus(exId, "Running...", "state-running");
 
-    const { ok, data, text } = await postJSON(API_RUN, { exercise_id: exId });
+    const { ok, data, text } = await postJSON(API_RUN, { action: "run", exercise_id: exId });
     if (!ok) {
       const msg = (data && (data.error || data.message)) ? (data.error || data.message) : (text || "Run failed");
       setStatus(exId, "Error", "state-error");
@@ -577,7 +578,7 @@
     const exId = currentRunningEx;
     setStatus(exId, "Stopping...");
 
-    await postJSON(API_STOP, {}).catch(() => {});
+    await postJSON(API_STOP, { action: "stop", exercise_id: exId }).catch(() => {});
     await setFocus(exId, false);
 
     setStatus(exId, "Stopped");
