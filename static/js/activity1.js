@@ -4,18 +4,26 @@
    - Stop => POST /api/exercise_stop
    - Multi-phone busy: uses /api/focus (shared)
    - Removes sensor values on cards; relies on Exercise scripts + LCD output
-   ✅ FIX: refreshRunnerStatus now shows error overlay with Python stderr
+   FIX: refreshRunnerStatus now shows error overlay with Python stderr
+   FIX: API_BASE auto-detects Flask server for Live Server / phone support
 */
 
 (() => {
-  const API_RUN = "/api/exercise";
-  const API_STOP = "/api/exercise_stop";
-  const API_STATUS = "/api/exercise_status";
-  const API_LOGS = "/api/exercise_logs";
-  const API_FOCUS = "/api/focus";
+  // Auto-detect Flask server base URL
+  // On Pi browser (port 5000) uses relative paths
+  // On VS Code Live Server or phone uses full Pi IP:5000
+  const API_BASE = window.location.port === "5000"
+    ? ""
+    : "http://" + window.location.hostname + ":5000";
 
-  const API_A5_LATEST = "/api/a5/latest";
-  const API_A5_COMMAND = "/api/a5/command";
+  const API_RUN    = API_BASE + "/api/exercise";
+  const API_STOP   = API_BASE + "/api/exercise_stop";
+  const API_STATUS = API_BASE + "/api/exercise_status";
+  const API_LOGS   = API_BASE + "/api/exercise_logs";
+  const API_FOCUS  = API_BASE + "/api/focus";
+
+  const API_A5_LATEST  = API_BASE + "/api/a5/latest";
+  const API_A5_COMMAND = API_BASE + "/api/a5/command";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -200,7 +208,7 @@
   // ────────────────────────────────────────────────
   function speak(text) {
     try {
-      fetch("/api/speak", {
+      fetch(API_BASE + "/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
@@ -210,7 +218,7 @@
 
   function stopSpeak(triggerBtn) {
     try {
-      fetch("/api/speak_stop", { method: "POST" })
+      fetch(API_BASE + "/api/speak_stop", { method: "POST" })
         .then(() => {
           // Flash the button to confirm it worked
           const btns = triggerBtn

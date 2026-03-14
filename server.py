@@ -1603,21 +1603,27 @@ def api_speak():
     if not text:
         return jsonify({"ok": False, "error": "No text provided"}), 400
     try:
-        # Check if Bluetooth speaker is available, fall back to default sink if not
+        # ✅ FIX: Set PipeWire/PulseAudio runtime env so paplay works from systemd service
+        audio_env = os.environ.copy()
+        audio_env["XDG_RUNTIME_DIR"] = "/run/user/1000"
+        audio_env["PULSE_RUNTIME_PATH"] = "/run/user/1000/pulse"
+        audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
+
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
+
+        # Check if Bluetooth sink is available
         check = subprocess.run(
             ["pactl", "list", "sinks", "short"],
-            capture_output=True, text=True
+            capture_output=True, text=True, env=audio_env
         )
         if bt_device in check.stdout:
-            # Bluetooth speaker is connected → use it directly
             cmd = f'espeak "{text}" --stdout | paplay --device={bt_device}'
             sink_used = "bluetooth"
         else:
-            # Bluetooth not ready → fall back to default sink
             cmd = f'espeak "{text}" --stdout | paplay'
             sink_used = "default"
-        subprocess.Popen(cmd, shell=True)
+
+        subprocess.Popen(cmd, shell=True, env=audio_env)
         return jsonify({"ok": True, "text": text, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
