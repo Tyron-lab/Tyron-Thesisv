@@ -1,5 +1,20 @@
-# Exercise 5: Air Pressure Reading (BMP280) + LCD via TCA9548A
-# Fix: mux settle delays + no lcd.clear() flicker + stable I2C init
+# Exercise 5: DHT11 Temperature & Humidity Alert System
+# - Reads temperature and humidity from DHT11 (D4)
+# - Displays on LCD via TCA9548A mux
+# - If temperature goes HIGH:
+#     -> LCD shows "TEMP ALERT!"
+#     -> Buzzer beeps (D21, active-low)
+#     -> All Relays ON (D27, D10, D26, D25, active-low)
+# - When temperature returns to normal:
+#     -> LCD shows normal reading
+#     -> Buzzer OFF
+#     -> All Relays OFF
+#
+# Pins:
+#   DHT11   = D4
+#   Buzzer  = D21 (active-low)
+#   Relay   = D27, D10, D26, D25 (active-low)
+#   LCD     = I2C via TCA9548A mux CH0, addr 0x27
 
 import time
 import signal
@@ -9,38 +24,75 @@ from smbus2 import SMBus
 from RPLCD.i2c import CharLCD
 
 import board
-import busio
-import adafruit_bmp280
+import digitalio
+import adafruit_dht
 
-# ---------- SETTINGS ----------
+# ────────────────────────────────────────────────
+# SETTINGS
+# ────────────────────────────────────────────────
 I2C_BUS  = 1
 MUX_ADDR = 0x70
-
 LCD_CH   = 0
 LCD_ADDR = 0x27
 LCD_COLS = 16
 LCD_ROWS = 2
 
-BMP_CH   = 2
-BMP_ADDRS = [0x76, 0x77]
+TEMP_ALERT_C  = 35.0   # Change this threshold (degrees C)
+BEEP_INTERVAL = 2.0    # Beep every N seconds during alert
 
-SEA_LEVEL_HPA = 1013.25
-# ----------------------------
+# ────────────────────────────────────────────────
+# DHT11 (D4)
+# ────────────────────────────────────────────────
+dht = adafruit_dht.DHT11(board.D4)
 
-_should_exit = False
-def _handle_term(signum, frame):
-    global _should_exit
-    _should_exit = True
+# ────────────────────────────────────────────────
+# BUZZER (active-low: False=ON, True=OFF)
+# ────────────────────────────────────────────────
+BUZZER_ACTIVE_LOW = True
+buzzer = digitalio.DigitalInOut(board.D21)
+buzzer.direction = digitalio.Direction.OUTPUT
+buzzer.value = True  # OFF on start
 
-signal.signal(signal.SIGTERM, _handle_term)
-signal.signal(signal.SIGINT, _handle_term)
+def buzzer_set(on: bool):
+    buzzer.value = (not on) if BUZZER_ACTIVE_LOW else bool(on)
 
+def buzzer_off():
+    buzzer.value = True if BUZZER_ACTIVE_LOW else False
+
+def beep(count=2, on_ms=150, off_ms=100):
+    for _ in range(count):
+        buzzer_set(True)
+        time.sleep(on_ms / 1000.0)
+        buzzer_set(False)
+        time.sleep(off_ms / 1000.0)
+
+# ────────────────────────────────────────────────
+# RELAY (active-low: True=OFF, False=ON)
+# ────────────────────────────────────────────────
+RELAY_ACTIVE_LOW = True
+RELAY_PIN_LIST   = [board.D27, board.D10, board.D26, board.D25]
+
+relay_ios = []
+for _pin in RELAY_PIN_LIST:
+    _io = digitalio.DigitalInOut(_pin)
+    _io.direction = digitalio.Direction.OUTPUT
+    _io.value = True  # OFF on start
+    relay_ios.append(_io)
+
+def all_relays_on():
+    for io in relay_ios:
+        io.value = False if RELAY_ACTIVE_LOW else True
+
+def all_relays_off():
+    for io in relay_ios:
+        io.value = True if RELAY_ACTIVE_LOW else False
+
+# ────────────────────────────────────────────────
+# LCD via TCA9548A
+# ────────────────────────────────────────────────
 def mux_select(channel: int):
-    if not (0 <= channel <= 7):
-        raise ValueError("TCA9548A channel must be 0..7")
     with SMBus(I2C_BUS) as bus:
         bus.write_byte(MUX_ADDR, 1 << channel)
-    # ✅ important: give mux a moment
     time.sleep(0.03)
 
 def lcd_init():
@@ -57,7 +109,6 @@ def lcd_init():
     return lcd
 
 def lcd_write(lcd, line1: str, line2: str = ""):
-    """Write without clear (prevents flicker + faster)."""
     mux_select(LCD_CH)
     l1 = (line1 or "").ljust(LCD_COLS)[:LCD_COLS]
     l2 = (line2 or "").ljust(LCD_COLS)[:LCD_COLS]
@@ -66,79 +117,117 @@ def lcd_write(lcd, line1: str, line2: str = ""):
     lcd.cursor_pos = (1, 0)
     lcd.write_string(l2)
 
-def bmp_init(i2c):
-    mux_select(BMP_CH)
-    last_err = None
-    for addr in BMP_ADDRS:
-        try:
-            bmp = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=addr)
-            bmp.sea_level_pressure = SEA_LEVEL_HPA
-            return bmp, addr
-        except Exception as e:
-            last_err = e
-    raise RuntimeError(f"BMP280 not found at {BMP_ADDRS}: {last_err}")
+# ────────────────────────────────────────────────
+# STOP HANDLING
+# ────────────────────────────────────────────────
+_should_exit = False
 
-print("Exercise 5 running (BMP280 + LCD)... (Stop button / Ctrl+C to stop)")
+def _handle_term(signum, frame):
+    global _should_exit
+    _should_exit = True
+
+signal.signal(signal.SIGTERM, _handle_term)
+signal.signal(signal.SIGINT,  _handle_term)
+
+# ────────────────────────────────────────────────
+# MAIN
+# ────────────────────────────────────────────────
+print("Exercise 5: DHT11 Temperature Alert System")
+print(f"  Alert threshold : {TEMP_ALERT_C}C")
+print(f"  DHT11 pin       : D4")
+print(f"  Buzzer pin      : D21 (active-low)")
+print(f"  Relay pins      : D27, D10, D26, D25 (active-low)")
+print("Stop: Stop button or Ctrl+C")
 
 # Init LCD
 lcd = None
 try:
     lcd = lcd_init()
-    lcd_write(lcd, "BMP280 Ready", "Reading...")
+    lcd_write(lcd, "DHT11 Ready", "Initializing...")
+    print("[LCD] OK")
 except Exception as e:
     print(f"[LCD] init failed, continuing without LCD: {e}")
     lcd = None
 
-# Create ONE I2C object for whole program (stable)
-i2c = busio.I2C(board.SCL, board.SDA, frequency=100000)
+alert_active = False
+beep_timer   = 0.0
+last_display = ("", "")
 
-# Init BMP280
-bmp = None
-bmp_addr = None
 try:
-    bmp, bmp_addr = bmp_init(i2c)
-    print(f"[BMP280] OK addr=0x{bmp_addr:02X} mux_ch={BMP_CH}")
-except Exception as e:
-    print(f"[BMP280] init failed: {e}")
-    if lcd:
-        try:
-            lcd_write(lcd, "BMP280 ERROR", str(e)[:16])
-        except Exception:
-            pass
     while not _should_exit:
-        time.sleep(0.3)
+        temp     = None
+        humidity = None
 
-last_print = 0.0
-
-try:
-    while not _should_exit and bmp is not None:
+        # DHT11 read
         try:
-            mux_select(BMP_CH)
-
-            temp_c = float(bmp.temperature)      # °C
-            pressure_hpa = float(bmp.pressure)   # hPa
-            pressure_kpa = pressure_hpa / 10.0   # kPa
-
-            line1 = f"T:{temp_c:5.1f}C"
-            line2 = f"P:{pressure_kpa:5.1f}kPa"
-
-            # ✅ also print every 1s so you can confirm values are updating
-            now = time.time()
-            if now - last_print > 1.0:
-                print(f"T={temp_c:.2f}C  P={pressure_hpa:.2f}hPa ({pressure_kpa:.2f}kPa)")
-                last_print = now
-
+            temp     = dht.temperature
+            humidity = dht.humidity
         except Exception as e:
-            print(f"[BMP280] read error: {e}")
-            line1 = "Read error"
-            line2 = "Check BMP280"
+            print(f"[DHT11] read error: {e}")
+            time.sleep(1.0)
+            continue
 
-        if lcd:
-            lcd_write(lcd, line1, line2)
+        if temp is None or humidity is None:
+            time.sleep(1.0)
+            continue
 
-        time.sleep(0.5)
+        now     = time.time()
+        is_high = temp >= TEMP_ALERT_C
+
+        if is_high:
+            # ALERT STATE
+            if not alert_active:
+                alert_active = True
+                all_relays_on()
+                print(f"[ALERT] Temp HIGH: {temp}C >= {TEMP_ALERT_C}C -> Relays ON")
+
+            line1 = "!! TEMP ALERT !!"
+            line2 = f"T:{temp:.1f}C H:{humidity:.0f}%"
+
+            # Beep every BEEP_INTERVAL seconds
+            if now - beep_timer >= BEEP_INTERVAL:
+                beep(count=2, on_ms=150, off_ms=100)
+                beep_timer = now
+
+        else:
+            # NORMAL STATE
+            if alert_active:
+                alert_active = False
+                all_relays_off()
+                buzzer_off()
+                print(f"[NORMAL] Temp OK: {temp}C < {TEMP_ALERT_C}C -> Relays OFF")
+
+            line1 = f"Temp: {temp:.1f} C"
+            line2 = f"Humi: {humidity:.0f} %"
+
+        print(f"T={temp:.1f}C  H={humidity:.0f}%  {'ALERT' if is_high else 'OK'}")
+
+        # Update LCD only if changed (reduce flicker)
+        if lcd and (line1, line2) != last_display:
+            try:
+                lcd_write(lcd, line1, line2)
+                last_display = (line1, line2)
+            except Exception as e:
+                print(f"[LCD] write error: {e}")
+
+        time.sleep(1.0)
 
 finally:
+    try:
+        buzzer_off()
+        buzzer.deinit()
+    except Exception:
+        pass
+    try:
+        all_relays_off()
+        for io in relay_ios:
+            io.deinit()
+    except Exception:
+        pass
+    try:
+        dht.exit()
+    except Exception:
+        pass
     if lcd:
         try:
             lcd_write(lcd, "Stopped", "")
