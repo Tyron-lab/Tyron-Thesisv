@@ -76,6 +76,25 @@ def make_in(pin, pull_up=False):
 R = make_out(board.D5, False)    # RED = DETECT
 G = make_out(board.D6, False)    # GREEN = SAFE
 
+# Buzzer (active-low: True=OFF, False=ON)
+BUZZER_ACTIVE_LOW = True
+buzzer = digitalio.DigitalInOut(board.D21)
+buzzer.direction = digitalio.Direction.OUTPUT
+buzzer.value = True  # OFF on start
+
+def buzzer_set(on: bool):
+    buzzer.value = (not on) if BUZZER_ACTIVE_LOW else bool(on)
+
+def buzzer_off():
+    buzzer.value = True if BUZZER_ACTIVE_LOW else False
+
+def beep(count=3, on_ms=100, off_ms=80):
+    for _ in range(count):
+        buzzer_set(True)
+        time.sleep(on_ms / 1000.0)
+        buzzer_set(False)
+        time.sleep(off_ms / 1000.0)
+
 # --- Gas sensor input pin ---
 GAS_PIN = board.D17
 gas = make_in(GAS_PIN, pull_up=False)
@@ -148,6 +167,12 @@ try:
 
             show_alert()
 
+            # Buzzer ON if gas is 100%
+            if level >= 100:
+                beep(count=3, on_ms=100, off_ms=80)
+            else:
+                buzzer_off()
+
             if lcd:
                 display = ("SMOKE DETECT!", f"Level: {level}%")
                 if display != last_lcd:
@@ -163,6 +188,7 @@ try:
                 print(f"✅ CLEAR (level {level}%)")
 
             show_safe()
+            buzzer_off()
 
             if lcd:
                 display = ("CLEAR / SAFE", f"Level: {level}%")
@@ -188,6 +214,11 @@ except Exception as e:
 finally:
     # ✅ Clean stop
     all_off()
+    try:
+        buzzer_off()
+        buzzer.deinit()
+    except Exception:
+        pass
 
     try:
         gas.deinit()
