@@ -338,12 +338,15 @@
 
     const r = await sendA5Command({ exercise_id: "a5-ex24", ...payload }).catch(() => null);
 
-    if (r && r.ok && r.data && r.data.ok) {
+    // relay.php wraps Pi response inside pi_data
+    const success = r && r.ok && r.data && (r.data.ok || (r.data.pi_data && r.data.pi_data.ok));
+    if (success) {
       pulseOk("a5-ex24");
       setStatus("a5-ex24", "OK");
+      terminalAppend(`[OK] ${pretty}`);
       return true;
     } else {
-      const msg = r?.data?.error || r?.text || "Command failed";
+      const msg = r?.data?.pi_data?.error || r?.data?.error || r?.text || "Command failed";
       terminalAppend(`[ERR] ${pretty} -> ${String(msg).trim()}`);
       setStatus("a5-ex24", "Error", "state-error");
       return false;
