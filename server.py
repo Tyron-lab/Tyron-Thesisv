@@ -1609,6 +1609,10 @@ def api_speak():
         audio_env["PULSE_RUNTIME_PATH"] = "/run/user/1000/pulse"
         audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
 
+        # Speed: 130 = smooth/natural, 175 = default (fast), 100 = slow
+        speed = int(data.get("speed", 130))
+        speed = max(80, min(300, speed))  # clamp between 80-300
+
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
 
         # Check if Bluetooth sink is available
@@ -1617,14 +1621,14 @@ def api_speak():
             capture_output=True, text=True, env=audio_env
         )
         if bt_device in check.stdout:
-            cmd = f'espeak "{text}" --stdout | paplay --device={bt_device}'
+            cmd = f'espeak "{text}" -s {speed} --stdout | paplay --device={bt_device}'
             sink_used = "bluetooth"
         else:
-            cmd = f'espeak "{text}" --stdout | paplay'
+            cmd = f'espeak "{text}" -s {speed} --stdout | paplay'
             sink_used = "default"
 
         subprocess.Popen(cmd, shell=True, env=audio_env)
-        return jsonify({"ok": True, "text": text, "sink": sink_used})
+        return jsonify({"ok": True, "text": text, "speed": speed, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

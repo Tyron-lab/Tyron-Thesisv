@@ -1,17 +1,24 @@
 /* activity5.js — Group 5 + EX24 controls + EX24 terminal
    - Speak/Stop are separate buttons
    - EX24 does NOT run a python script anymore (Execute removed)
+   - FIX: API_BASE auto-detects Flask server for Live Server / phone support
+   - FIX: Smooth slower speech via espeak speed param
 */
 
 (() => {
-  const API_STATUS = "/api/exercise_status";
-  const API_FOCUS = "/api/focus";
+  // Auto-detect Flask server base URL
+  const API_BASE = window.location.port === "5000"
+    ? ""
+    : "http://" + window.location.hostname + ":5000";
 
-  const API_A5_LATEST = "/api/a5/latest";
-  const API_A5_COMMAND = "/api/a5/command";
-
-  const API_EX24_LOGS = "/api/ex24/logs";
-  const API_EX24_CLEAR = "/api/ex24/clear";
+  const API_STATUS     = API_BASE + "/api/exercise_status";
+  const API_FOCUS      = API_BASE + "/api/focus";
+  const API_A5_LATEST  = API_BASE + "/api/a5/latest";
+  const API_A5_COMMAND = API_BASE + "/api/a5/command";
+  const API_EX24_LOGS  = API_BASE + "/api/ex24/logs";
+  const API_EX24_CLEAR = API_BASE + "/api/ex24/clear";
+  const API_SPEAK      = API_BASE + "/api/speak";
+  const API_SPEAK_STOP = API_BASE + "/api/speak_stop";
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -151,8 +158,7 @@
   let speakingExId = null;
 
   function stopSpeakingOnly() {
-    // Stop espeak on server
-    fetch("/api/speak_stop", { method: "POST" }).catch(() => {});
+    fetch(API_SPEAK_STOP, { method: "POST" }).catch(() => {});
     speakingExId = null;
     qsa(".exercise-card.state-speaking").forEach(c => c.classList.remove("state-speaking"));
   }
@@ -166,11 +172,11 @@
       card?.classList.add("state-speaking");
       setStatus(exId, "Speaking...");
 
-      // Use Flask /api/speak → espeak → VS801 Bluetooth speaker
-      fetch("/api/speak", {
+      // Use Flask /api/speak with speed:130 for smooth voice (default espeak is 175 = too fast)
+      fetch(API_SPEAK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, speed: 130 }),
       }).then(() => {
         const c = getCard(exId);
         c?.classList.remove("state-speaking");
