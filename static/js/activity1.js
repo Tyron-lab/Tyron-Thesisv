@@ -204,39 +204,95 @@
   }
 
   // ────────────────────────────────────────────────
-  // Speech
+  // Speech — no overlapping, button lock while speaking
   // ────────────────────────────────────────────────
-  function speak(text) {
+  let _isSpeaking = false;
+  let _speakTimer = null;
+  let _activeSpeak = null; // the btn that triggered current speech
+
+  function setSpeakingUI(speaking, activeBtn = null) {
+    _isSpeaking = speaking;
+    _activeSpeak = speaking ? activeBtn : null;
+
+    qsa("button.speak-btn").forEach((btn) => {
+      if (speaking) {
+        if (btn === activeBtn) {
+          btn.textContent = "Speaking…";
+          btn.disabled = false;
+        } else {
+          btn.disabled = true;
+          btn.style.opacity = "0.45";
+        }
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = "";
+        btn.textContent = "Speak";
+      }
+    });
+
+    if (modalSpeakBtn) {
+      if (speaking && activeBtn === modalSpeakBtn) {
+        modalSpeakBtn.textContent = "Speaking…";
+        modalSpeakBtn.disabled = false;
+      } else if (!speaking) {
+        modalSpeakBtn.textContent = "Speak";
+        modalSpeakBtn.disabled = false;
+        modalSpeakBtn.style.opacity = "";
+      } else {
+        modalSpeakBtn.disabled = true;
+        modalSpeakBtn.style.opacity = "0.45";
+      }
+    }
+  }
+
+  async function speak(text, triggerBtn) {
+    // Always stop any ongoing speech first
+    if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
+    await fetch(API_BASE + "/api/speak_stop", { method: "POST" }).catch(() => {});
+
+    // If already speaking from same button — act as toggle (stop only)
+    if (_isSpeaking && _activeSpeak === triggerBtn) {
+      setSpeakingUI(false);
+      return;
+    }
+
+    setSpeakingUI(true, triggerBtn || null);
+
     try {
-      fetch(API_BASE + "/api/speak", {
+      await fetch(API_BASE + "/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
-      }).catch(() => {});
+      });
     } catch {}
+
+    // Auto-reset UI after estimated duration (~110 wpm for piper + 2s buffer)
+    const words = text.trim().split(/\s+/).length;
+    const ms = Math.max(2000, Math.round((words / 110) * 60000) + 2000);
+    _speakTimer = setTimeout(() => {
+      setSpeakingUI(false);
+      _speakTimer = null;
+    }, ms);
   }
 
   function stopSpeak(triggerBtn) {
-    try {
-      fetch(API_BASE + "/api/speak_stop", { method: "POST" })
-        .then(() => {
-          // Flash the button to confirm it worked
-          const btns = triggerBtn
-            ? [triggerBtn]
-            : qsa("button.stop-speak-btn");
-          btns.forEach(b => {
-            b.textContent = "Stopped ✓";
-            b.style.borderColor = "rgba(34,197,94,.90)";
-            b.style.color       = "#22c55e";
-            setTimeout(() => {
-              b.textContent = "Stop Speak";
-              b.style.borderColor = "";
-              b.style.color       = "";
-            }, 1200);
-          });
-        })
-        .catch(() => {});
-    } catch {}
+    if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
+    setSpeakingUI(false);
+    fetch(API_BASE + "/api/speak_stop", { method: "POST" })
+      .then(() => {
+        const btns = triggerBtn ? [triggerBtn] : qsa("button.stop-speak-btn");
+        btns.forEach(b => {
+          b.textContent = "Stopped ✓";
+          b.style.borderColor = "rgba(34,197,94,.90)";
+          b.style.color = "#22c55e";
+          setTimeout(() => {
+            b.textContent = "Stop Speak";
+            b.style.borderColor = "";
+            b.style.color = "";
+          }, 1200);
+        });
+      })
+      .catch(() => {});
   }
 
   // ────────────────────────────────────────────────
@@ -510,7 +566,7 @@
 
     if (modalRunBtn)       modalRunBtn.onclick       = () => startExercise(exId);
     if (modalStopBtn)      modalStopBtn.onclick      = () => stopExercise(exId);
-    if (modalSpeakBtn)     modalSpeakBtn.onclick     = () => speak(`${title}. ${desc}`);
+    if (modalSpeakBtn)     modalSpeakBtn.onclick     = () => speak(`${title}. ${desc}`, modalSpeakBtn);
     if (modalStopSpeakBtn) modalStopSpeakBtn.onclick = () => stopSpeak(modalStopSpeakBtn);
 
     if (exId === "a5-ex21") startA5Telemetry(); else stopA5Telemetry();
@@ -696,7 +752,7 @@
       if (!card) return;
       const title = card.dataset.sayTitle || qs("h3", card)?.textContent || "Exercise";
       const text = card.dataset.sayText || qs(".ex-desc", card)?.textContent || "";
-      speak(`${title}. ${text}`);
+      speak(`${title}. ${text}`, btn);
     });
   });
 
