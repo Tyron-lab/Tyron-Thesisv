@@ -250,6 +250,7 @@
   const modalImg  = qs("#modalImg");
   const modalImg2 = qs("#modalImg2");
   const modalImg3 = qs("#modalImg3");
+  const modalImg4 = qs("#modalImg4");
   const modalRunBtn = qs("#modalRunBtn");
   const modalStopBtn = qs("#modalStopBtn");
   const modalSpeakBtn = qs("#modalSpeakBtn");
@@ -483,9 +484,11 @@
     const img1 = card.dataset.image  || "";
     const img2 = card.dataset.image2 || "";
     const img3 = card.dataset.image3 || "";
-    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; }
-    if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; }
-    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; }
+    const img4 = card.dataset.image4 || "";
+    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; modalImg.onerror  = () => { modalImg.hidden  = true; }; }
+    if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; modalImg2.onerror = () => { modalImg2.hidden = true; }; }
+    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; modalImg3.onerror = () => { modalImg3.hidden = true; }; }
+    if (modalImg4) { modalImg4.src = img4; modalImg4.alt = title; modalImg4.hidden = !img4; modalImg4.onerror = () => { modalImg4.hidden = true; }; }
 
     if (modalMeta) {
       modalMeta.innerHTML = "";
@@ -577,7 +580,30 @@
     const exId = currentRunningEx;
     setStatus(exId, "Stopping...");
 
+    // Send stop signal (SIGTERM)
     await postJSON(API_STOP, {}).catch(() => {});
+
+    // Poll until process is confirmed dead (max 6s, then force-stop)
+    const POLL_INTERVAL_MS = 200;
+    const FORCE_AFTER_MS   = 6000;
+    const pollStart = Date.now();
+    let confirmed = false;
+
+    while (Date.now() - pollStart < FORCE_AFTER_MS) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+      const r = await getJSON(API_STATUS).catch(() => null);
+      if (!r || !r.ok || !r.data) break;
+      if (!r.data.running) { confirmed = true; break; }
+      const elapsed = Math.round((Date.now() - pollStart) / 1000);
+      setStatus(exId, `Stopping\u2026 ${elapsed}s`);
+    }
+
+    // Still alive after 6s -> send a second stop signal
+    if (!confirmed) {
+      await postJSON(API_STOP, {}).catch(() => {});
+      await new Promise(r => setTimeout(r, 800));
+    }
+
     await setFocus(exId, false);
 
     setStatus(exId, "Stopped");

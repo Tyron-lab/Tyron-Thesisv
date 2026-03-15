@@ -415,7 +415,7 @@ body.modal-open #pageRoot {
   margin-top: 14px;
 }
 
-/* three images: img1 top-left, img2 top-right, img3 bottom-center */
+/* 2x2 grid: up to 4 images, always 2 columns */
 .modal-media-split{
   width: 100%;
   height: 100%;
@@ -431,7 +431,7 @@ body.modal-open #pageRoot {
 .modal-media-split img{
   width: 100%;
   height: auto;
-  max-height: 220px;
+  max-height: 200px;
   object-fit: contain;
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,0.08);
@@ -451,12 +451,26 @@ body.modal-open #pageRoot {
   grid-row: 1;
 }
 
-/* img3 — bottom-center spanning both columns */
+/* img3 — bottom-left */
 .modal-media-split img:nth-child(3){
-  grid-column: 1 / -1;
+  grid-column: 1;
   grid-row: 2;
-  max-width: 52%;
   max-height: 200px;
+  justify-self: center;
+}
+
+/* img4 — bottom-right */
+.modal-media-split img:nth-child(4){
+  grid-column: 2;
+  grid-row: 2;
+  max-height: 200px;
+  justify-self: center;
+}
+
+/* when only 3 images: img3 spans both columns (img4 is hidden) */
+.modal-media-split img:nth-child(3):last-child{
+  grid-column: 1 / -1;
+  max-width: 52%;
   justify-self: center;
 }
 
@@ -475,7 +489,7 @@ body.modal-open #pageRoot {
 
   .modal-media-split img{
     height: auto;
-    max-height: 160px;
+    max-height: 150px;
     object-fit: contain;
     padding: 8px;
     border-radius: 14px;
@@ -484,7 +498,8 @@ body.modal-open #pageRoot {
     box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   }
 
-  .modal-media-split img:nth-child(3){
+  .modal-media-split img:nth-child(3):last-child{
+    grid-column: 1 / -1;
     max-width: 60%;
     max-height: 150px;
   }

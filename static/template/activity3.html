@@ -30,19 +30,19 @@
         <article class="exercise-card"
           data-exercise="a3-ex11"
           data-image="/static/images/BMP.png"
-          data-image3="/static/images/TCA.png"
-        data-image2="/static/images/LCDI2C.png"
+          data-image2="/static/images/TCA.png"
+          data-image3="/static/images/LCDI2C.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 11: BMP280 Temperature & Pressure"
-          data-say-text="Reads temperature and pressure from BMP280 via I2C (through TCA9548A mux) and displays clean values on the LCD.">
+          data-say-title="Exercise 11: BMP280 Temperature and Pressure on LCD"
+          data-say-text="Reads temperature in Celsius and pressure in hectopascals from BMP280 sensor via TCA9548A I2C mux on channel 2. Displays values on LCD on channel 0. Auto-detects BMP280 at address 0x76 or 0x77. Updates every 2 seconds.">
           <div class="ex-card-head">
             <h3>Exercise 11: BMP280 on LCD</h3>
-            <span class="pill">BMP280 • I²C</span>
+            <span class="pill">BMP280 • TCA9548A • LCD</span>
           </div>
-          <p class="ex-desc">Displays real-time temperature (°C) and pressure (kPa) from BMP280 sensor on the LCD using I²C mux.</p>
+          <p class="ex-desc">Reads BMP280 (mux CH2, auto addr 0x76/0x77) every 2s. Displays temperature (°C) on line 1 and pressure (kPa) on line 2 of LCD (mux CH0). Gracefully continues without LCD if unavailable.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> BMP280 (mux CH2)</span>
-            <span><b>Output:</b> LCD (T &amp; P)</span>
+            <span><b>Input:</b> BMP280 (I²C mux CH2)</span>
+            <span><b>Output:</b> LCD (I²C mux CH0, addr 0x27)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex11">Run</button>
@@ -56,19 +56,19 @@
         <article class="exercise-card"
           data-exercise="a3-ex12"
           data-image="/static/images/MPU.png"
-          data-image3="/static/images/TCA.png"
-        data-image2="/static/images/LCDI2C.png"
+          data-image2="/static/images/TCA.png"
+          data-image3="/static/images/LCDI2C.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 12: MPU6050 Motion Status"
-          data-say-text="Reads accelerometer and gyroscope from MPU6050 via I2C and classifies motion as STILL or MOVING.">
+          data-say-title="Exercise 12: MPU6050 Motion Status on LCD"
+          data-say-text="Reads accelerometer and gyroscope data from MPU6050 via TCA9548A I2C mux on channel 1. Classifies motion as STILL or MOVING using acceleration delta above 1.2 meters per second squared or gyro magnitude above 25 degrees per second. Shows status and debug values on LCD. Updates every 250 milliseconds.">
           <div class="ex-card-head">
             <h3>Exercise 12: MPU6050 Motion Status</h3>
-            <span class="pill">MPU6050 • Motion</span>
+            <span class="pill">MPU6050 • TCA9548A • Motion</span>
           </div>
-          <p class="ex-desc">Detects movement using accel &amp; gyro thresholds. Shows STILL / MOVING + debug values on LCD.</p>
+          <p class="ex-desc">Reads MPU6050 (mux CH1, auto addr 0x68/0x69) every 250ms. Classifies as STILL or MOVING using accel delta >1.2 m/s² or gyro >25 dps. LCD shows motion status + debug values (aΔ and gyro mag).</p>
           <div class="ex-meta">
-            <span><b>Input:</b> MPU6050 (mux CH1)</span>
-            <span><b>Output:</b> LCD motion status</span>
+            <span><b>Input:</b> MPU6050 (I²C mux CH1)</span>
+            <span><b>Output:</b> LCD motion status (I²C mux CH0)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex12">Run</button>
@@ -82,19 +82,19 @@
         <article class="exercise-card"
           data-exercise="a3-ex13"
           data-image="/static/images/DHT.png"
+          data-image2="/static/images/BMP.png"
           data-image3="/static/images/GAS.png"
-        data-image2="/static/images/BMP.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 13: Multi-Sensor Formatted Display"
-          data-say-text="Cycles through DHT11, BMP280, and MQ Gas sensor readings with clean, readable formatting on the LCD.">
+          data-say-title="Exercise 13: Formatted Multi-Sensor Display"
+          data-say-text="Cycles every 3 seconds through three LCD screens: DHT11 shows temperature and humidity, BMP280 shows temperature and pressure in kilopascals, and MQ gas sensor shows level percentage with OK or ALERT status. Gas alert triggers above 30 percent. BMP280 on mux channel 2, DHT11 on D4, gas DO on D23.">
           <div class="ex-card-head">
             <h3>Exercise 13: Formatted Multi-Sensor Display</h3>
-            <span class="pill">DHT11 • BMP280 • GAS</span>
+            <span class="pill">DHT11 • BMP280 • Gas • LCD</span>
           </div>
-          <p class="ex-desc">Cycles every 3 seconds: DHT11 (T/H), BMP280 (T/P), Gas sensor (level % + ALERT/OK) with nice formatting.</p>
+          <p class="ex-desc">Cycles every 3s: Screen 1 → DHT11 (D4) T/H, Screen 2 → BMP280 (mux CH2) T/P in kPa, Screen 3 → MQ Gas (D23 DO) level % + OK/ALERT. Gas alert at ≥30%. All displayed on LCD via I²C mux CH0.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> DHT11, BMP280, MQ Gas DO</span>
-            <span><b>Output:</b> LCD (cycling screens)</span>
+            <span><b>Input:</b> DHT11 (D4), BMP280 (mux CH2), MQ Gas (D23)</span>
+            <span><b>Output:</b> LCD cycling screens (I²C mux CH0)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex13">Run</button>
@@ -108,19 +108,19 @@
         <article class="exercise-card"
           data-exercise="a3-ex14"
           data-image="/static/images/BMP.png"
+          data-image2="/static/images/MPU.png"
           data-image3="/static/images/TCA.png"
-        data-image2="/static/images/MPU.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 14: Multiple I²C Devices"
-          data-say-text="Reads from BMP280 and MPU6050 on the same I²C bus using TCA9548A mux channels and cycles their data on LCD.">
+          data-say-title="Exercise 14: Multiple I2C Devices on Same Bus"
+          data-say-text="Demonstrates BMP280 and MPU6050 sharing the same I2C bus via TCA9548A mux on different channels. Cycles every 2.5 seconds: BMP280 screen shows temperature and pressure, MPU6050 screen shows STILL or MOVING status with acceleration and gyro magnitude. Properly releases I2C bus on stop.">
           <div class="ex-card-head">
             <h3>Exercise 14: BMP280 + MPU6050</h3>
-            <span class="pill">Multi • I²C</span>
+            <span class="pill">BMP280 • MPU6050 • TCA9548A</span>
           </div>
-          <p class="ex-desc">Demonstrates two I²C sensors sharing the bus via mux. Cycles BMP280 (T/P) and MPU6050 (motion) screens.</p>
+          <p class="ex-desc">BMP280 (mux CH2) and MPU6050 (mux CH1) share I²C bus. Cycles 2.5s: BMP screen (T/P in kPa) then MPU screen (STILL/MOVING + A & G values). Properly deinits I²C and disables all mux channels on exit.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> BMP280 + MPU6050 (mux)</span>
-            <span><b>Output:</b> LCD cycling</span>
+            <span><b>Input:</b> BMP280 (mux CH2), MPU6050 (mux CH1)</span>
+            <span><b>Output:</b> LCD cycling (I²C mux CH0)</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex14">Run</button>
@@ -134,19 +134,19 @@
         <article class="exercise-card"
           data-exercise="a3-ex15"
           data-image="/static/images/TCA.png"
+          data-image2="/static/images/LED.png"
           data-image3="/static/images/LCDI2C.png"
-        data-image2="/static/images/LED.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 15: I²C Communication Check"
-          data-say-text="Scans for LCD, BMP280 and MPU6050 on the I²C bus. GREEN = all present, RED = any missing, with LCD details.">
+          data-say-title="Exercise 15: I2C Device Communication Check"
+          data-say-text="Strict I2C presence test using TCA9548A mux. Scans for LCD on channel 0, BMP280 on channel 2, and MPU6050 on channel 1. GREEN LED on D6 if all devices present, RED LED on D5 if any device missing. ORANGE LED on D13 blinks while checking. LCD shows which device is missing. Uses 500 millisecond timeout probe to handle locked bus.">
           <div class="ex-card-head">
             <h3>Exercise 15: I²C Device Check</h3>
-            <span class="pill">Error • I²C</span>
+            <span class="pill">TCA9548A • I²C Scan • LEDs</span>
           </div>
-          <p class="ex-desc">Strict I²C presence test: GREEN LED = all devices OK, RED = missing device(s). Shows exact missing sensors on LCD + orange blink while checking.</p>
+          <p class="ex-desc">Probes LCD (CH0), BMP280 (CH2), MPU6050 (CH1) every second via TCA9548A. GREEN (D6) = all present, RED (D5) = any missing, ORANGE (D13) blinks while checking. LCD shows exact missing sensor(s). 500ms timeout prevents bus hang.</p>
           <div class="ex-meta">
-            <span><b>Input:</b> I²C bus scan</span>
-            <span><b>Output:</b> RGB LEDs + LCD</span>
+            <span><b>Input:</b> I²C bus scan (mux CH0/1/2)</span>
+            <span><b>Output:</b> Green (D6), Red (D5), Orange (D13), LCD</span>
           </div>
           <div class="ex-actions">
             <button class="run-btn" type="button" data-run="a3-ex15">Run</button>
@@ -171,6 +171,7 @@
             <img id="modalImg" alt="" />
             <img id="modalImg2" alt="" />
             <img id="modalImg3" alt="" />
+            <img id="modalImg4" alt="" />
           </div>
         </div>
 

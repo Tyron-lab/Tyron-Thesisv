@@ -59,6 +59,7 @@
         data-image="/static/images/GAS.png"
         data-image3="/static/images/LCDI2C.png"
         data-image2="/static/images/LED.png"
+        data-image4="/static/images/BUZZER.png"
         tabindex="0" role="button"
         data-say-title="Exercise 2: Gas Detection"
         data-say-text="Detects gas/smoke level. Shows GREEN = safe, RED = alert on LCD and LED.">
@@ -113,6 +114,7 @@
         data-image="/static/images/ULTRASONIC.png"
         data-image3="/static/images/LED.png"
         data-image2="/static/images/LCDI2C.png"
+        data-image4="/static/images/BUZZER.png"
         tabindex="0" role="button"
         data-say-title="Exercise 4: Distance Measurement"
         data-say-text="Measures distance with HC-SR04 ultrasonic sensor. Shows value on LCD; buzzer alerts when close.">
@@ -134,23 +136,24 @@
         </div>
       </article>
 
-      <!-- EX 5: BMP280 + LCD -->
+      <!-- EX 5: DHT11 + Buzzer + Relay + LCD -->
       <article class="exercise-card"
         data-exercise="a1-ex5"
-        data-image="/static/images/BMP.png"
-        data-image3="/static/images/TCA.png"
-        data-image2="/static/images/LCDI2C.png"
+        data-image="/static/images/DHT.png"
+        data-image2="/static/images/BUZZER.png"
+        data-image3="/static/images/RELAY.png"
+        data-image4="/static/images/LCDI2C.png"
         tabindex="0" role="button"
-        data-say-title="Exercise 5: Air Pressure & Temperature"
-        data-say-text="Reads temperature and pressure from BMP280 via I²C mux and displays on LCD.">
+        data-say-title="Exercise 5: DHT11 Temperature Alert System"
+        data-say-text="Reads temperature and humidity from DHT11. If temperature is high, LCD shows TEMP ALERT, buzzer beeps, and all relays turn ON. Returns to normal when temperature drops.">
         <div class="ex-card-head">
-          <h3>Exercise 5: Air Pressure Reading</h3>
-          <span class="pill">BMP280 • I²C • LCD</span>
+          <h3>Exercise 5: DHT11 Temp Alert</h3>
+          <span class="pill">DHT11 • Buzzer • Relay • LCD</span>
         </div>
-        <p class="ex-desc">Shows temperature (°C) and pressure (hPa/kPa) from BMP280 on LCD.</p>
+        <p class="ex-desc">High temp → LCD "TEMP ALERT!", buzzer beeps, all relays ON. Normal → LCD shows temp & humidity, relays OFF.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> BMP280 (mux CH2)</span>
-          <span><b>Output:</b> LCD</span>
+          <span><b>Input:</b> DHT11 (D4)</span>
+          <span><b>Output:</b> Buzzer (D21), Relays (D27, D10, D26, D25), LCD</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a1-ex5">Run</button>
@@ -171,9 +174,10 @@
       <div class="modal-grid">
         <div class="modal-media">
           <div class="modal-media-split">
-            <img id="modalImg" alt="" />
-            <img id="modalImg2" alt="" />
-            <img id="modalImg3" alt="" />
+            <img id="modalImg" alt="" hidden />
+            <img id="modalImg2" alt="" hidden />
+            <img id="modalImg3" alt="" hidden />
+            <img id="modalImg4" alt="" hidden />
           </div>
         </div>
 

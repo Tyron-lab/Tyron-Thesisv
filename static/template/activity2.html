@@ -29,18 +29,18 @@
       <article class="exercise-card"
         data-exercise="a2-ex6"
         data-image="/static/images/MIC.png"
-        data-image3="/static/images/LCDI2C.png"
         data-image2="/static/images/LED.png"
+        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
-        data-say-title="Exercise 6: Clap Switch"
-        data-say-text="Detects single clap to toggle GREEN LED ON, double clap to turn it OFF. Uses smart noise rejection and anti-false-trigger logic.">
+        data-say-title="Exercise 6: Clap Switch using INMP441"
+        data-say-text="Detects claps using INMP441 I2S microphone on device 1 at 48000 Hz. Single clap turns GREEN LED on D6 ON. Double clap within 1 second turns it OFF. Includes 1.5 second warmup, adaptive noise threshold, spike detection, and re-arm logic to avoid false triggers.">
         <div class="ex-card-head">
           <h3>Exercise 6: Clap Switch</h3>
-          <span class="pill">INMP441 • Toggle</span>
+          <span class="pill">INMP441 • Toggle • LED</span>
         </div>
-        <p class="ex-desc">Listens for 1 clap → GREEN LED ON / 2 claps → GREEN LED OFF. Includes warmup, spike detection, and re-arm logic to avoid false triggers.</p>
+        <p class="ex-desc">1 clap → GREEN LED (D6) ON / 2 claps within 1s → OFF. Uses INMP441 I2S mic (device 1, 48kHz). Adaptive noise baseline, spike detection, 1.5s startup warmup, and re-arm gate prevent false triggers.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> INMP441 I2S microphone</span>
+          <span><b>Input:</b> INMP441 I2S mic (device 1, 48kHz)</span>
           <span><b>Output:</b> GREEN LED (D6)</span>
         </div>
         <div class="ex-actions">
@@ -55,19 +55,19 @@
       <article class="exercise-card"
         data-exercise="a2-ex7"
         data-image="/static/images/MIC.png"
-        data-image3="/static/images/LCDI2C.png"
-        data-image2="/static/images/LED.png"
+        data-image2="/static/images/RELAY.png"
+        data-image3="/static/images/SERVO.png"
         tabindex="0" role="button"
-        data-say-title="Exercise 7: Sound Level Indicator with Running Lights"
-        data-say-text="Classifies ambient sound into QUIET (GREEN), MODERATE (running lights), LOUD (solid RED). MID level shows animated traffic-light pattern.">
+        data-say-title="Exercise 7: Voice Activated Relay and Servo Controller"
+        data-say-text="Uses VOSK speech recognition with INMP441 I2S microphone. Say open relay to turn all 4 relays ON, close relay to turn them OFF. Say open servo for 90 degrees, fast servo for 180 degrees, stop servo to stop. Say open all or close all to control both. Uses Vosk small English model with grammar.">
         <div class="ex-card-head">
-          <h3>Exercise 7: Sound Level Indicator</h3>
-          <span class="pill">INMP441 • 3 Levels</span>
+          <h3>Exercise 7: Voice Relay & Servo Control</h3>
+          <span class="pill">INMP441 • VOSK • Relay • Servo</span>
         </div>
-        <p class="ex-desc">Shows sound intensity: solid GREEN = quiet, running G→O→R pattern = moderate, solid RED = loud. Uses adaptive thresholds.</p>
+        <p class="ex-desc">VOSK speech recognition controls relays (D27, D10, D26, D25) and servo (D12). Commands: "open/close relay", "open/fast/stop servo", "open/close all". Resamples 48kHz mic to 16kHz for VOSK.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> INMP441 I2S microphone</span>
-          <span><b>Output:</b> LEDs (D5 red, D6 green, D13 orange)</span>
+          <span><b>Input:</b> INMP441 I2S mic (device 1, 48kHz)</span>
+          <span><b>Output:</b> Relays (D27, D10, D26, D25), Servo (D12)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex7">Run</button>
@@ -81,19 +81,19 @@
       <article class="exercise-card"
         data-exercise="a2-ex8"
         data-image="/static/images/MIC.png"
-        data-image3="/static/images/LCDI2C.png"
         data-image2="/static/images/LED.png"
+        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 8: Noise Level Classifier"
-        data-say-text="Classifies current noise level into quiet (GREEN), moderate (ORANGE), or too noisy (RED) using adaptive thresholds and anti-flicker hold.">
+        data-say-text="Classifies ambient noise into 3 levels using INMP441 I2S microphone. GREEN LED on D6 for quiet, ORANGE LED on D13 for moderate, RED LED on D5 for too noisy. Uses adaptive thresholds with 160-sample noise baseline and 160ms anti-flicker hold time.">
         <div class="ex-card-head">
           <h3>Exercise 8: Noise Level Classifier</h3>
-          <span class="pill">INMP441 • 3 States</span>
+          <span class="pill">INMP441 • 3 States • LEDs</span>
         </div>
-        <p class="ex-desc">Real-time noise classification with hold logic to prevent rapid LED flickering. GREEN = quiet, ORANGE = moderate, RED = noisy.</p>
+        <p class="ex-desc">Real-time noise classification using INMP441 (device 1, 48kHz). GREEN (D6) = quiet, ORANGE (D13) = moderate, RED (D5) = noisy. Adaptive auto-thresholds and 160ms anti-flicker hold prevent rapid LED switching.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> INMP441 I2S microphone</span>
-          <span><b>Output:</b> LEDs (D5 red, D6 green, D13 orange)</span>
+          <span><b>Input:</b> INMP441 I2S mic (device 1, 48kHz)</span>
+          <span><b>Output:</b> Red (D5), Green (D6), Orange (D13)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex8">Run</button>
@@ -107,19 +107,19 @@
       <article class="exercise-card"
         data-exercise="a2-ex9"
         data-image="/static/images/MIC.png"
-        data-image3="/static/images/LED.png"
         data-image2="/static/images/LCDI2C.png"
+        data-image3="/static/images/TCA.png"
         tabindex="0" role="button"
-        data-say-title="Exercise 9: Voice Activated System"
-        data-say-text="Detects when someone is speaking → shows 'VOICE DETECTED' on LCD and beeps buzzer briefly. Includes cooldown and minimum duration filter.">
+        data-say-title="Exercise 9: Voice Activated System with LCD and Buzzer"
+        data-say-text="Detects sustained voice or speech using INMP441 I2S microphone. When speaking is detected for at least 200 milliseconds, LCD shows VOICE DETECTED and buzzer on D21 beeps twice. Uses adaptive threshold with 180-sample noise baseline and 1.2 second cooldown between triggers.">
         <div class="ex-card-head">
           <h3>Exercise 9: Voice Activated System</h3>
-          <span class="pill">INMP441 • Voice + LCD</span>
+          <span class="pill">INMP441 • LCD • Buzzer</span>
         </div>
-        <p class="ex-desc">Activates on sustained voice/speech: updates LCD message and beeps buzzer (2 beeps). Uses adaptive threshold and voice duration check.</p>
+        <p class="ex-desc">Detects sustained voice (≥200ms above adaptive threshold). LCD shows "VOICE DETECTED" via TCA9548A mux. Buzzer (D21, active-low) beeps twice per trigger with 1.2s cooldown. Falls back gracefully if LCD unavailable.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> INMP441 I2S microphone</span>
-          <span><b>Output:</b> LCD + Buzzer (D21)</span>
+          <span><b>Input:</b> INMP441 I2S mic (device 1, 48kHz)</span>
+          <span><b>Output:</b> LCD (I²C mux CH0), Buzzer (D21)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex9">Run</button>
@@ -133,19 +133,19 @@
       <article class="exercise-card"
         data-exercise="a2-ex10"
         data-image="/static/images/MIC.png"
-        data-image3="/static/images/LCDI2C.png"
         data-image2="/static/images/LED.png"
+        data-image3="/static/images/LCDI2C.png"
         tabindex="0" role="button"
         data-say-title="Exercise 10: Loud Sound Alert System"
-        data-say-text="Detects sudden loud sounds → activates buzzer alarm + blink RED (D5) + ORANGE (D13) LEDs. Includes hold time, cooldown, and optional LCD message.">
+        data-say-text="Detects sudden loud sounds using INMP441 I2S microphone. When loud sound is confirmed for 120 milliseconds, triggers alarm: buzzer on D21 beeps and RED LED on D5 plus ORANGE LED on D13 blink together for 2 seconds. Features 1.5 second cooldown and adaptive noise threshold. Optional LCD shows alert status.">
         <div class="ex-card-head">
           <h3>Exercise 10: Loud Sound Alert</h3>
-          <span class="pill">INMP441 • Alarm</span>
+          <span class="pill">INMP441 • Buzzer • LEDs • LCD</span>
         </div>
-        <p class="ex-desc">Triggers alarm (buzzer + blinking red/orange LEDs) when loud sound is detected for a minimum duration. Features cooldown and adaptive threshold.</p>
+        <p class="ex-desc">Triggers 2s alarm (buzzer + blinking RED D5 + ORANGE D13) when loud sound is held ≥120ms above adaptive threshold. 1.5s cooldown between alarms. Optional LCD shows "LOUD SOUND! ALERT!" via I²C mux.</p>
         <div class="ex-meta">
-          <span><b>Input:</b> INMP441 I2S microphone</span>
-          <span><b>Output:</b> Buzzer (D21) + Red LED (D5) + Orange LED (D13) + optional LCD</span>
+          <span><b>Input:</b> INMP441 I2S mic (device 1, 48kHz)</span>
+          <span><b>Output:</b> Buzzer (D21), Red (D5), Orange (D13), LCD (optional)</span>
         </div>
         <div class="ex-actions">
           <button class="run-btn" type="button" data-run="a2-ex10">Run</button>
@@ -169,6 +169,7 @@
             <img id="modalImg" alt="" />
             <img id="modalImg2" alt="" />
             <img id="modalImg3" alt="" />
+            <img id="modalImg4" alt="" />
           </div>
         </div>
 

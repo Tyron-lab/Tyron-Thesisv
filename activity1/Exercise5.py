@@ -37,7 +37,7 @@ LCD_ADDR = 0x27
 LCD_COLS = 16
 LCD_ROWS = 2
 
-TEMP_ALERT_C  = 29.0   # Change this threshold (degrees C)
+TEMP_ALERT_C  = 35.0   # Change this threshold (degrees C)
 BEEP_INTERVAL = 2.0    # Beep every N seconds during alert
 
 # ────────────────────────────────────────────────
