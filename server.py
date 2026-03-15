@@ -728,19 +728,52 @@ def _exercise_reader(proc: subprocess.Popen):
                 exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
             exercise_proc = None
 def stop_current_exercise():
+    """
+    Reliably stop the running exercise subprocess.
+    Strategy:
+      1. Send SIGTERM (polite) — gives the script time to clean up GPIO / audio
+      2. Wait up to 8 seconds for it to exit on its own
+      3. If still alive after 8 s, send SIGKILL (force) and wait 2 more seconds
+    Returns True if a process was stopped, False if nothing was running.
+    """
     global exercise_proc, exercise_stop_requested
+
     with exercise_lock:
         if exercise_proc is None or exercise_proc.poll() is not None:
-            return False
+            return False          # nothing running
+        proc = exercise_proc
         exercise_stop_requested = True
+
+    # ── Step 1: polite SIGTERM ──────────────────────────────────────────
+    try:
+        proc.terminate()          # SIGTERM
+        print("[STOP] SIGTERM sent, waiting up to 8s for clean exit...", flush=True)
+    except Exception as e:
+        print(f"[STOP] terminate() failed: {e}", flush=True)
+
+    # ── Step 2: wait up to 8 seconds (polls every 200ms) ───────────────
+    deadline = time.time() + 8.0
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            print(f"[STOP] Process exited cleanly (rc={proc.returncode})", flush=True)
+            return True
+        time.sleep(0.2)
+
+    # ── Step 3: force kill if still alive ──────────────────────────────
+    if proc.poll() is None:
+        print("[STOP] Still alive after 8s — sending SIGKILL", flush=True)
         try:
-            exercise_proc.send_signal(signal.SIGINT)
+            proc.kill()           # SIGKILL
+        except Exception as e:
+            print(f"[STOP] kill() failed: {e}", flush=True)
+        # Wait up to 2 more seconds for kernel to reap the process
+        try:
+            proc.wait(timeout=2)
+            print("[STOP] Process killed.", flush=True)
         except Exception:
-            try:
-                exercise_proc.terminate()
-            except Exception:
-                pass
-        return True
+            print("[STOP] wait() after SIGKILL timed out (zombie?)", flush=True)
+
+    return True
 # ────────────────────────────────────────────────
 # DHT / MPU / BMP / PIR / ULTRASONIC / GAS
 # ────────────────────────────────────────────────
@@ -1583,8 +1616,11 @@ def api_exercise_stop():
             })
         return jsonify({"ok": True, "stopped": True, "mode": "mqtt", "sent": {"stream": "off"}})
 
-    ok = stop_current_exercise()
-    return jsonify({"ok": bool(ok), "stopped": bool(ok)})
+    ok = stop_current_exercise()   # blocks until dead or force-killed
+    # Confirm final state
+    with exercise_lock:
+        still_running = bool(exercise_status.get("running"))
+    return jsonify({"ok": bool(ok), "stopped": bool(ok), "running": still_running})
 
 @app.route("/api/exercise_status")
 def api_exercise_status():
@@ -1609,25 +1645,11 @@ def api_speak():
         audio_env["PULSE_RUNTIME_PATH"] = "/run/user/1000/pulse"
         audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
 
-        # ── Natural voice settings ──────────────────────────────────────
-        # speed 135  = relaxed, conversational pace (default 175 is too robotic)
-        # pitch 55   = slightly warm, not flat
-        # amplitude 88 = softer/less harsh
-        # gap 7      = 7ms pause between words (adds natural rhythm)
-        # -k 5       = slight emphasis on capitalised words
-        # -v en-us   = American English (cleaner pronunciation than plain "en")
-        speed     = int(data.get("speed", 135))
-        speed     = max(80, min(300, speed))
-        pitch     = int(data.get("pitch", 55))
-        amplitude = int(data.get("amplitude", 88))
+        # Speed: 130 = smooth/natural, 175 = default (fast), 100 = slow
+        speed = int(data.get("speed", 130))
+        speed = max(80, min(300, speed))  # clamp between 80-300
 
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
-
-        # Use espeak-ng (better quality than espeak) piped via stdin
-        # to avoid shell-escaping issues with punctuation in text
-        import shlex
-        safe_text = shlex.quote(text)
-        espeak_flags = f"-v en-us -s {speed} -p {pitch} -a {amplitude} -g 7 -k 5 --stdin --stdout"
 
         # Check if Bluetooth sink is available
         check = subprocess.run(
@@ -1640,15 +1662,14 @@ def api_speak():
                 env=audio_env, capture_output=True)
             subprocess.run(["pactl", "set-default-sink", bt_device],
                 env=audio_env, capture_output=True)
-            cmd = f"echo {safe_text} | espeak-ng {espeak_flags} | paplay --device={bt_device}"
+            cmd = f'espeak "{text}" -s {speed} --stdout | paplay --device={bt_device}'
             sink_used = "bluetooth"
         else:
-            cmd = f"echo {safe_text} | espeak-ng {espeak_flags} | paplay"
+            cmd = f'espeak "{text}" -s {speed} --stdout | paplay'
             sink_used = "default"
 
         subprocess.Popen(cmd, shell=True, env=audio_env)
-        return jsonify({"ok": True, "text": text, "speed": speed,
-                        "pitch": pitch, "amplitude": amplitude, "sink": sink_used})
+        return jsonify({"ok": True, "text": text, "speed": speed, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1718,4 +1739,3 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 
     #IF  YOU CHANGE THIS YOUR GAY
-    # sudo apt install espeak-ng
