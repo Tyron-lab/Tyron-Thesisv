@@ -1641,13 +1641,10 @@ def api_exercise_logs():
 # To pre-download:
 #   python -c "from piper import PiperVoice; PiperVoice.load('en_US-lessac-medium')"
 # ────────────────────────────────────────────────
-PIPER_VOICE    = PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-amy-medium.onnx")   # change to en_US-ryan-medium for male
-PIPER_AVAILABLE = False
-try:
-    from piper import PiperVoice as _PiperVoice
-    PIPER_AVAILABLE = True
-except Exception:
-    pass
+PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-amy-medium.onnx")
+# Check for piper CLI binary (not Python package)
+PIPER_AVAILABLE = os.path.isfile("/usr/local/bin/piper-tts-bin") and os.path.isfile(PIPER_VOICE)
+print(f"[TTS] Piper available: {PIPER_AVAILABLE} | Model: {PIPER_VOICE}")
 
 @app.route("/api/speak", methods=["POST"])
 def api_speak():
