@@ -1632,6 +1632,23 @@ def api_exercise_logs():
     with exercise_log_lock:
         return jsonify({"ok": True, "stdout": "\n".join(exercise_stdout), "stderr": "\n".join(exercise_stderr)})
 
+# ────────────────────────────────────────────────
+# TTS CONFIG — piper-tts (neural, smooth) with espeak fallback
+# Install piper:  pip install piper-tts
+# Model auto-downloads to ~/.local/share/piper on first use.
+# Recommended voice: en_US-lessac-medium  (natural female)
+#   or: en_US-ryan-medium  (natural male)
+# To pre-download:
+#   python -c "from piper import PiperVoice; PiperVoice.load('en_US-lessac-medium')"
+# ────────────────────────────────────────────────
+PIPER_VOICE    = "en_US-lessac-medium"   # change to en_US-ryan-medium for male
+PIPER_AVAILABLE = False
+try:
+    from piper import PiperVoice as _PiperVoice
+    PIPER_AVAILABLE = True
+except Exception:
+    pass
+
 @app.route("/api/speak", methods=["POST"])
 def api_speak():
     data = request.json or {}
@@ -1639,44 +1656,72 @@ def api_speak():
     if not text:
         return jsonify({"ok": False, "error": "No text provided"}), 400
     try:
-        # ✅ FIX: Set PipeWire/PulseAudio runtime env so paplay works from systemd service
+        # ✅ PulseAudio / PipeWire env so audio works from systemd service
         audio_env = os.environ.copy()
-        audio_env["XDG_RUNTIME_DIR"] = "/run/user/1000"
-        audio_env["PULSE_RUNTIME_PATH"] = "/run/user/1000/pulse"
+        audio_env["XDG_RUNTIME_DIR"]        = "/run/user/1000"
+        audio_env["PULSE_RUNTIME_PATH"]     = "/run/user/1000/pulse"
         audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
-
-        # Speed: 130 = smooth/natural, 175 = default (fast), 100 = slow
-        speed = int(data.get("speed", 130))
-        speed = max(80, min(300, speed))  # clamp between 80-300
 
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
 
-        # Check if Bluetooth sink is available
+        # Detect Bluetooth sink
         check = subprocess.run(
             ["pactl", "list", "sinks", "short"],
             capture_output=True, text=True, env=audio_env
         )
-        if bt_device in check.stdout:
-            # ✅ Wake up suspended Bluetooth sink before speaking
+        use_bt = bt_device in check.stdout
+        if use_bt:
             subprocess.run(["pactl", "set-sink-suspend", bt_device, "0"],
                 env=audio_env, capture_output=True)
             subprocess.run(["pactl", "set-default-sink", bt_device],
                 env=audio_env, capture_output=True)
-            cmd = f'espeak "{text}" -s {speed} --stdout | paplay --device={bt_device}'
+            paplay_cmd = f"paplay --device={bt_device}"
             sink_used = "bluetooth"
         else:
-            cmd = f'espeak "{text}" -s {speed} --stdout | paplay'
+            paplay_cmd = "paplay"
             sink_used = "default"
 
+        # ── Piper TTS (neural, smooth) ──────────────────────────────────
+        if PIPER_AVAILABLE:
+            # piper CLI: echo "text" | piper --model <voice> --output-raw | paplay --raw ...
+            # --output-raw streams 16-bit LE PCM at 22050 Hz (lessac/ryan models)
+            safe_text = text.replace('"', '\\"').replace('`', '').replace('$', '')
+            if use_bt:
+                cmd = (
+                    f'echo "{safe_text}" | '
+                    f'piper --model {PIPER_VOICE} --output-raw | '
+                    f'paplay --raw --format=s16le --rate=22050 --channels=1 '
+                    f'--device={bt_device}'
+                )
+            else:
+                cmd = (
+                    f'echo "{safe_text}" | '
+                    f'piper --model {PIPER_VOICE} --output-raw | '
+                    f'paplay --raw --format=s16le --rate=22050 --channels=1'
+                )
+            engine = "piper"
+
+        # ── eSpeak fallback (robotic but always available) ──────────────
+        else:
+            speed = int(data.get("speed", 130))
+            speed = max(80, min(300, speed))
+            safe_text = text.replace('"', '\\"')
+            if use_bt:
+                cmd = f'espeak "{safe_text}" -s {speed} --stdout | paplay --device={bt_device}'
+            else:
+                cmd = f'espeak "{safe_text}" -s {speed} --stdout | paplay'
+            engine = "espeak"
+
         subprocess.Popen(cmd, shell=True, env=audio_env)
-        return jsonify({"ok": True, "text": text, "speed": speed, "sink": sink_used})
+        return jsonify({"ok": True, "text": text, "engine": engine, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/speak_stop", methods=["POST"])
 def api_speak_stop():
     try:
-        # Kill both espeak AND paplay — paplay holds the pipe open after espeak dies
+        # Kill piper, espeak, and paplay
+        subprocess.call(["pkill", "-f", "piper"])
         subprocess.call(["pkill", "-f", "espeak"])
         subprocess.call(["pkill", "-f", "paplay"])
         return jsonify({"ok": True})
