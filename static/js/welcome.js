@@ -1,30 +1,21 @@
 // /static/js/welcome.js
+// Tap/click ANYWHERE on screen to proceed to choices
 (() => {
-  const startBtn = document.getElementById("startBtn");
-  const hint = document.querySelector(".hint");
-
-  // Fill missing button text (your HTML had empty button)
-  if (startBtn && !startBtn.textContent.trim()) {
-    startBtn.textContent = "Start";
-  }
-
-  // Optional hint text
-  if (hint && !hint.textContent.trim()) {
-    hint.textContent = "Press Enter or click Start";
-  }
-
   function goToChoices() {
-    // If your route is /choose, use that.
-    // If your route is /choices, change this to "/choices".
     window.location.href = "/choices";
   }
 
-  if (startBtn) {
-    startBtn.addEventListener("click", goToChoices);
-  }
+  // Tap or click anywhere on screen
+  document.addEventListener("pointerup", goToChoices, { once: true });
 
-  // Enter key to start
+  // Keyboard fallback (Enter or Space)
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") goToChoices();
-  });
+    if (e.key === "Enter" || e.key === " ") goToChoices();
+  }, { once: true });
+
+  // Pulse the hint text
+  const hint = document.getElementById("tapHint");
+  if (hint) {
+    hint.style.animation = "tapPulse 1.5s ease-in-out infinite";
+  }
 })();
