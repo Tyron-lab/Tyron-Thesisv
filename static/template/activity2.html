@@ -108,7 +108,7 @@
         data-exercise="a2-ex9"
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LCDI2C.png"
-        data-image3="/static/images/TCA.png"
+        data-image3="/static/images/BUZZER.png"
         tabindex="0" role="button"
         data-say-title="Exercise 9: Voice Activated System with LCD and Buzzer"
         data-say-text="Detects sustained voice or speech using INMP441 I2S microphone. When speaking is detected for at least 200 milliseconds, LCD shows VOICE DETECTED and buzzer on D21 beeps twice. Uses adaptive threshold with 180-sample noise baseline and 1.2 second cooldown between triggers.">
@@ -135,6 +135,7 @@
         data-image="/static/images/MIC.png"
         data-image2="/static/images/LED.png"
         data-image3="/static/images/LCDI2C.png"
+        data-image4="/static/images/BUZZER.png"
         tabindex="0" role="button"
         data-say-title="Exercise 10: Loud Sound Alert System"
         data-say-text="Detects sudden loud sounds using INMP441 I2S microphone. When loud sound is confirmed for 120 milliseconds, triggers alarm: buzzer on D21 beeps and RED LED on D5 plus ORANGE LED on D13 blink together for 2 seconds. Features 1.5 second cooldown and adaptive noise threshold. Optional LCD shows alert status.">
@@ -166,10 +167,10 @@
       <div class="modal-grid">
         <div class="modal-media">
           <div class="modal-media-split">
-            <img id="modalImg" alt="" />
-            <img id="modalImg2" alt="" />
-            <img id="modalImg3" alt="" />
-            <img id="modalImg4" alt="" />
+            <img id="modalImg" alt="" hidden />
+            <img id="modalImg2" alt="" hidden />
+            <img id="modalImg3" alt="" hidden />
+            <img id="modalImg4" alt="" hidden />
           </div>
         </div>
 

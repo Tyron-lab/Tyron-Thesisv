@@ -84,6 +84,7 @@
           data-image="/static/images/DHT.png"
           data-image2="/static/images/BMP.png"
           data-image3="/static/images/GAS.png"
+          data-image4="/static/images/LCDI2C.png"
           tabindex="0" role="button"
           data-say-title="Exercise 13: Formatted Multi-Sensor Display"
           data-say-text="Cycles every 3 seconds through three LCD screens: DHT11 shows temperature and humidity, BMP280 shows temperature and pressure in kilopascals, and MQ gas sensor shows level percentage with OK or ALERT status. Gas alert triggers above 30 percent. BMP280 on mux channel 2, DHT11 on D4, gas DO on D23.">
@@ -110,6 +111,7 @@
           data-image="/static/images/BMP.png"
           data-image2="/static/images/MPU.png"
           data-image3="/static/images/TCA.png"
+          data-image4="/static/images/LCDI2C.png"
           tabindex="0" role="button"
           data-say-title="Exercise 14: Multiple I2C Devices on Same Bus"
           data-say-text="Demonstrates BMP280 and MPU6050 sharing the same I2C bus via TCA9548A mux on different channels. Cycles every 2.5 seconds: BMP280 screen shows temperature and pressure, MPU6050 screen shows STILL or MOVING status with acceleration and gyro magnitude. Properly releases I2C bus on stop.">
@@ -168,10 +170,10 @@
       <div class="modal-grid">
         <div class="modal-media">
           <div class="modal-media-split">
-            <img id="modalImg" alt="" />
-            <img id="modalImg2" alt="" />
-            <img id="modalImg3" alt="" />
-            <img id="modalImg4" alt="" />
+            <img id="modalImg" alt="" hidden />
+            <img id="modalImg2" alt="" hidden />
+            <img id="modalImg3" alt="" hidden />
+            <img id="modalImg4" alt="" hidden />
           </div>
         </div>
 

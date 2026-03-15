@@ -485,10 +485,17 @@
     const img2 = card.dataset.image2 || "";
     const img3 = card.dataset.image3 || "";
     const img4 = card.dataset.image4 || "";
-    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; modalImg.onerror  = () => { modalImg.hidden  = true; }; }
-    if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; modalImg2.onerror = () => { modalImg2.hidden = true; }; }
-    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; modalImg3.onerror = () => { modalImg3.hidden = true; }; }
-    if (modalImg4) { modalImg4.src = img4; modalImg4.alt = title; modalImg4.hidden = !img4; modalImg4.onerror = () => { modalImg4.hidden = true; }; }
+    if (modalImg)  { modalImg.src  = img1; modalImg.alt  = title; modalImg.hidden  = !img1; modalImg.onerror  = () => { modalImg.hidden  = true; updateImg3Span(); }; }
+    if (modalImg2) { modalImg2.src = img2; modalImg2.alt = title; modalImg2.hidden = !img2; modalImg2.onerror = () => { modalImg2.hidden = true; updateImg3Span(); }; }
+    if (modalImg3) { modalImg3.src = img3; modalImg3.alt = title; modalImg3.hidden = !img3; modalImg3.onerror = () => { modalImg3.hidden = true; updateImg3Span(); }; }
+    if (modalImg4) { modalImg4.src = img4; modalImg4.alt = title; modalImg4.hidden = !img4; modalImg4.onerror = () => { modalImg4.hidden = true; updateImg3Span(); }; }
+    // Span img3 across both columns when img4 is absent/hidden
+    function updateImg3Span() {
+      if (!modalImg3 || !modalImg4) return;
+      const alone = modalImg4.hidden || !img4;
+      modalImg3.classList.toggle('img3-solo', alone);
+    }
+    updateImg3Span();
 
     if (modalMeta) {
       modalMeta.innerHTML = "";

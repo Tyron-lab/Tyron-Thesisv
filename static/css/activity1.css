@@ -439,6 +439,11 @@ body.modal-open #pageRoot {
   display: block;
 }
 
+/* CRITICAL: prevent display:block from overriding hidden attribute */
+.modal-media-split img[hidden]{
+  display: none !important;
+}
+
 /* img1 — top-left */
 .modal-media-split img:nth-child(1){
   grid-column: 1;
@@ -467,8 +472,8 @@ body.modal-open #pageRoot {
   justify-self: center;
 }
 
-/* when only 3 images: img3 spans both columns (img4 is hidden) */
-.modal-media-split img:nth-child(3):last-child{
+/* when only 3 images: JS adds .img3-solo to img3 -> span both columns */
+.modal-media-split img.img3-solo{
   grid-column: 1 / -1;
   max-width: 52%;
   justify-self: center;
@@ -498,7 +503,7 @@ body.modal-open #pageRoot {
     box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   }
 
-  .modal-media-split img:nth-child(3):last-child{
+  .modal-media-split img.img3-solo{
     grid-column: 1 / -1;
     max-width: 60%;
     max-height: 150px;
