@@ -1641,7 +1641,7 @@ def api_exercise_logs():
 # To pre-download:
 #   python -c "from piper import PiperVoice; PiperVoice.load('en_US-lessac-medium')"
 # ────────────────────────────────────────────────
-PIPER_VOICE    = "en_US-amy-medium"   # change to en_US-ryan-medium for male
+PIPER_VOICE    = PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-amy-medium.onnx")   # change to en_US-ryan-medium for male
 PIPER_AVAILABLE = False
 try:
     from piper import PiperVoice as _PiperVoice
