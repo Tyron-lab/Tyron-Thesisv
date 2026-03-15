@@ -19,7 +19,7 @@
 
     <header class="act-header">
       <h1>Group 4 Activity</h1>
-      <p>Sensor-Triggered Outputs (LED • Buzzer • Relay • Servo)</p>
+      <p>Smart Trigger &amp; Response Systems</p>
     </header>
 
     <section aria-label="Activity 4 Exercises">
@@ -34,8 +34,8 @@
           data-image3="/static/images/LED.png"
         data-image2="/static/images/SERVO.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 16: PIR Motion Servo Control"
-          data-say-text="Detects motion with PIR sensor and spins continuous rotation servo fast; stops completely on no motion.">
+          data-say-title="Exercise 16: PIR to Servo Spin"
+          data-say-text="Motion becomes movement in this exercise. A PIR sensor watches the room for any sign of activity. The moment it detects someone, it sends a signal to a continuous rotation servo which immediately spins at full speed. When the room goes still again and motion stops, the servo receives a stop command and the pulses cut off completely, bringing it to a total halt.">
           <div class="ex-card-head">
             <h3>Exercise 16: PIR → Servo Spin</h3>
             <span class="pill">PIR • Servo</span>
@@ -61,8 +61,8 @@
           data-image3="/static/images/LCDI2C.png"
         data-image2="/static/images/LED.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 17: Voice-Controlled LEDs"
-          data-say-text="Uses Vosk speech recognition to turn LEDs on/off with commands like 'open red' or 'close green'. Supports red, orange, green.">
+          data-say-title="Exercise 17: Voice LED Control"
+          data-say-text="Speak and the lights obey. Using the Vosk speech recognition model, this exercise listens for color commands. Say open red and the red LED turns on. Say close red and it goes off. The same works for orange and green. Each LED responds independently so you can build any combination of colors simply by speaking to the device.">
           <div class="ex-card-head">
             <h3>Exercise 17: Voice LED Control</h3>
             <span class="pill">Mic • LEDs</span>
@@ -88,8 +88,8 @@
           data-image3="/static/images/LED.png"
         data-image2="/static/images/RELAY.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 18: Clap-Triggered Relay Pattern"
-          data-say-text="Detects claps to toggle a sequential relay pattern across 4 channels; claps again to stop and turn all off.">
+          data-say-title="Exercise 18: Clap Relay Sequence"
+          data-say-text="One clap starts the show. The microphone listens for the sharp peak of a clap, and when it hears one, the four relays begin cycling in sequence. Channel one turns on, then channel two, then three, then four, chasing each other in a loop like runway landing lights. Clap again and the sequence stops instantly, turning all relays off.">
           <div class="ex-card-head">
             <h3>Exercise 18: Clap Relay Sequence</h3>
             <span class="pill">Mic • Relays</span>
@@ -116,8 +116,8 @@
         data-image2="/static/images/LED.png"
         data-image4="/static/images/BUZZER.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 19: Intrusion Alert System"
-          data-say-text="PIR motion triggers red LED, buzzer beep pattern, and LCD alert; returns to secure on no motion.">
+          data-say-title="Exercise 19: PIR Intrusion Alert"
+          data-say-text="This exercise turns your device into a security sentinel. A PIR sensor watches the space continuously. The moment it detects movement, the red LED blazes on, the buzzer begins a rapid beeping pattern, and the LCD switches to an intruder alert message. When the movement stops and the space is clear again, the buzzer silences, the LED turns off, and the LCD returns to secure.">
           <div class="ex-card-head">
             <h3>Exercise 19: PIR Intrusion Alert</h3>
             <span class="pill">PIR • LED • Buzzer • LCD</span>
@@ -144,8 +144,8 @@
         data-image2="/static/images/SERVO.png"
         data-image4="/static/images/BUZZER.png"
           tabindex="0" role="button"
-          data-say-title="Exercise 20: Ultrasonic Object Response"
-          data-say-text="Ultrasonic detects near object (<=20cm) → servo to 90°, orange LED on, buzzer beeps; far → servo to 0° (off), all off.">
+          data-say-title="Exercise 20: Ultrasonic Smart Response"
+          data-say-text="Distance triggers everything in this exercise. An ultrasonic sensor scans the space ahead every hundred and twenty milliseconds. When an object comes within twenty centimeters, the servo arm rotates to ninety degrees and holds its position, the orange LED switches on, and the buzzer begins a steady beeping rhythm. Move the object away and the servo returns to zero, the LED goes dark, and the buzzer falls silent.">
           <div class="ex-card-head">
             <h3>Exercise 20: Ultrasonic Smart Response</h3>
             <span class="pill">HC-SR04 • Servo • LED • Buzzer</span>

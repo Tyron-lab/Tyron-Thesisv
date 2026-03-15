@@ -1609,11 +1609,25 @@ def api_speak():
         audio_env["PULSE_RUNTIME_PATH"] = "/run/user/1000/pulse"
         audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
 
-        # Speed: 130 = smooth/natural, 175 = default (fast), 100 = slow
-        speed = int(data.get("speed", 130))
-        speed = max(80, min(300, speed))  # clamp between 80-300
+        # ── Natural voice settings ──────────────────────────────────────
+        # speed 135  = relaxed, conversational pace (default 175 is too robotic)
+        # pitch 55   = slightly warm, not flat
+        # amplitude 88 = softer/less harsh
+        # gap 7      = 7ms pause between words (adds natural rhythm)
+        # -k 5       = slight emphasis on capitalised words
+        # -v en-us   = American English (cleaner pronunciation than plain "en")
+        speed     = int(data.get("speed", 135))
+        speed     = max(80, min(300, speed))
+        pitch     = int(data.get("pitch", 55))
+        amplitude = int(data.get("amplitude", 88))
 
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
+
+        # Use espeak-ng (better quality than espeak) piped via stdin
+        # to avoid shell-escaping issues with punctuation in text
+        import shlex
+        safe_text = shlex.quote(text)
+        espeak_flags = f"-v en-us -s {speed} -p {pitch} -a {amplitude} -g 7 -k 5 --stdin --stdout"
 
         # Check if Bluetooth sink is available
         check = subprocess.run(
@@ -1626,14 +1640,15 @@ def api_speak():
                 env=audio_env, capture_output=True)
             subprocess.run(["pactl", "set-default-sink", bt_device],
                 env=audio_env, capture_output=True)
-            cmd = f'espeak "{text}" -s {speed} --stdout | paplay --device={bt_device}'
+            cmd = f"echo {safe_text} | espeak-ng {espeak_flags} | paplay --device={bt_device}"
             sink_used = "bluetooth"
         else:
-            cmd = f'espeak "{text}" -s {speed} --stdout | paplay'
+            cmd = f"echo {safe_text} | espeak-ng {espeak_flags} | paplay"
             sink_used = "default"
 
         subprocess.Popen(cmd, shell=True, env=audio_env)
-        return jsonify({"ok": True, "text": text, "speed": speed, "sink": sink_used})
+        return jsonify({"ok": True, "text": text, "speed": speed,
+                        "pitch": pitch, "amplitude": amplitude, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -1703,3 +1718,4 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 
     #IF  YOU CHANGE THIS YOUR GAY
+    # sudo apt install espeak-ng
