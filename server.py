@@ -21,6 +21,7 @@ from collections import deque
 import json
 import atexit
 import queue
+import csv
 import paho.mqtt.client as mqtt
 # ────────────────────────────────────────────────
 # Conditional imports – only load what we can
@@ -88,6 +89,100 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "static", "template")
 i2c_lock = threading.Lock()
 def now_iso():
     return datetime.now().isoformat(timespec="seconds")
+
+# ────────────────────────────────────────────────
+# SIMPLE CSV LOCAL DATABASE
+# ────────────────────────────────────────────────
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+TOOL_EVENTS_CSV = os.path.join(DATA_DIR, "tool_events.csv")
+EXERCISE_EVENTS_CSV = os.path.join(DATA_DIR, "exercise_events.csv")
+EX24_EVENTS_CSV = os.path.join(DATA_DIR, "ex24_events.csv")
+SENSOR_SNAPSHOTS_CSV = os.path.join(DATA_DIR, "sensor_snapshots.csv")
+
+CSV_LOCK = threading.Lock()
+SENSOR_CSV_INTERVAL_SEC = 5.0
+_last_sensor_csv_ts = {}
+
+TOOL_HEADERS = [
+    "ts", "source", "sensor", "action", "active", "value", "ok", "error"
+]
+EXERCISE_HEADERS = [
+    "ts", "exercise_id", "event", "running", "end_reason", "exit_code", "path", "note"
+]
+EX24_HEADERS = [
+    "ts", "exercise_id", "action", "state", "color", "angle", "channel", "ok_local", "mqtt_ok", "message"
+]
+SENSOR_HEADERS = [
+    "ts", "sensor", "field", "value"
+]
+
+def _ensure_csv(path, headers):
+    try:
+        if not os.path.exists(path):
+            with CSV_LOCK:
+                if not os.path.exists(path):
+                    with open(path, "w", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        writer.writerow(headers)
+    except Exception as e:
+        print(f"[CSV] init failed for {path}: {e}", flush=True)
+
+def init_csv_db():
+    _ensure_csv(TOOL_EVENTS_CSV, TOOL_HEADERS)
+    _ensure_csv(EXERCISE_EVENTS_CSV, EXERCISE_HEADERS)
+    _ensure_csv(EX24_EVENTS_CSV, EX24_HEADERS)
+    _ensure_csv(SENSOR_SNAPSHOTS_CSV, SENSOR_HEADERS)
+
+def _append_csv(path, row):
+    try:
+        with CSV_LOCK:
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow(row)
+    except Exception as e:
+        print(f"[CSV] append failed for {path}: {e}", flush=True)
+
+def log_tool_event(source, sensor, action, active="", value="", ok=True, error=""):
+    _append_csv(TOOL_EVENTS_CSV, [
+        now_iso(), source, sensor, action, active, value, bool(ok), str(error or "")
+    ])
+
+def log_exercise_event(exercise_id, event, running="", end_reason="", exit_code="", path="", note=""):
+    _append_csv(EXERCISE_EVENTS_CSV, [
+        now_iso(), exercise_id, event, running, end_reason, exit_code, path, note
+    ])
+
+def log_ex24_event(action="", state="", color="", angle="", channel="", ok_local="", mqtt_ok="", message=""):
+    _append_csv(EX24_EVENTS_CSV, [
+        now_iso(), "a5-ex24", action, state, color, angle, channel, ok_local, mqtt_ok, message
+    ])
+
+def log_sensor_snapshot(sensor_name, values: dict, force=False):
+    now_ts = time.time()
+    last_ts = _last_sensor_csv_ts.get(sensor_name, 0.0)
+    if not force and (now_ts - last_ts) < SENSOR_CSV_INTERVAL_SEC:
+        return
+    _last_sensor_csv_ts[sensor_name] = now_ts
+    ts = now_iso()
+    for k, v in (values or {}).items():
+        if isinstance(v, (dict, list, tuple)):
+            v = json.dumps(v, default=str)
+        _append_csv(SENSOR_SNAPSHOTS_CSV, [ts, sensor_name, k, v])
+
+def csv_tail(path, limit=200):
+    try:
+        if not os.path.exists(path):
+            return []
+        with CSV_LOCK:
+            with open(path, "r", newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+        return rows[-limit:]
+    except Exception as e:
+        print(f"[CSV] tail failed for {path}: {e}", flush=True)
+        return []
+
+init_csv_db()
 # ────────────────────────────────────────────────
 # ✅ MULTI-PHONE FOCUS LOCK
 # ────────────────────────────────────────────────
@@ -136,6 +231,53 @@ def api_ex24_clear():
         EX24_LOG.clear()
     ex24_log("INFO", "Log cleared")
     return jsonify({"ok": True})
+
+@app.route("/api/csv/status", methods=["GET"])
+def api_csv_status():
+    return jsonify({
+        "ok": True,
+        "data_dir": DATA_DIR,
+        "files": {
+            "tool_events": TOOL_EVENTS_CSV,
+            "exercise_events": EXERCISE_EVENTS_CSV,
+            "ex24_events": EX24_EVENTS_CSV,
+            "sensor_snapshots": SENSOR_SNAPSHOTS_CSV,
+        }
+    })
+
+@app.route("/api/csv/<name>", methods=["GET"])
+def api_csv_read(name):
+    mapping = {
+        "tool_events": TOOL_EVENTS_CSV,
+        "exercise_events": EXERCISE_EVENTS_CSV,
+        "ex24_events": EX24_EVENTS_CSV,
+        "sensor_snapshots": SENSOR_SNAPSHOTS_CSV,
+    }
+    path = mapping.get(name)
+    if not path:
+        return jsonify({"ok": False, "error": "Unknown CSV name"}), 404
+    rows = csv_tail(path, limit=int(request.args.get("limit", 200)))
+    return jsonify({"ok": True, "name": name, "path": path, "count": len(rows), "rows": rows})
+
+@app.route("/api/csv/<name>/clear", methods=["POST"])
+def api_csv_clear(name):
+    mapping = {
+        "tool_events": (TOOL_EVENTS_CSV, TOOL_HEADERS),
+        "exercise_events": (EXERCISE_EVENTS_CSV, EXERCISE_HEADERS),
+        "ex24_events": (EX24_EVENTS_CSV, EX24_HEADERS),
+        "sensor_snapshots": (SENSOR_SNAPSHOTS_CSV, SENSOR_HEADERS),
+    }
+    item = mapping.get(name)
+    if not item:
+        return jsonify({"ok": False, "error": "Unknown CSV name"}), 404
+    path, headers = item
+    try:
+        with CSV_LOCK:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow(headers)
+        return jsonify({"ok": True, "name": name, "path": path})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 # ────────────────────────────────────────────────
 # SENSOR DATA/STATE
 # ────────────────────────────────────────────────
@@ -586,46 +728,60 @@ def leds_deinit():
 def api_a5_command():
     payload = request.json or {}
     is_ex24 = (payload.get("exercise_id") == "a5-ex24")
+    action = ""
+    state = ""
+    color = ""
+    angle = ""
+    channel = ""
+    ok_local = True
+    mqtt_ok = True
+    mqtt_err = ""
     try:
         if is_ex24:
             action = (payload.get("action") or "").strip().lower()
-            ok_local = True
             if action == "buzzer":
                 st = (payload.get("state") == "on")
+                state = "on" if st else "off"
                 ok_local = set_buzzer(st)
-                ex24_log("INFO", f"BUZZER -> {'on' if st else 'off'}")
+                ex24_log("INFO", f"BUZZER -> {state}")
             elif action == "led":
-                color = payload.get("color", "off")
+                color = str(payload.get("color", "off")).strip().lower()
+                state = color
                 ok_local = set_led_color(color)
                 ex24_log("INFO", f"LED -> {color}")
             elif action == "servo":
-                # ✅ FIX: state="stop" sends neutral pulse then cuts signal
                 servo_state = str(payload.get("state", "")).strip().lower()
                 if servo_state == "stop":
+                    state = "stop"
                     stop_servo()
                     ok_local = True
                     ex24_log("INFO", "SERVO -> STOP (neutral + cut)")
                 else:
                     ang = int(payload.get("angle", 0))
+                    angle = ang
+                    state = "move"
                     ok_local = set_servo_angle(ang)
                     ex24_log("INFO", f"SERVO -> angle={ang}")
             elif action == "relay":
                 ch = payload.get("ch")
+                channel = ch
                 st = (payload.get("state") == "on")
+                state = "on" if st else "off"
                 if str(ch).strip().lower() == "all":
-                    # ✅ FIX: was hardcoded False — now respects actual state
                     ok_local = set_all_relays(st)
-                    ex24_log("INFO", f"RELAY -> all {'on' if st else 'off'}")
+                    ex24_log("INFO", f"RELAY -> all {state}")
                 else:
                     ok_local = set_relay(int(ch), st)
-                    ex24_log("INFO", f"RELAY -> ch={ch} {'on' if st else 'off'}")
+                    ex24_log("INFO", f"RELAY -> ch={ch} {state}")
             else:
                 ok_local = False
                 ex24_log("ERR", f"Unknown action: {action}")
+
             if not ok_local:
+                log_ex24_event(action=action, state=state, color=color, angle=angle, channel=channel,
+                               ok_local=False, mqtt_ok=False, message="Local GPIO action failed")
                 return jsonify({"ok": False, "error": "Local GPIO action failed", "payload": payload}), 500
-        mqtt_ok = True
-        mqtt_err = ""
+
         try:
             a5_send_cmd(payload)
         except Exception as e:
@@ -633,10 +789,23 @@ def api_a5_command():
             mqtt_err = str(e)
             if is_ex24:
                 ex24_log("WARN", f"MQTT publish skipped/failed: {mqtt_err}")
+
+        if is_ex24:
+            log_ex24_event(action=action, state=state, color=color, angle=angle, channel=channel,
+                           ok_local=ok_local, mqtt_ok=mqtt_ok, message=(mqtt_err or "OK"))
+        else:
+            log_tool_event("/api/a5/command", str(payload.get("device") or "A5"), "command",
+                           active="", value=json.dumps(payload, default=str), ok=mqtt_ok, error=mqtt_err)
+
         return jsonify({"ok": True, "sent": payload, "mqtt_ok": mqtt_ok, "mqtt_error": mqtt_err})
     except Exception as e:
         if is_ex24:
             ex24_log("ERR", f"EX24 command failed: {e}")
+            log_ex24_event(action=action, state=state, color=color, angle=angle, channel=channel,
+                           ok_local=False, mqtt_ok=False, message=str(e))
+        else:
+            log_tool_event("/api/a5/command", str(payload.get("device") or "A5"), "command",
+                           active="", value=json.dumps(payload, default=str), ok=False, error=str(e))
         return jsonify({"ok": False, "error": str(e)}), 500
 # ────────────────────────────────────────────────
 # EXERCISE MAP (Mode B uses this)
@@ -726,6 +895,15 @@ def _exercise_reader(proc: subprocess.Popen):
                 exercise_status["end_reason"] = "stopped"
             else:
                 exercise_status["end_reason"] = "finished" if (exit_code == 0) else "error"
+            log_exercise_event(
+                exercise_status.get("exercise_id"),
+                "end",
+                running=False,
+                end_reason=exercise_status.get("end_reason"),
+                exit_code=exit_code,
+                path=EXERCISE_MAP.get(exercise_status.get("exercise_id"), ""),
+                note="reader finished",
+            )
             exercise_proc = None
 def stop_current_exercise():
     """
@@ -1105,6 +1283,11 @@ def sensor_reader(sensor_name):
                 clear_error("MHMQ")
         except Exception as e:
             set_error(sensor_name, e)
+        try:
+            if sensor_name in sensor_data:
+                log_sensor_snapshot(sensor_name, sensor_data.get(sensor_name, {}))
+        except Exception:
+            pass
         time.sleep(1.0)
 # ────────────────────────────────────────────────
 # MIC (VOSK + LIVE WAVE)
@@ -1380,9 +1563,14 @@ def api_mic_command():
     if request.method == "POST":
         data = request.json or {}
         if data.get("clear"):
+            old_cmd = sensor_data["MIC"].get("command", "")
             sensor_data["MIC"]["command"] = ""
             sensor_data["MIC"]["command_at"] = None
+            log_tool_event("/api/mic_command", "MIC", "clear_command",
+                           active=sensor_state.get("MIC"), value=old_cmd, ok=True, error="")
         return jsonify({"ok": True, "cleared": True})
+    log_tool_event("/api/mic_command", "MIC", "read_command",
+                   active=sensor_state.get("MIC"), value=sensor_data["MIC"].get("command", ""), ok=True, error="")
     return jsonify({
         "ok": True,
         "command": sensor_data["MIC"].get("command", ""),
@@ -1401,6 +1589,9 @@ def toggle_sensor():
 
     if sensor == "BUZZER":
         ok = set_buzzer(active)
+        log_tool_event("/api/toggle", "BUZZER", "toggle", active=active,
+                       value=f"on={sensor_data['BUZZER']['on']}", ok=ok,
+                       error=sensor_data["BUZZER"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": active,
             "on": sensor_data["BUZZER"]["on"], "active_low": BUZZER_ACTIVE_LOW,
@@ -1409,6 +1600,9 @@ def toggle_sensor():
 
     if sensor == "LCD_TOOL":
         ok = lcd_write("LCD READY", now_iso()[-8:]) if active else lcd_clear()
+        log_tool_event("/api/toggle", "LCD_TOOL", "toggle", active=active,
+                       value=f"{sensor_data['LCD_TOOL']['line1']} | {sensor_data['LCD_TOOL']['line2']}",
+                       ok=ok, error=sensor_data["LCD_TOOL"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": active,
             "line1": sensor_data["LCD_TOOL"]["line1"], "line2": sensor_data["LCD_TOOL"]["line2"],
@@ -1424,6 +1618,9 @@ def toggle_sensor():
             set_all_relays(False)
             release_relay()
             ok = True
+        log_tool_event("/api/toggle", "Relay", "toggle", active=bool(sensor_state[sensor]),
+                       value=json.dumps(sensor_data["Relay"], default=str), ok=ok,
+                       error=sensor_data["Relay"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
             "relay": sensor_data["Relay"],
@@ -1439,6 +1636,9 @@ def toggle_sensor():
             stop_servo()
             sensor_data["servomotor"].update({"angle": 0, "last_update": now_iso(), "error": ""})
             ok = True
+        log_tool_event("/api/toggle", "servomotor", "toggle", active=bool(sensor_state[sensor]),
+                       value=json.dumps(sensor_data["servomotor"], default=str), ok=ok,
+                       error=sensor_data["servomotor"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
             "servo": sensor_data["servomotor"],
@@ -1453,6 +1653,9 @@ def toggle_sensor():
         else:
             mic_stop()
             ok = True
+        log_tool_event("/api/toggle", "MIC", "toggle", active=bool(sensor_state[sensor]),
+                       value=json.dumps(sensor_data["MIC"], default=str), ok=ok,
+                       error=sensor_data["MIC"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
             "mic": sensor_data["MIC"],
@@ -1468,26 +1671,31 @@ def toggle_sensor():
             leds_off()
             leds_deinit()
             ok = True
+        log_tool_event("/api/toggle", "LED", "toggle", active=bool(sensor_state[sensor]),
+                       value=json.dumps(sensor_data["LED"], default=str), ok=ok,
+                       error=sensor_data["LED"]["error"] if not ok else "")
         return jsonify({
             "ok": bool(ok), "sensor": sensor, "active": bool(sensor_state[sensor]),
             "led": sensor_data["LED"],
             "error": sensor_data["LED"]["error"] if not ok else ""
         }), (200 if ok else 500)
 
-    # ✅ Regular GPIO sensors: start/stop reader loop
     if active:
         if not ensure_sensor_init(sensor):
             sensor_state[sensor] = False
+            log_tool_event("/api/toggle", sensor, "toggle", active=False, value="",
+                           ok=False, error=sensor_data[sensor]["error"])
             return jsonify({"ok": False, "sensor": sensor, "active": False, "error": sensor_data[sensor]["error"]}), 500
         running_flags[sensor] = True
         if sensor not in threads or not threads[sensor].is_alive():
             threads[sensor] = threading.Thread(target=sensor_reader, args=(sensor,), daemon=True)
             threads[sensor].start()
     else:
-        # ✅ FIX: stop reader thread AND release GPIO so the pin is free for Exercise scripts
         running_flags[sensor] = False
         release_sensor_gpio(sensor)
 
+    log_tool_event("/api/toggle", sensor, "toggle", active=active,
+                   value=json.dumps(sensor_data.get(sensor, {}), default=str), ok=True, error="")
     return jsonify({"ok": True, "sensor": sensor, "active": active})
 
 @app.route("/api/buzzer", methods=["POST"])
@@ -1497,10 +1705,17 @@ def api_buzzer():
     if mode == "toggle":
         desired = not bool(sensor_data["BUZZER"]["on"])
         ok = set_buzzer(desired)
+        log_tool_event("/api/buzzer", "BUZZER", "toggle", active=desired,
+                       value=f"on={sensor_data['BUZZER']['on']}", ok=ok,
+                       error=sensor_data["BUZZER"]["error"] if not ok else "")
         return jsonify({"ok": bool(ok), "on": sensor_data["BUZZER"]["on"], "error": sensor_data["BUZZER"]["error"] if not ok else ""}), (200 if ok else 500)
     if mode == "beep":
         beep(count=int(data.get("count", 2)), on_ms=int(data.get("on_ms", 140)), off_ms=int(data.get("off_ms", 140)))
+        log_tool_event("/api/buzzer", "BUZZER", "beep", active=False,
+                       value=json.dumps({"count": int(data.get("count", 2)), "on_ms": int(data.get("on_ms", 140)), "off_ms": int(data.get("off_ms", 140))}),
+                       ok=True, error="")
         return jsonify({"ok": True, "on": False})
+    log_tool_event("/api/buzzer", "BUZZER", mode, active="", value="", ok=False, error="Unknown mode")
     return jsonify({"ok": False, "error": "Unknown mode"}), 400
 
 @app.route("/api/lcd", methods=["POST"])
@@ -1508,10 +1723,15 @@ def api_lcd():
     data = request.json or {}
     if data.get("clear"):
         ok = lcd_clear()
+        log_tool_event("/api/lcd", "LCD_TOOL", "clear", active=sensor_state.get("LCD_TOOL"),
+                       value="", ok=ok, error=sensor_data["LCD_TOOL"]["error"] if not ok else "")
         return jsonify({"ok": bool(ok), "line1": "", "line2": "", "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
     line1 = (data.get("line1") or "").strip()
     line2 = (data.get("line2") or "").strip()
     ok = lcd_write(line1, line2)
+    log_tool_event("/api/lcd", "LCD_TOOL", "write", active=sensor_state.get("LCD_TOOL"),
+                   value=f"{line1} | {line2}", ok=ok,
+                   error=sensor_data["LCD_TOOL"]["error"] if not ok else "")
     return jsonify({"ok": bool(ok), "line1": line1, "line2": line2, "error": sensor_data["LCD_TOOL"]["error"] if not ok else ""}), (200 if ok else 500)
 
 # ────────────────────────────────────────────────
@@ -1523,13 +1743,80 @@ def api_exercise_run():
     data = request.json or {}
     ex_id = data.get("exercise_id") or data.get("id")
     if not ex_id:
+        log_exercise_event("", "start_failed", running=False, note="Missing exercise_id")
         return jsonify({"ok": False, "error": "Missing exercise_id"}), 400
 
-    # a5-ex21 special (MQTT stream ON)
     if ex_id == "a5-ex21":
         try:
             a5_send_cmd({"stream": "on"})
         except Exception as e:
+            log_exercise_event(ex_id, "start_failed", running=False, path="mqtt", note=str(e))
+            return jsonify({"ok": False, "error": str(e)}), 500
+        with exercise_lock:
+            exercise_status.update({
+                "exercise_id": ex_id,
+                "running": True,
+                "ended": False,
+                "end_reason": "",
+                "exit_code": None,
+                "started_at": now_iso(),
+                "ended_at": None,
+            })
+        log_exercise_event(ex_id, "start", running=True, path="mqtt", note="A5 stream on")
+        return jsonify({"ok": True, "exercise_id": ex_id, "started": True, "mode": "mqtt", "sent": {"stream": "on"}})
+
+    if ex_id not in EXERCISE_MAP:
+        log_exercise_event(ex_id, "start_failed", running=False, note=f"Unknown exercise_id: {ex_id}")
+        return jsonify({"ok": False, "error": f"Unknown exercise_id: {ex_id}"}), 400
+
+    script_path = EXERCISE_MAP[ex_id]
+    if not os.path.exists(script_path):
+        log_exercise_event(ex_id, "start_failed", running=False, path=script_path, note="File not found")
+        return jsonify({"ok": False, "error": f"File not found: {script_path}"}), 404
+
+    with exercise_lock:
+        if exercise_proc is not None and exercise_proc.poll() is None:
+            stop_current_exercise()
+
+        release_all_sensor_gpio()
+
+        with exercise_log_lock:
+            exercise_stdout.clear()
+            exercise_stderr.clear()
+
+        exercise_stop_requested = False
+        exercise_status.update({
+            "exercise_id": ex_id,
+            "running": True,
+            "ended": False,
+            "end_reason": "",
+            "exit_code": None,
+            "started_at": now_iso(),
+            "ended_at": None,
+        })
+        try:
+            exercise_proc = subprocess.Popen(
+                [sys.executable, script_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+            exercise_reader_thread = threading.Thread(target=_exercise_reader, args=(exercise_proc,), daemon=True)
+            exercise_reader_thread.start()
+            log_exercise_event(ex_id, "start", running=True, path=script_path, note="subprocess started")
+            return jsonify({"ok": True, "exercise_id": ex_id, "started": True, "path": script_path})
+        except Exception as e:
+            exercise_proc = None
+            exercise_status.update({
+                "running": False,
+                "ended": True,
+                "end_reason": "error",
+                "exit_code": -1,
+                "ended_at": now_iso(),
+            })
+            log_exercise_event(ex_id, "start_failed", running=False, path=script_path, note=str(e))
             return jsonify({"ok": False, "error": str(e)}), 500
         with exercise_lock:
             exercise_status.update({
@@ -1600,11 +1887,11 @@ def api_exercise_stop():
         current = exercise_status.get("exercise_id")
         running = bool(exercise_status.get("running"))
 
-    # a5-ex21 special (MQTT stream OFF)
     if running and current == "a5-ex21":
         try:
             a5_send_cmd({"stream": "off"})
         except Exception as e:
+            log_exercise_event(current, "stop_failed", running=True, path="mqtt", note=str(e))
             return jsonify({"ok": False, "error": str(e)}), 500
         with exercise_lock:
             exercise_status.update({
@@ -1614,12 +1901,16 @@ def api_exercise_stop():
                 "exit_code": 0,
                 "ended_at": now_iso(),
             })
+        log_exercise_event(current, "stop_request", running=True, end_reason="stopped", path="mqtt", note="A5 stream off")
         return jsonify({"ok": True, "stopped": True, "mode": "mqtt", "sent": {"stream": "off"}})
 
-    ok = stop_current_exercise()   # blocks until dead or force-killed
-    # Confirm final state
+    ok = stop_current_exercise()
     with exercise_lock:
         still_running = bool(exercise_status.get("running"))
+
+    log_exercise_event(current or "", "stop_request", running=running,
+                       end_reason="stopped" if ok else "", path=EXERCISE_MAP.get(current, "") if current else "",
+                       note="manual stop requested")
     return jsonify({"ok": bool(ok), "stopped": bool(ok), "running": still_running})
 
 @app.route("/api/exercise_status")
