@@ -245,17 +245,13 @@
     }
   }
 
-  function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    return fetch(url, { ...options, signal: controller.signal })
-      .finally(() => clearTimeout(timer));
-  }
-
+  // ✅ FIX: speak() is no longer async-blocked on the server response.
+  // The /api/speak POST is fired-and-forgotten so the UI never hangs,
+  // even if PulseAudio / pactl is slow to respond on the Pi.
   function speak(text, triggerBtn) {
-    // Always stop any ongoing speech first (fire-and-forget, no await)
+    // Always stop any ongoing speech first (fire-and-forget — don't await)
     if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
-    fetchWithTimeout(API_BASE + "/api/speak_stop", { method: "POST" }, 3000).catch(() => {});
+    fetch(API_BASE + "/api/speak_stop", { method: "POST" }).catch(() => {});
 
     // If already speaking from same button — act as toggle (stop only)
     if (_isSpeaking && _activeSpeak === triggerBtn) {
@@ -265,20 +261,14 @@
 
     setSpeakingUI(true, triggerBtn || null);
 
-    // Fire speak request WITHOUT awaiting — prevents page hang if server is slow/unresponsive
-    fetchWithTimeout(
-      API_BASE + "/api/speak",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      },
-      8000  // 8s hard timeout — aborts if server doesn't respond
-    ).catch(() => {
-      // Server timeout or error: reset UI so user isn't stuck
-      setSpeakingUI(false);
-      if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
-    });
+    // ✅ FIX: fire-and-forget — do NOT await this fetch.
+    // Awaiting it caused the entire UI to freeze while the server was
+    // blocked on the pactl sink-detection subprocess.
+    fetch(API_BASE + "/api/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).catch(() => {});
 
     // Auto-reset UI after estimated duration (~110 wpm for piper + 2s buffer)
     const words = text.trim().split(/\s+/).length;
@@ -292,7 +282,7 @@
   function stopSpeak(triggerBtn) {
     if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
     setSpeakingUI(false);
-    fetchWithTimeout(API_BASE + "/api/speak_stop", { method: "POST" }, 3000)
+    fetch(API_BASE + "/api/speak_stop", { method: "POST" })
       .then(() => {
         const btns = triggerBtn ? [triggerBtn] : qsa("button.stop-speak-btn");
         btns.forEach(b => {

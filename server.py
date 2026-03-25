@@ -1655,23 +1655,30 @@ def api_speak():
     try:
         # ✅ PulseAudio / PipeWire env so audio works from systemd service
         audio_env = os.environ.copy()
-        audio_env["XDG_RUNTIME_DIR"]        = "/run/user/1000"
-        audio_env["PULSE_RUNTIME_PATH"]     = "/run/user/1000/pulse"
+        audio_env["XDG_RUNTIME_DIR"]          = "/run/user/1000"
+        audio_env["PULSE_RUNTIME_PATH"]       = "/run/user/1000/pulse"
         audio_env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
 
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
 
-        # Detect Bluetooth sink
-        check = subprocess.run(
-            ["pactl", "list", "sinks", "short"],
-            capture_output=True, text=True, env=audio_env
-        )
-        use_bt = bt_device in check.stdout
+        # ✅ FIX: add timeout=3 so a slow/hung PulseAudio daemon cannot block
+        # the Flask thread indefinitely and freeze the browser UI.
+        try:
+            check = subprocess.run(
+                ["pactl", "list", "sinks", "short"],
+                capture_output=True, text=True, env=audio_env,
+                timeout=3
+            )
+        except subprocess.TimeoutExpired:
+            check = None
+
+        use_bt = bt_device in (check.stdout if check else "")
+
         if use_bt:
             subprocess.run(["pactl", "set-sink-suspend", bt_device, "0"],
-                env=audio_env, capture_output=True)
+                env=audio_env, capture_output=True, timeout=3)
             subprocess.run(["pactl", "set-default-sink", bt_device],
-                env=audio_env, capture_output=True)
+                env=audio_env, capture_output=True, timeout=3)
             paplay_cmd = f"paplay --device={bt_device}"
             sink_used = "bluetooth"
         else:
@@ -1680,8 +1687,6 @@ def api_speak():
 
         # ── Piper TTS (neural, smooth) ──────────────────────────────────
         if PIPER_AVAILABLE:
-            # piper CLI: echo "text" | piper --model <voice> --output-raw | paplay --raw ...
-            # --output-raw streams 16-bit LE PCM at 22050 Hz (lessac/ryan models)
             safe_text = text.replace('"', '\\"').replace('`', '').replace('$', '')
             if use_bt:
                 cmd = (
@@ -1709,7 +1714,18 @@ def api_speak():
                 cmd = f'espeak "{safe_text}" -s {speed} --stdout | paplay'
             engine = "espeak"
 
-        subprocess.Popen(cmd, shell=True, env=audio_env)
+        # ✅ FIX: launch TTS in a background daemon thread so the HTTP response
+        # is returned immediately. The browser UI is never left waiting for the
+        # subprocess to finish speaking before it gets a response.
+        def _run_tts():
+            try:
+                subprocess.Popen(cmd, shell=True, env=audio_env)
+            except Exception as e:
+                print(f"[TTS] Popen error: {e}", flush=True)
+
+        t = threading.Thread(target=_run_tts, daemon=True)
+        t.start()
+
         return jsonify({"ok": True, "text": text, "engine": engine, "sink": sink_used})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
