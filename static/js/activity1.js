@@ -142,7 +142,9 @@
       const btns = qsa("button", card);
       btns.forEach((btn) => {
         const isStop = btn.classList.contains("stop-btn") || btn.hasAttribute("data-stop");
-        const allow = !hasRunning || isThis || (isThis && isStop);
+        const isRun  = btn.classList.contains("run-btn")  || btn.hasAttribute("data-run");
+        // Other exercises: block all. Running exercise: block Run (already running), allow Stop/Speak.
+        const allow = !hasRunning || (!isThis ? false : !isRun);
 
         if (!allow) {
           btn.disabled = true;
@@ -161,6 +163,10 @@
     if (hasRunning && modalExerciseId && modalExerciseId !== runningExId) {
       if (modalRunBtn) modalRunBtn.disabled = true;
       if (modalSpeakBtn) modalSpeakBtn.disabled = true;
+    } else if (hasRunning && modalExerciseId && modalExerciseId === runningExId) {
+      // This exercise is running — disable Run, keep Stop/Speak available
+      if (modalRunBtn) modalRunBtn.disabled = true;
+      if (modalSpeakBtn) modalSpeakBtn.disabled = false;
     } else {
       if (modalRunBtn) modalRunBtn.disabled = false;
       if (modalSpeakBtn) modalSpeakBtn.disabled = false;
@@ -605,6 +611,10 @@
     if (!exId) return;
 
     await syncFocusFromServer();
+
+    // Same exercise already running — do nothing (Run button is already disabled by setBusyUI)
+    if (currentRunningEx && currentRunningEx === exId) return;
+
     if (currentRunningEx && currentRunningEx !== exId) {
       setStatus(exId, `BUSY (running: ${currentRunningEx})`);
       setBusyUI(currentRunningEx);
