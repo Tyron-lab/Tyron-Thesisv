@@ -245,10 +245,17 @@
     }
   }
 
-  async function speak(text, triggerBtn) {
-    // Always stop any ongoing speech first
+  function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { ...options, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
+  }
+
+  function speak(text, triggerBtn) {
+    // Always stop any ongoing speech first (fire-and-forget, no await)
     if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
-    await fetch(API_BASE + "/api/speak_stop", { method: "POST" }).catch(() => {});
+    fetchWithTimeout(API_BASE + "/api/speak_stop", { method: "POST" }, 3000).catch(() => {});
 
     // If already speaking from same button — act as toggle (stop only)
     if (_isSpeaking && _activeSpeak === triggerBtn) {
@@ -258,13 +265,20 @@
 
     setSpeakingUI(true, triggerBtn || null);
 
-    try {
-      await fetch(API_BASE + "/api/speak", {
+    // Fire speak request WITHOUT awaiting — prevents page hang if server is slow/unresponsive
+    fetchWithTimeout(
+      API_BASE + "/api/speak",
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
-      });
-    } catch {}
+      },
+      8000  // 8s hard timeout — aborts if server doesn't respond
+    ).catch(() => {
+      // Server timeout or error: reset UI so user isn't stuck
+      setSpeakingUI(false);
+      if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
+    });
 
     // Auto-reset UI after estimated duration (~110 wpm for piper + 2s buffer)
     const words = text.trim().split(/\s+/).length;
@@ -278,7 +292,7 @@
   function stopSpeak(triggerBtn) {
     if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
     setSpeakingUI(false);
-    fetch(API_BASE + "/api/speak_stop", { method: "POST" })
+    fetchWithTimeout(API_BASE + "/api/speak_stop", { method: "POST" }, 3000)
       .then(() => {
         const btns = triggerBtn ? [triggerBtn] : qsa("button.stop-speak-btn");
         btns.forEach(b => {
