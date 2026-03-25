@@ -125,6 +125,37 @@
   </div>
 
 
+  <!-- Tools Modal (EX 21-22) -->
+  <div class="modal-overlay" id="toolsModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
+      <button class="modal-close" type="button" id="toolsCloseBtn" aria-label="Close">✕</button>
+
+      <h2 id="toolsTitle">ESP32 MQTT Monitoring</h2>
+      <p>Live Dashboard • Multi-User Monitoring</p>
+
+      <div class="tools-content">
+        <div class="status-grid">
+          <div class="status-item">
+            <span class="label">Connection:</span>
+            <span class="value" id="userCount">Offline</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Latest Event:</span>
+            <span class="value" id="latestEvent">—</span>
+          </div>
+          <div class="status-item">
+            <span class="label">Last Update:</span>
+            <span class="value" id="lastUpdate">—</span>
+          </div>
+        </div>
+
+        <div class="tools-actions">
+          <button class="stop-btn" id="toolsStopAll">Stop All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- EX24 Terminal Modal -->
   <div class="modal-overlay" id="ex24Modal" aria-hidden="true">
     <div class="modal-card large-modal" role="dialog" aria-modal="true" aria-labelledby="ex24Title">
