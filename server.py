@@ -1646,8 +1646,40 @@ PIPER_VOICE = os.path.expanduser("~/.local/share/piper/en_US-amy-medium.onnx")
 PIPER_AVAILABLE = os.path.isfile("/usr/local/bin/piper-tts-bin") and os.path.isfile(PIPER_VOICE)
 print(f"[TTS] Piper available: {PIPER_AVAILABLE} | Model: {PIPER_VOICE}")
 
+# ────────────────────────────────────────────────
+# TTS STATE — single lock + process handle prevents race conditions
+# between speak() and stopSpeak() when both fire simultaneously
+# from the browser as fire-and-forget fetches.
+# ────────────────────────────────────────────────
+_tts_lock = threading.Lock()   # serialises start/stop so pkill never races a new Popen
+_tts_proc = None               # current shell process (set inside the lock)
+
+def _kill_tts_proc():
+    """Kill the tracked TTS shell process (and its piper/paplay children).
+    Must be called while holding _tts_lock."""
+    global _tts_proc
+    if _tts_proc is not None:
+        try:
+            # Kill the whole process group so piper+paplay children also die
+            import os as _os
+            try:
+                _os.killpg(_os.getpgid(_tts_proc.pid), signal.SIGTERM)
+            except Exception:
+                _tts_proc.terminate()
+            try:
+                _tts_proc.wait(timeout=2)
+            except Exception:
+                try:
+                    _os.killpg(_os.getpgid(_tts_proc.pid), signal.SIGKILL)
+                except Exception:
+                    _tts_proc.kill()
+        except Exception:
+            pass
+        _tts_proc = None
+
 @app.route("/api/speak", methods=["POST"])
 def api_speak():
+    global _tts_proc
     data = request.json or {}
     text = (data.get("text") or "").strip()
     if not text:
@@ -1661,8 +1693,8 @@ def api_speak():
 
         bt_device = "bluez_output.5F_43_DA_1E_0D_99.1"
 
-        # ✅ FIX: add timeout=3 so a slow/hung PulseAudio daemon cannot block
-        # the Flask thread indefinitely and freeze the browser UI.
+        # ✅ FIX: add timeout=3 so a slow/hung PulseAudio daemon cannot
+        # block the Flask thread and freeze the browser UI.
         try:
             check = subprocess.run(
                 ["pactl", "list", "sinks", "short"],
@@ -1675,14 +1707,15 @@ def api_speak():
         use_bt = bt_device in (check.stdout if check else "")
 
         if use_bt:
-            subprocess.run(["pactl", "set-sink-suspend", bt_device, "0"],
-                env=audio_env, capture_output=True, timeout=3)
-            subprocess.run(["pactl", "set-default-sink", bt_device],
-                env=audio_env, capture_output=True, timeout=3)
-            paplay_cmd = f"paplay --device={bt_device}"
+            try:
+                subprocess.run(["pactl", "set-sink-suspend", bt_device, "0"],
+                    env=audio_env, capture_output=True, timeout=3)
+                subprocess.run(["pactl", "set-default-sink", bt_device],
+                    env=audio_env, capture_output=True, timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
             sink_used = "bluetooth"
         else:
-            paplay_cmd = "paplay"
             sink_used = "default"
 
         # ── Piper TTS (neural, smooth) ──────────────────────────────────
@@ -1714,17 +1747,19 @@ def api_speak():
                 cmd = f'espeak "{safe_text}" -s {speed} --stdout | paplay'
             engine = "espeak"
 
-        # ✅ FIX: launch TTS in a background daemon thread so the HTTP response
-        # is returned immediately. The browser UI is never left waiting for the
-        # subprocess to finish speaking before it gets a response.
-        def _run_tts():
+        # ✅ FIX: acquire the TTS lock, kill any previous process, then start
+        # the new one — all inside the lock so speak_stop cannot race us.
+        with _tts_lock:
+            _kill_tts_proc()   # stop previous speech if any
             try:
-                subprocess.Popen(cmd, shell=True, env=audio_env)
+                _tts_proc = subprocess.Popen(
+                    cmd, shell=True, env=audio_env,
+                    start_new_session=True   # gives us a killable process group
+                )
+                print(f"[TTS] started pid={_tts_proc.pid} engine={engine}", flush=True)
             except Exception as e:
                 print(f"[TTS] Popen error: {e}", flush=True)
-
-        t = threading.Thread(target=_run_tts, daemon=True)
-        t.start()
+                _tts_proc = None
 
         return jsonify({"ok": True, "text": text, "engine": engine, "sink": sink_used})
     except Exception as e:
@@ -1732,11 +1767,19 @@ def api_speak():
 
 @app.route("/api/speak_stop", methods=["POST"])
 def api_speak_stop():
+    global _tts_proc
     try:
-        # Kill piper, espeak, and paplay
-        subprocess.call(["pkill", "-f", "piper"])
-        subprocess.call(["pkill", "-f", "espeak"])
-        subprocess.call(["pkill", "-f", "paplay"])
+        # ✅ FIX: acquire the same lock used by api_speak so we never race
+        # a concurrent speak call. Kill by PID/process-group, not blind pkill.
+        with _tts_lock:
+            _kill_tts_proc()
+        # Belt-and-suspenders: also pkill any orphaned piper/espeak/paplay
+        for name in ("piper", "espeak", "paplay"):
+            try:
+                subprocess.call(["pkill", "-f", name],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

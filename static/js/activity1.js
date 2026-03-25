@@ -245,25 +245,23 @@
     }
   }
 
-  // ✅ FIX: speak() is no longer async-blocked on the server response.
-  // The /api/speak POST is fired-and-forgotten so the UI never hangs,
-  // even if PulseAudio / pactl is slow to respond on the Pi.
+  // ✅ FIX: speak() fires-and-forgets the POST so the UI never hangs.
+  // The server atomically stops any previous TTS and starts the new one
+  // inside a lock, so we no longer call speak_stop separately here —
+  // that was creating a race where pkill arrived AFTER the new Popen.
   function speak(text, triggerBtn) {
-    // Always stop any ongoing speech first (fire-and-forget — don't await)
     if (_speakTimer) { clearTimeout(_speakTimer); _speakTimer = null; }
-    fetch(API_BASE + "/api/speak_stop", { method: "POST" }).catch(() => {});
 
     // If already speaking from same button — act as toggle (stop only)
     if (_isSpeaking && _activeSpeak === triggerBtn) {
       setSpeakingUI(false);
+      fetch(API_BASE + "/api/speak_stop", { method: "POST" }).catch(() => {});
       return;
     }
 
     setSpeakingUI(true, triggerBtn || null);
 
-    // ✅ FIX: fire-and-forget — do NOT await this fetch.
-    // Awaiting it caused the entire UI to freeze while the server was
-    // blocked on the pactl sink-detection subprocess.
+    // Fire-and-forget — server stops previous speech and starts new one atomically
     fetch(API_BASE + "/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
